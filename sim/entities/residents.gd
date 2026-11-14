@@ -5,7 +5,7 @@ const Jobs = preload("res://sim/jobs/job_board.gd")
 const Nav = preload("res://sim/movement/navigation.gd")
 const NAMES: Array[String] = ["Ada", "Bram", "Cora", "Darin", "Edda", "Finn", "Galen", "Hana", "Ivo", "Juna", "Kira", "Leif", "Mara", "Neri", "Orin", "Pia", "Quin", "Runa", "Soren", "Tavi"]
 
-static func spawn(sim: RefCounted, count: int, settlement: int = 1, origin: Array = [62, 46]) -> void:
+static func spawn(sim: RefCounted, count: int, settlement: int = 1, origin: Array = [60, 49]) -> void:
 	var s: Dictionary = sim.state
 	if not s.has("residents"):
 		s.residents = {}

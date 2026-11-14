@@ -143,3 +143,13 @@ Use typed GDScript where practical, stable IDs, explicit dependencies and small
 services. Commit `.gd.uid` files; ignore `.godot/` and `builds/`. All art/code/content
 here is original placeholder work; no source or assets were copied from the
 inspiration game.
+
+## Entering buildings
+
+Buildings are now full-sized, permanently cutaway rooms. Walk through the open
+**south-facing doorway** with WASD; there is no scene transition or interaction key.
+The walls block movement and worker navigation. Rooms contain decorative beds,
+tables, crates and workshop equipment. Earlier saves are upgraded with building
+footprints on load, retaining people and goods. Construction checks the complete
+footprint before choosing a site. The building suite adds door-entry, wall collision,
+indoor save/reload and legacy-upgrade checks to the regression runner (12 suites).

@@ -100,3 +100,13 @@ Early sandboxed engine invocations reported macOS certificate/cache-access error
 the full regression/import was rerun with normal Godot access and was clean. These
 sandbox messages were not parser/gameplay failures. All build artifacts are local,
 unsigned/not notarized. Git excludes generated caches and desktop binaries.
+
+## Map/interior update verification
+
+The updated map passed all 12 regression suites, including the new building
+entry, solid-wall, navigation, indoor persistence and legacy-save checks.
+The seven-day full-game replay still matches its save/reload continuation.
+Native captures verify both the map and the player entering a house through its
+doorway. Screenshots: `screenshots/game.png` and `screenshots/interior.png`.
+The earlier frame benchmark describes the previous graphics revision, not this
+new artwork. Debug/release desktop exports were rebuilt for this update.

@@ -111,3 +111,14 @@ Performance is measured on the actual Apple M4 host, not the hypothetical Window
 reference in the design pack. Simulation budget is 100 ms/tick at 10 Hz. Results
 for 20/100/300 residents and a five-minute graphical run are recorded separately.
 No language change or multithreading is justified by the current measurements.
+
+## D011 — Walkable building footprints and unified frontier map art
+
+The graphics request now includes functional building interiors. Building records
+will own integer-cell footprints and south-facing door cells; a separate wall-cell
+index participates in WorldDB.walkable and navigation revisions. Views draw floors,
+furnishings and cutaway walls from those records. Construction validates the whole
+footprint and adds walls only at completion. Existing saves receive missing layout
+metadata on restore, preserving inventories/IDs while clearing new wall collisions.
+Art remains original code-native ink outlines and a warm earth palette, matching
+the character renderer without external image assets or plugins.

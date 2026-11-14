@@ -194,6 +194,7 @@ func snapshot() -> Dictionary:
 
 func restore(snapshot_data: Dictionary) -> void:
 	state = snapshot_data.duplicate(true)
+	World.upgrade_layouts(state)
 
 func state_hash() -> String:
 	return Canonical.hash_state(state)

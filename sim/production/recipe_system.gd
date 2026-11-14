@@ -7,7 +7,7 @@ static func initialize(sim: RefCounted) -> void:
 	var s: Dictionary = sim.state
 	s.recipes = JSON.parse_string(FileAccess.get_file_as_string("res://content/recipes/core.json")).recipes
 	s.workshops = {}
-	add_workshop(sim, 1, [67, 43], s.warehouse)
+	add_workshop(sim, 1, [76, 42], s.warehouse)
 
 static func add_workshop(sim: RefCounted, settlement: int, cell: Array, store: int) -> int:
 	var id := World.add_entity(sim, "sawmill", "Timber workshop", cell, settlement)

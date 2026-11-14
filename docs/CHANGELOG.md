@@ -27,3 +27,27 @@
   11 regression suites, benchmarks, CI and six desktop export configurations.
 - Actual validation and remaining platform/scale limits are recorded in
   VALIDATION.md and IMPLEMENTATION_STATUS.md; supplied design documents are intact.
+
+## Character graphics update — 2026-11-14
+
+- Replaced resident/player dots with original outlined frontier figures inspired
+  by the supplied visual reference: earthy clothing, hats, faces, boots and skin
+  tone variations, plus walking poses, carried goods and occupation details.
+- Kept character artwork in a presentation-only drawing helper; simulation data
+  and saved identities are unchanged. Character picking follows the taller art.
+- Verified native rendered screenshot and UI smoke test; rebuilt desktop exports.
+
+## Map art and enterable buildings — 2026-11-14
+
+- Restyled ground, paths, trees/stumps, rocks, farms/crops, storage crates, barrels,
+  carts, construction sites and all buildings in the characters' outlined earth palette.
+- Replaced building icons with multi-cell cutaway rooms: homes have beds/tables,
+  stores have supplies, and sawmills have workbenches. Furnishings are decorative.
+- Added authoritative solid perimeter walls and open south-facing door cells.
+  Player and NPC navigation respects walls; footprints persist in save snapshots.
+- Construction reserves a full footprint and a clearance margin. Initial villages
+  have more space between buildings; earlier saves gain missing building layouts
+  while retaining entity identities and inventories.
+- Added building entry/wall/navigation/save-upgrade tests and an actual indoor
+  player capture at docs/screenshots/interior.png. The regression runner now has
+  12 suites. Desktop builds are regenerated for this update.

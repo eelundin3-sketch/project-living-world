@@ -11,13 +11,20 @@ static func initialize(sim: RefCounted) -> void:
 	s.construction = {}
 	s.completed_buildings = 0
 
-static func suitable(s: Dictionary, cell: Array) -> bool:
-	if not World.walkable(s, cell):
-		return false
+static func suitable(s: Dictionary, cell: Array, kind: String = "home") -> bool:
+	var rect := World.footprint(cell, kind).grow(1)
+	for y in range(rect.position.y, rect.end.y):
+		for x in range(rect.position.x, rect.end.x):
+			if not World.walkable(s, [x, y]):
+				return false
 	for entity in s.entities.values():
 		if not entity.has("cell") or entity.kind in ["resident", "player", "caravan"]:
 			continue
-		if absi(cell[0] - entity.cell[0]) < 3 and absi(cell[1] - entity.cell[1]) < 3:
+		if entity.has("footprint") and rect.intersects(World.building_rect(entity)):
+			return false
+		if entity.kind == "construction" and rect.intersects(World.footprint(entity.cell, "home")):
+			return false
+		if rect.has_point(Vector2i(entity.cell[0], entity.cell[1])):
 			return false
 	return true
 
@@ -28,10 +35,10 @@ static func plan(sim: RefCounted, settlement_id: int, definition: String) -> int
 	var town: Dictionary = s.settlements[str(settlement_id)]
 	var home: Array = s.entities[str(town.home)].cell
 	var location: Array = []
-	for radius in range(4, 25, 3):
+	for radius in range(9, 45, 3):
 		for direction in [[1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [-1, -1]]:
 			var cell: Array = [home[0] + direction[0] * radius, home[1] + direction[1] * radius]
-			if suitable(s, cell):
+			if suitable(s, cell, s.building_defs[definition].kind):
 				location = cell
 				break
 		if not location.is_empty():
@@ -111,6 +118,7 @@ static func update(sim: RefCounted) -> void:
 			site.status = "Completed"
 			s.entities[str(site.id)].kind = def.kind
 			s.entities[str(site.id)].name = "New " + def.kind
+			World.install_building(s, site.id)
 			s.settlements[str(site.settlement)].housing += int(def.get("housing", 0))
 			if def.has("capacity"):
 				s.inventories[str(site.id)].capacity = def.capacity

@@ -143,6 +143,8 @@ Planks %d/%d · Trade within 6 cells" % [town.name, s.accounts[str(s.player)], M
 	if selected != 0 and s.entities.has(str(selected)):
 		var entity: Dictionary = s.entities[str(selected)]
 		lines.append("[b]%s[/b]\n%s · ID %d\nCell %s" % [entity.get("name", "Test entity"), entity.get("kind", "test"), entity.id, str(entity.get("cell", []))])
+		if entity.has("footprint"):
+			lines.append("Open doorway on the south side.\nWalk inside with WASD.")
 		if s.inventories.has(str(selected)):
 			var inventory: Dictionary = s.inventories[str(selected)]
 			lines.append("\n[b]Possessions[/b]  (capacity %d)" % inventory.capacity)

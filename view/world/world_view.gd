@@ -1,4 +1,7 @@
 extends Node2D
+const CharacterArt = preload("res://view/actors/frontier_character.gd")
+const MapArt = preload("res://view/world/frontier_map_art.gd")
+const World = preload("res://sim/world/world_db.gd")
 const CELL: float = 24.0
 var simulation: RefCounted
 var selected_id: int = 0
@@ -20,21 +23,26 @@ func _draw() -> void:
 	var right: int = mini(world_bounds[2], ceili(bounds.end.x / CELL))
 	var bottom: int = mini(world_bounds[3], ceili(bounds.end.y / CELL))
 	loaded_chunks = (right / 64 - left / 64 + 1) * (bottom / 64 - top / 64 + 1)
-	draw_rect(Rect2(world_bounds[0] * CELL, world_bounds[1] * CELL, (world_bounds[2] - world_bounds[0]) * CELL, (world_bounds[3] - world_bounds[1]) * CELL), Color("293f35"))
-	if s.has("routes"):
-		draw_line(Vector2(64, 46) * CELL, Vector2(180, 46) * CELL, Color("675e49"), 22)
+	draw_rect(Rect2(world_bounds[0] * CELL, world_bounds[1] * CELL, (world_bounds[2] - world_bounds[0]) * CELL, (world_bounds[3] - world_bounds[1]) * CELL), Color("77794d"))
 	for y in range(top, bottom):
 		for x in range(left, right):
-			var color := Color("30483a") if (x * 13 + y * 7) % 5 == 0 else Color("2c4236")
-			draw_rect(Rect2(x * CELL, y * CELL, CELL - 1, CELL - 1), color)
-	# Footpaths are decoration, not a second authoritative map.
-	draw_line(Vector2(55, 46) * CELL, Vector2(78, 46) * CELL, Color("756c50"), 30)
-	draw_line(Vector2(64, 40) * CELL, Vector2(64, 54) * CELL, Color("756c50"), 30)
+			MapArt.ground(self, x, y)
+	if s.has("routes"):
+		draw_line(Vector2(46, 48) * CELL, Vector2(202, 48) * CELL, Color("a68b60"), 38, true)
+	for entity in s.entities.values():
+		if entity.has("footprint"):
+			var door := Vector2(entity.cell[0], entity.cell[1]) * CELL
+			if entity.cell[1] <= 48:
+				draw_line(door, Vector2(door.x, 48 * CELL), Color("ad9163"), 26, true)
+			else:
+				var edge: float = (World.building_rect(entity).end.x + 1) * CELL
+				var points := PackedVector2Array([door, door + Vector2(0, 36), Vector2(edge, door.y + 36), Vector2(edge, 48 * CELL)])
+				draw_polyline(points, Color("ad9163"), 26, true)
 	for key in s.world.blocked:
 		var parts: PackedStringArray = key.split(",")
 		var point := Vector2(int(parts[0]), int(parts[1])) * CELL
 		if bounds.has_point(point):
-			draw_circle(point, 10, Color("87918a"))
+			MapArt.rock(self, point)
 	visible_entities = 0
 	# Static places first, residents and player above them.
 	for actors in [false, true]:
@@ -44,7 +52,7 @@ func _draw() -> void:
 			if (entity.kind in ["resident", "player"]) != actors:
 				continue
 			var p := Vector2(entity.cell[0], entity.cell[1]) * CELL
-			if not bounds.grow(50).has_point(p):
+			if not bounds.grow(200).has_point(p):
 				continue
 			visible_entities += 1
 			_draw_entity(s, entity, p)
@@ -59,18 +67,14 @@ func _draw_entity(s: Dictionary, entity: Dictionary, p: Vector2) -> void:
 		draw_arc(p, 22, 0, TAU, 32, Color("f4d889"), 2.5)
 	match entity.kind:
 		"tree":
-			var logs: int = s.inventories[str(entity.id)].items.get("log", 0)
-			draw_rect(Rect2(p - Vector2(3, 0), Vector2(6, 14)), Color("8a6a44"))
-			if logs > 0:
-				draw_circle(p - Vector2(0, 5), 13, Color("192e28"))
-				draw_circle(p - Vector2(3, 8), 10, Color("4e7651"))
+			if World.inside_building(s, entity.cell) == 0:
+				MapArt.tree(self, p, s.inventories[str(entity.id)].items.get("log", 0), entity.id)
 		"resident":
 			var npc: Dictionary = s.residents[str(entity.id)]
-			draw_circle(p + Vector2(2, 5), 8, Color(0, 0, 0, 0.25))
-			draw_circle(p, 7, Color("d59d61") if npc.job != 0 else Color("8fa9ba"))
-			draw_circle(p - Vector2(0, 6), 4, Color("e9c39c"))
+			var cargo: bool = not s.inventories[str(entity.id)].items.is_empty()
+			CharacterArt.paint(self, p, entity.id, s.tick, npc, false, cargo)
 			if npc.hunger >= 60:
-				draw_string(font, p + Vector2(-3, -14), "!", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("ffce75"))
+				draw_string(font, p + Vector2(-3, -51), "!", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("ffce75"))
 			if selected:
 				var previous := p
 				for cell in npc.path:
@@ -78,25 +82,25 @@ func _draw_entity(s: Dictionary, entity: Dictionary, p: Vector2) -> void:
 					draw_line(previous, next, Color(0.9, 0.8, 0.5, 0.55), 2)
 					previous = next
 		"player":
-			draw_circle(p, 10, Color("e9e4ce"))
-			draw_circle(p, 6, Color("386e83"))
-			draw_string(font, p + Vector2(-13, -18), "YOU", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("fff2ce"))
+			CharacterArt.paint(self, p, entity.id, s.tick, {"path": s.get("player_path", [])}, true, false)
+			draw_string(font, p + Vector2(-13, -51), "YOU", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("fff2ce"))
 		"farm":
-			for row in range(4):
-				draw_line(p + Vector2(-21, row * 9 - 16), p + Vector2(21, row * 9 - 16), Color("a2a45c"), 5)
-		"warehouse", "home", "sawmill", "construction", "market":
-			var colors: Dictionary = {"warehouse": Color("bc945f"), "home": Color("a98772"), "sawmill": Color("a5b4aa"), "construction": Color("d8c576"), "market": Color("7a9daa")}
-			draw_rect(Rect2(p - Vector2(19, 15), Vector2(38, 32)), colors[entity.kind])
-			var roof := PackedVector2Array([p + Vector2(-23, -14), p + Vector2(0, -29), p + Vector2(23, -14)])
-			draw_colored_polygon(roof, Color("654b43"))
-			draw_rect(Rect2(p + Vector2(-4, 3), Vector2(8, 14)), Color("3d392f"))
-			draw_string(font, p + Vector2(-30, 33), entity.kind.capitalize(), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("ece0bf"))
-		"caravan":
-			draw_rect(Rect2(p - Vector2(12, 7), Vector2(24, 14)), Color("e8c582"))
-			draw_circle(p + Vector2(-7, 8), 4, Color("242d29"))
-			draw_circle(p + Vector2(7, 8), 4, Color("242d29"))
-		"stash":
-			draw_rect(Rect2(p - Vector2(5, 5), Vector2(10, 10)), Color("d8c576"))
+			MapArt.farm(self, p, s.inventories[str(entity.id)].items.get("food", 0))
+		"warehouse", "home", "sawmill", "market":
+			var footprint := World.building_rect(entity)
+			var rect := Rect2(Vector2(footprint.position) * CELL - Vector2.ONE * CELL / 2, Vector2(footprint.size) * CELL)
+			MapArt.building(self, entity, rect, s.inventories.get(str(entity.id), {}).get("items", {}))
+			draw_string(font, Vector2(rect.get_center().x - 25, rect.position.y - 23), entity.kind.capitalize(), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("f7e3ac"))
+		"construction":
+			var footprint := World.footprint(entity.cell, "home")
+			var rect := Rect2(Vector2(footprint.position) * CELL - Vector2.ONE * CELL / 2, Vector2(footprint.size) * CELL)
+			draw_rect(rect, Color("9b8055"))
+			draw_rect(rect, Color("d9be7f"), false, 3)
+			for corner in [rect.position, Vector2(rect.end.x, rect.position.y), rect.end, Vector2(rect.position.x, rect.end.y)]:
+				MapArt.box(self, Rect2(corner - Vector2(3, 20), Vector2(6, 25)), Color("75502f"))
+			MapArt.crate(self, p - Vector2(25, 20))
+		"caravan": MapArt.cart(self, p)
+		"stash": MapArt.crate(self, p)
 
 func pick(world_position: Vector2) -> int:
 	var best: int = 0
@@ -105,8 +109,14 @@ func pick(world_position: Vector2) -> int:
 		if not entity.has("cell"):
 			continue
 		var p := Vector2(entity.cell[0], entity.cell[1]) * CELL
-		var candidate := p.distance_to(world_position)
+		var candidate := (p - Vector2(0, 20) if entity.kind in ["resident", "player"] else p).distance_to(world_position)
 		if candidate < distance:
 			distance = candidate
 			best = entity.id
+	if best == 0:
+		for entity in simulation.state.entities.values():
+			if entity.has("footprint"):
+				var rect := World.building_rect(entity)
+				if Rect2(Vector2(rect.position) * CELL - Vector2.ONE * CELL / 2, Vector2(rect.size) * CELL).has_point(world_position):
+					return entity.id
 	return best
