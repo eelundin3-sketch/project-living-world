@@ -1,0 +1,1 @@
+{"version":1,"buildings":{"core:building/home":{"kind":"home","planks":30,"work_ticks":120,"housing":4},"core:building/warehouse":{"kind":"warehouse","planks":60,"work_ticks":200,"capacity":2000}}}

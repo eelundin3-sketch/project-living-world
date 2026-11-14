@@ -1,0 +1,43 @@
+{
+  "cpu": "Apple M4",
+  "engine": "4.6-stable (official)",
+  "os": "macOS",
+  "rows": [
+    {
+      "invariants": [],
+      "max_ms": 0.643,
+      "memory_bytes": 22485769,
+      "p50_ms": 0.086,
+      "p95_ms": 0.14,
+      "p99_ms": 0.147,
+      "population": 20,
+      "save_bytes": 81052,
+      "save_ms": 6.721,
+      "ticks": 6000
+    },
+    {
+      "invariants": [],
+      "max_ms": 1.783,
+      "memory_bytes": 22843881,
+      "p50_ms": 0.566,
+      "p95_ms": 0.644,
+      "p99_ms": 0.908,
+      "population": 100,
+      "save_bytes": 146104,
+      "save_ms": 10.532,
+      "ticks": 6000
+    },
+    {
+      "invariants": [],
+      "max_ms": 15.844,
+      "memory_bytes": 23621509,
+      "p50_ms": 1.73,
+      "p95_ms": 2.024,
+      "p99_ms": 4.075,
+      "population": 300,
+      "save_bytes": 288284,
+      "save_ms": 21.334,
+      "ticks": 6000
+    }
+  ]
+}

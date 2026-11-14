@@ -1,0 +1,1 @@
+{"version":1,"recipes":{"core:recipe/planks":{"input":"log","input_quantity":2,"output":"plank","output_quantity":6,"work_ticks":40}}}
