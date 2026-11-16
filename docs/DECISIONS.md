@@ -1,4 +1,4 @@
-# Decisions — Task 001 / M0
+# Design and implementation decisions
 
 ## D001 — Pin Godot 4.6 stable, standard edition
 
@@ -122,3 +122,241 @@ footprint and adds walls only at completion. Existing saves receive missing layo
 metadata on restore, preserving inventories/IDs while clearing new wall collisions.
 Art remains original code-native ink outlines and a warm earth palette, matching
 the character renderer without external image assets or plugins.
+
+## D012 — Readable work cycles, forest abundance and sound
+
+Animation follows explicit simulation actions: approach → work (anticipation,
+impact, recovery) → pickup → loaded travel → drop-off. Gathering gains timed pickup
+and deposit phases before its existing atomic transfer points. Other inventory
+changes create short presentation-only handling transitions. A view-owned animation
+director interpolates positions, tracks facing and foot contacts, and emits bounded
+sound cues; it never owns goods, jobs or random simulation state. Pause freezes
+motion/cues, and load resets presentation history without replaying old sounds.
+
+Forests gain unique, spaced trees outside village/road/footprint clearances and a
+one-time, ledger-accounted upgrade for older saves. Wind is a coherent low-frequency
+field with small per-tree offsets. Wood impacts, walking, sawing and handling use
+original synthesized audio assets, distance attenuation and a bounded voice pool.
+
+## D013 — Reference-led architecture and village plan
+
+The visual redesign requires real navigable rooms, not painted internal dividers.
+New buildings use larger kind-specific footprints and a persisted `interior_walls`
+list; both navigation and rendering consume these cells. A two-cell internal
+passage preserves access to every room. Initial homes and mills move apart and
+construction prioritizes street-facing plots outside the storehouse square.
+This changes initial layouts and travel distances, not ownership or economic rules.
+Original reference-inspired art remains code/vector assets, with no copied source.
+
+## D014 — Physical fixtures and observed handling
+
+Sawmills and stores define blocked fixture cells plus a reachable operator/handling
+stance in authoritative building data. Workers route to that stance for production,
+collection and depositing; the view draws the machine/rack at the same fixture rect.
+Fixtures share their building inventory, rather than introducing a second owner.
+Inventory transfers publish a bounded 32-record deterministic observation ring with
+monotonic serials. The view animates nearby worker/fixture transfers once, suppresses
+historic events on load, and owns only interpolation. Machine rotation/feed follows
+active staffed work, freezes on pause, and stops when work is interrupted.
+
+## D015 — Contextual player controls and personal condition
+
+The playable traveller uses WASD, I (inventory), F (contextual action), H (body and
+treatment screen), mouse wheel and trackpad pinch zoom, with Shift sprint. Body-part
+injuries, treatment timers, bandage condition and stamina are saved simulation data.
+Inventory items remain the authoritative goods owner; the hand-held stack is a
+selected subset, never a duplicate. Sprint stamina is spent per accepted move and
+regenerates after release. Views submit commands and only display simulation state.
+
+## D016 — Metric tiles, staged construction and minimal play HUD
+
+One authoritative grid cell is defined as one metre (24 rendered pixels at default
+zoom); buildings and terrain use those integer cells as their measurements. Terrain,
+flooring and walls render as individually outlined cell blocks. Construction now
+stages its plank deliveries in the site's central fixture, then commits visible floor,
+wall, doorway and roof tiles in order. Each completed wall tile immediately updates
+the collision index; the doorway stays clear while work is underway. Tile progress,
+used materials and wall cells are serialized with the construction site, allowing an
+exact resume after loading. Ten work points place each tile, while the site obtains
+its total material cost once across staged deliveries.
+
+The play HUD keeps only the clock, compact stocks, stamina and pause/1×/2×/3× controls
+in the upper-left corner. Observer tools are opt-in. Actor ground shadows and the
+selection circle were removed; selection uses corner brackets. Walking poses now
+alternate knee/foot lift and arm swing with torso sway and body bounce. These are
+presentation changes except for saved construction progress and its wall collision.
+
+## D017 — Seeded weather and presentation
+
+Weather is a saved simulation record updated in six-hour blocks using its own RNG
+streams; snow accumulation advances in fixed simulation intervals. Presentation
+interpolates transitions over 300 ticks and draws bounded precipitation, fog and
+wind-driven vegetation. Weather does not currently alter movement or production.
+Legacy snapshots receive an initial clear weather record on restoration.
+This is an original implementation informed by RimWorld-Go's separation of weather
+simulation, presentation motion, and per-frame environment rendering. No reference
+source or asset was copied.
+
+## D018 — Local combat encounter
+
+Local encounters use a saved simulation-owned fighter and projectile store, separate
+from abstract caravan incidents. Nearby residents interrupt their jobs and become
+defenders; raiders and defenders select opposing targets, route to attack positions,
+and use timed ranged or melee attacks. Projectiles advance cell by cell and walls
+stop them. Damage and incapacitation are authoritative simulation results. The view
+projects aiming, swings, hit reactions, projectiles and impact effects from those
+records. A player-invoked observer demonstration creates an encounter; autonomous
+raids, player attacks, medical recovery for NPCs and broader combat AI are not yet
+implemented. This is original GDScript and art informed by the reference project's
+combat/engage and creature/combat organization; no reference assets were reused.
+
+## D019 — Directional character facing
+
+Character headings are presentation state derived from actual movement or a combat
+target. The player can hold the right mouse button to face the cursor at any angle;
+this overrides movement-facing until release. The drawn figure uses front, side and
+back projection changes while remaining upright. Facing has no effect on simulated
+movement, inventory or combat. NPC direction eases between headings; player cursor
+facing follows directly. Losing application focus clears the held mouse state.
+
+## D020 — Volumetric character rigs (superseded by directional vector characters)
+
+Visible characters are presented by original procedural 3D mesh rigs in transparent
+Godot SubViewports projected into the existing 2D world. Heading rotates the actual
+model around its vertical axis; arms and legs animate from the presentation director's
+existing work, locomotion and combat states. Viewports are created only for actors
+near the camera and discarded when they leave view. The simulation still owns all
+positions, inventory and decisions. This adds GPU rendering cost per visible actor;
+the 2D world and its simulation contracts are unchanged.
+
+## D021 — Sprint pace and running gait
+
+Healthy walking advances one grid cell every two simulation ticks; sprinting uses
+one per tick while stamina remains. Only successful sprint moves spend stamina;
+injured or exhausted players use the walking cadence or slower. Rendering retains
+the running pose between movement ticks and uses articulated knees, arm drive,
+forward lean and a small lift cycle. These are presentation projections of accepted
+movement and do not change collision or the inventory model.
+
+## D022 — Physical construction work cycle
+
+Construction retains the existing fixed plank cost and central site inventory. The
+builder transfers a real plank into their own inventory, routes to a reachable cell
+beside the next build tile, works there, then returns the remaining plank to the
+site before repeating. A plank is consumed from the worker's inventory at the same
+proportional cost thresholds as before; a partly used plank is returned for reuse.
+The current phase, path, material custody and tile progress live in saved simulation
+state. Navigation revisions trigger replanning and needs or combat interrupt work
+without fabricating goods. This intentionally lengthens construction time.
+
+## D023 — Ink-styled 3D characters (superseded by directional vector characters)
+
+The existing rotating 3D rigs use toon diffuse lighting and an original dark
+outline pass, with front-facing eye, shirt, vest, lapel and hat details in the
+frontier palette. These additions are view-only and share the existing animation
+and simulation contracts. The outline adds a render pass to visible meshes, so
+large-crowd GPU performance should be profiled on target platforms.
+
+## D024 — Ground-position depth sorting
+
+Walls retain their one-cell collision footprint but are drawn taller. Individual
+wall sections, trees, rocks, fixtures, furnishings, dropped items, carts and 3D
+characters are view nodes sorted by their ground-contact Y coordinate. This allows
+foreground objects to cover actors behind them as either moves. Floors and paths
+remain background drawings. The authoritative simulation and navigation are
+unchanged. Nodes are culled outside the camera view; scenery artwork such as the
+decorative porch trim remains part of its background layer.
+
+## D025 — Clearer cutaway interiors
+
+Connected wall tiles use broad timber faces and light trim instead of repeated
+horizontal bands. Their visible connections derive from adjacent authoritative
+wall cells, including walls under construction; their collision and depth anchors
+stay unchanged. Floor planks remain continuous across the 1 m grid, with subtler
+shading and less decorative clutter. Furnishings stay in the depth-sorted layer.
+This presentation uses original artwork informed by the supplied reference image.
+
+## D026 — Greener terrain and clustered forest
+
+Woodland outside the settlements uses a darker green ground and canopy palette,
+blending into warm earth around the villages. Seeded groves add 100 harvestable
+trees around Alder Hollow and 60 around Reedbank. They preserve road clearances,
+building plots, active construction sites and existing entity positions. Version 2
+saves receive the new stands once, with added timber recorded as created inventory.
+The added trees are existing simulation entities, not a second decorative resource.
+
+## D027 — Continuous walking presentation
+
+Input queues the next walk command one simulation tick before its execution is due,
+eliminating an extra idle tick. Character interpolation travels at the same rate as
+the authoritative two-tick walking and one-tick sprint cadence. Collision and
+stamina remain simulation-owned; the renderer does not predict through obstacles.
+
+## D028 — Unarmed player actions
+
+Holding the left mouse button displays a screen-space pointer and ready pose;
+pressing it while the right button is held submits a directional punch. Space
+submits a shove and P pauses. Actions record their direction and a timed impact in
+the authoritative simulation. Punches damage an adjacent person, while shoves
+displace them only into an unoccupied, walkable cell; both trigger a brief hit
+reaction and interrupt active jobs safely. Camera and ready stance remain view
+state. These basic actions do not constitute a complete social retaliation system.
+
+### Stepped home footprint
+
+Homes use a one-metre-cell stepped outline, shared by construction, collision,
+and floor rendering. Existing completed homes migrate once on load; active
+construction retains its saved stages and original outline until completion.
+The bounding rectangle remains the conservative plot reservation. This keeps
+navigation and save data authoritative while allowing the cutaway presentation.
+
+The cutaway wall revision joins the inside corner of stepped homes with one
+additional wall cell so the wall outline does not touch only at a point.
+Completed homes receive that corner on load. In-progress construction follows
+its recorded tile list. Cutaway surfaces stay within each wall's footprint and
+retain the southern ground edge as their draw order anchor.
+
+### Directional vector characters
+
+The live character renderer uses original layered 2D drawing and projects
+planar pose offsets according to a continuous heading. Front and back clothing,
+facial features, and the order of the limbs change with direction. This supersedes
+the 3D character presentation described above. The animation director still
+reads simulation snapshots, and input, collisions, and combat remain authoritative.
+
+### Larger building plans and roads as terrain
+
+New lodges are 17 × 14 cells, storehouses 17 × 15, and workshops and markets
+15 × 13. A cell still measures one metre. Construction uses the larger floor,
+wall, door and roof plans. On load, completed buildings expand only where the
+new footprint leaves neighboring plots clear. Existing work sites retain their
+saved plans and reserved materials.
+
+Roads and footpaths are feathered coverage in the terrain shader. Their sand
+and gravel use the same ground texture and lighting, while collision and routes
+continue to come from the simulation.
+
+### Walls-first construction and visible tile work
+
+New sites stock their actual central pile before starting, then build walls,
+floors, doors and roofs in order. Each tile uses a pickup, transit, work and
+return trip. Saved sites retain their serialized stage order and stockpile
+position. The renderer reads the active tile and its work fraction, including
+partial walls before their collision is committed. Completed buildings are
+shown in cutaway so rooms remain visible.
+
+### Furnished aisles, bulk workshops and market counters
+
+Fixture and furniture rectangles are simulation records. The navigation index
+blocks those same tiles, and the view draws furnishings at their recorded
+locations. A workshop's saw and rack have separate approach cells and share the
+same workshop inventory. Reserving a buffered recipe does not transfer those
+inputs to a duplicate inventory. The hired worker delivers finished items by
+walking to the stall or warehouse, then transferring actual stock.
+
+Each open-air stall owns its inventory and coin account. Stalls draw opening
+stock and cash from the town store and treasury. Retail purchases use the
+stall and its category list. The underlying town market still owns regional
+price history and order matching. Current saves keep all records. A one-time
+stall and fixture upgrade adds the layout to supported older saves. Old saved
+populations remain intact when the new-game default changes.

@@ -3,7 +3,7 @@
 This describes the actual prototype, separately from the supplied design proposal.
 All M0–M14 areas have an integrated implementation. The scope is a small original
 single-player sandbox; long-term scale and commercial polish are not implied by
-these gates. Tests live alongside the implemented systems and can run headlessly.
+these gates. Tests live alongside the implemented systems and can run headlessly. For the current gameplay and save locations, see the [current game guide](CURRENT_GAME.md).
 
 | Milestone | Runnable implementation | Evidence / practical boundary |
 |---|---|---|
@@ -14,9 +14,9 @@ these gates. Tests live alongside the implemented systems and can run headlessly
 | M4 | Job board, exclusive targets, leases, explicit action phases/reasons | 20-way contention, cancellation, removal, lease expiry, changed/unreachable navigation recovery |
 | M5 | Capacity-limited inventories and physical harvesting/hauling | 1,000 completed jobs with interruptions and conservation checked after every cycle |
 | M6 | Configurable population, controls, inspectors, save/reload | 100,800-tick village and full-game runs; exact post-load continuation; UI save/load smoke |
-| M7 | Data-driven sawmill, escrowed inputs, labour, physical output hauling | 100k synthetic recipe cycles; cancelled/double commits rejected; live planks reach store |
+| M7 | Data-driven sawmill, bulk storage, reserved inputs, labour, physical output hauling | 100k synthetic recipe cycles; cancelled/double commits rejected; live planks reach the timber stall and warehouse |
 | M8 | Housing demand, site selection, builder hauling and work | Initial housing shortage builds three material-funded homes; warehouse definition/plan API included |
-| M9 | Accounts, order matching, integer transfers, player commerce, price history | Goods/money conservation, affordability failures, shortage-sensitive bids and real matched transactions |
+| M9 | Physical market stalls, accounts, order matching, integer transfers and price history | Goods/money conservation, affordability failures, shortage-sensitive bids and real matched transactions |
 | M10 | Second settlement, road, merchant purchase/cargo/arrival/sale | Blocked arrival retains cargo; reopening delivers once; regional replay |
 | M11 | Seeded chunk metadata, culled view, detailed/coarse/aggregate batches | Fidelity roundtrip keeps identity/goods/needs; full-world replay while visiting towns. Named actors are aggregated in batches; no 50k population claim |
 | M12 | Occupations/skills, households, memories, relations, policies, factions, migration | Memory/edge bounds, migration ownership, treaty restrictions, deterministic social continuation |
@@ -32,7 +32,7 @@ advance travel/work algebraically across transaction boundaries. Population/good
 summaries are derived from the same inventories. There is no second remote ledger
 that silently creates or duplicates materials.
 
-One representative recipe, three commodities, one caravan route, two factions and
+One representative recipe, three main commodities, two medical supplies, one caravan route, two factions and
 housing-driven construction demonstrate the causal loops. Definitions/services can
 support more content, but hundreds of professions or settlements are not asserted.
 Warehouse construction is exposed by the planner API, while the initial scenario's

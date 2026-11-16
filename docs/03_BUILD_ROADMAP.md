@@ -52,7 +52,7 @@ M14 Performance, mod data, compatibility, polish
 
 **Build:** `SimulationState`, `SimClock` at fixed 10 Hz, commands queued with stable order, 64-bit entity IDs, deterministic RNG wrapper, event queue, canonical state serialization/hash for reproducibility.
 
-**Show:** simulation tick advancing; pause, 1×/2×/4× speed; debug console can spawn a test entity using a command.
+**Show:** simulation tick advancing; pause, 1×/2×/3× speed; debug console can spawn a test entity using a command.
 
 **Gate:** 100,000 ticks replayed from same seed + ordered commands produce same hash on the same engine build; replay doesn't depend on render FPS.
 

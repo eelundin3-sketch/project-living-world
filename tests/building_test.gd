@@ -27,11 +27,11 @@ func _initialize() -> void:
 			check(World.walkable(s, cell), "Navigation never crosses wall")
 	var house: Dictionary = s.entities[str(s.home)]
 	s.entities[str(s.player)].cell = [house.cell[0], house.cell[1] + 1]
-	for index in range(4):
+	for index in range(8):
 		sim.submit("move_player", {"direction": [0, -1]})
 		sim.step()
 	check(World.inside_building(s, s.entities[str(s.player)].cell) == s.home, "Player walks inside")
-	for index in range(10):
+	for index in range(20):
 		sim.submit("move_player", {"direction": [-1, 0]})
 		sim.step()
 	check(s.entities[str(s.player)].cell[0] == World.building_rect(house).position.x + 1, "Player stops at solid wall")

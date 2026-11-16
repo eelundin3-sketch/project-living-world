@@ -1,8 +1,12 @@
 extends RefCounted
 ## Original, deterministic presentation shapes; no gameplay state is stored here.
+const TREES = [preload("res://content/art/tree_0.svg"), preload("res://content/art/tree_1.svg"), preload("res://content/art/tree_2.svg"), preload("res://content/art/tree_3.svg")]
+const World = preload("res://sim/world/world_db.gd")
+const Props = preload("res://view/world/prop_art.gd")
+const Furniture = preload("res://view/world/interior_art.gd")
+const FLOOR = preload("res://content/art/floor.svg")
 const INK := Color("30291e")
 const Character = preload("res://view/actors/frontier_character.gd")
-
 static func box(c: Node2D, r: Rect2, color: Color, border: float = 2.0) -> void:
 	c.draw_rect(r, color)
 	c.draw_rect(r, INK, false, border)
@@ -13,44 +17,49 @@ static func poly(c: Node2D, points: PackedVector2Array, color: Color) -> void:
 	edge.append(edge[0])
 	c.draw_polyline(edge, INK, 2, true)
 
-static func ground(c: Node2D, x: int, y: int) -> void:
-	var p := Vector2(x, y) * 24
-	var h: int = absi(x * 7919 + y * 104729 + x * y * 17)
-	# Continuous ground with irregular flecks, never a visible checkerboard grid.
-	if h % 5 == 0:
-		c.draw_circle(p + Vector2(h % 19, h % 13), 7 + h % 5, Color("72764a"))
-	if h % 3 == 0:
-		var q := p + Vector2(h % 17, h % 23)
-		c.draw_line(q, q + Vector2(-3, -5), Color("4d5837"), 1, true)
-		c.draw_line(q + Vector2(1, 0), q + Vector2(3, -7), Color("4d5837"), 1, true)
-	if h % 7 == 0:
-		c.draw_line(p + Vector2(8, 10), p + Vector2(11, 11), Color("aa9c68"), 2, true)
+static func floor_tile(c: Node2D, rect: Rect2, x: int, y: int) -> void:
+	var sample := Rect2(Vector2(posmod(x, 4), posmod(y, 4)) * 48, Vector2(48, 48))
+	c.draw_texture_rect_region(FLOOR, rect, sample)
+	# The timber grain spans neighbouring cells; avoid drawing a second grid on top.
+	c.draw_rect(rect, Color(0.26, 0.12, 0.03, 0.04))
 
-static func tree(c: Node2D, p: Vector2, logs: int, id: int) -> void:
-	Character.oval(c, p + Vector2(7, 3), Vector2(19, 6), Color(0.15, 0.12, 0.06, 0.22))
+static func tree(c: Node2D, p: Vector2, logs: int, id: int, pose: Dictionary = {}) -> void:
+	if logs == 0 and pose.get("fall", -1.0) >= 0:
+		c.draw_set_transform(p, float(pose.fall) * float(pose.fall) * 1.45)
+		tree(c, Vector2.ZERO, 60, id)
+		c.draw_set_transform(Vector2.ZERO)
 	if logs == 0:
 		box(c, Rect2(p - Vector2(7, 10), Vector2(14, 12)), Color("83623c"))
 		Character.oval(c, p + Vector2(0, -10), Vector2(8, 4), Color("bd9860"))
 		return
-	poly(c, PackedVector2Array([p + Vector2(-8, 1), p + Vector2(-4, -37), p + Vector2(5, -39), p + Vector2(9, 1)]), Color("83623c"))
-	c.draw_line(p + Vector2(0, -29), p + Vector2(3, -2), Color("bd9860"), 2)
-	var leaf := Color("6b7541") if id % 2 == 0 else Color("828048")
-	for offset in [Vector2(-15, -32), Vector2(15, -34), Vector2(0, -53), Vector2(-5, -39)]:
-		Character.oval(c, p + offset, Vector2(19, 17), leaf)
-		c.draw_arc(p + offset - Vector2(3, 3), 11, 3.5, 5.2, 9, leaf.lightened(0.2), 2, true)
+	var sway: float = float(pose.get("sway", 0))
+	var tint := Color("d7e5c9").lerp(Color.WHITE, float(posmod(id * 13, 17)) / 24.0)
+	c.draw_texture_rect(TREES[posmod(id, 4)], Rect2(p + Vector2(-40 + sway, -94), Vector2(80, 100)), false, tint)
 
 static func rock(c: Node2D, p: Vector2) -> void:
 	poly(c, PackedVector2Array([p + Vector2(-11, 5), p + Vector2(-12, -4), p + Vector2(-5, -12), p + Vector2(7, -9), p + Vector2(12, 1), p + Vector2(7, 7)]), Color("8c896f"))
-	c.draw_polyline(PackedVector2Array([p + Vector2(-5, -10), p + Vector2(0, -1), p + Vector2(10, 1)]), Color("b4ad8b"), 2, true)
+	poly(c, PackedVector2Array([p+Vector2(-5,-10),p+Vector2(0,-2),p+Vector2(9,-7)]), Color("b3ae96"))
+	c.draw_polyline(PackedVector2Array([p + Vector2(-5, -10), p + Vector2(0, -1), p + Vector2(10, 1)]), Color("b4ad8b"), 1.4, true)
+	c.draw_polyline(PackedVector2Array([p + Vector2(-8, -4), p + Vector2(-6, 0), p + Vector2(-8, 4)]), Color("6d6b55"), 0.65, true)
+	c.draw_line(p + Vector2(2, 2), p + Vector2(6, 4), Color("6a6955"), 0.65, true)
 
 static func crate(c: Node2D, p: Vector2) -> void:
-	box(c, Rect2(p - Vector2(10, 16), Vector2(20, 19)), Color("a87b45"))
-	for x in [-5, 1, 6]:
-		c.draw_line(p + Vector2(x, -14), p + Vector2(x, 2), Color("72522f"), 1)
-	c.draw_line(p + Vector2(-9, -14), p + Vector2(9, 1), Color("dab47a"), 3)
+	c.draw_rect(Rect2(p - Vector2(8, 11), Vector2(24, 19)), Color(0, 0, 0, 0.19))
+	Furniture.timber(c, Rect2(p - Vector2(10, 16), Vector2(20, 18)), Color("a67a4b"), 2.0)
+	Props.polygon(c, PackedVector2Array([p + Vector2(-10, -16), p + Vector2(-6, -22),
+		p + Vector2(14, -22), p + Vector2(10, -16)]), Color("c6a16f"))
+	Props.polygon(c, PackedVector2Array([p + Vector2(10, -16), p + Vector2(14, -22),
+		p + Vector2(14, -4), p + Vector2(10, 2)]), Color("735237"))
+	for y in [-11, -5]:
+		c.draw_line(p + Vector2(-10, y), p + Vector2(10, y), Color("745334"), 0.7, true)
+	c.draw_line(p + Vector2(-8, 0), p + Vector2(8, -14), Color("d2a572"), 2.4, true)
+	for x in [-8, 8]:
+		for y in [-13, 0]: Props.nail(c, p + Vector2(x, y), 0.65)
 
 static func barrel(c: Node2D, p: Vector2) -> void:
 	Character.oval(c, p - Vector2(0, 9), Vector2(10, 14), Color("956b3d"))
+	for dx in [-5,0,5]:
+		c.draw_line(p+Vector2(dx,-18),p+Vector2(dx,-1),Color("64462c"),1)
 	for y in [-15, -3]:
 		c.draw_line(p + Vector2(-9, y), p + Vector2(9, y), Color("514b3b"), 3)
 	Character.oval(c, p - Vector2(0, 21), Vector2(9, 4), Color("ba945b"))
@@ -68,67 +77,250 @@ static func farm(c: Node2D, p: Vector2, food: int) -> void:
 	for dx in [-62, 62]:
 		box(c, Rect2(p + Vector2(dx, -38), Vector2(4, 78)), Color("a7844d"), 1)
 
-static func building(c: Node2D, entity: Dictionary, rect: Rect2, stock: Dictionary) -> void:
-	c.draw_rect(Rect2(rect.position + Vector2(8, 8), rect.size), Color(0.12, 0.09, 0.05, 0.3))
-	box(c, rect, Color("a37c49"), 3)
-	for row in range(int(rect.size.y / 12)):
-		var y: float = rect.position.y + row * 12
-		c.draw_line(Vector2(rect.position.x, y), Vector2(rect.end.x, y), Color("715231"), 1.5)
-		for column in range(4):
-			var x: float = rect.position.x + 14 + column * 48 + (row % 2) * 20
-			if x < rect.end.x:
-				c.draw_line(Vector2(x, y), Vector2(x, y + 12), Color("715231"), 1)
-	var wall := Color("ad8954")
-	# Wall thickness corresponds exactly to the blocked perimeter cells.
-	box(c, Rect2(rect.position - Vector2(0, 15), Vector2(rect.size.x, 39)), wall)
-	for y in range(3):
-		c.draw_line(rect.position + Vector2(0, y * 12 - 12), rect.position + Vector2(rect.size.x, y * 12 - 12), Color("6f4f2d"), 2)
-	for x in [rect.position.x, rect.end.x - 24]:
-		box(c, Rect2(x, rect.position.y + 24, 24, rect.size.y - 24), wall)
-		for y in range(int(rect.size.y / 18)):
-			c.draw_line(Vector2(x, rect.position.y + y * 18), Vector2(x + 24, rect.position.y + y * 18), Color("715231"), 1)
-	var door_x: float = entity.cell[0] * 24.0
-	box(c, Rect2(rect.position.x, rect.end.y - 24, door_x - 12 - rect.position.x, 24), wall)
-	box(c, Rect2(door_x + 12, rect.end.y - 24, rect.end.x - door_x - 12, 24), wall)
-	box(c, Rect2(door_x - 12, rect.end.y - 24, 24, 24), Color("c6a16a"), 1)
-	# Open door leaf beside the clear threshold, never painted across the passage.
-	box(c, Rect2(door_x + 12, rect.end.y - 27, 6, 29), Color("65482d"), 1)
-	for x in [rect.position.x + 5, rect.end.x - 12]:
-		box(c, Rect2(x, rect.position.y - 17, 7, 30), Color("65482d"), 1)
-	var inside: Vector2 = rect.position + Vector2(37, 46)
-	match entity.kind:
-		"home":
-			for dx in [0, rect.size.x - 95]:
-				box(c, Rect2(inside + Vector2(dx, 0), Vector2(24, 43)), Color("695035"))
-				box(c, Rect2(inside + Vector2(dx + 2, 12), Vector2(20, 28)), Color("92927b"), 1)
-				box(c, Rect2(inside + Vector2(dx + 3, 3), Vector2(18, 9)), Color("d5c6a1"), 1)
-			box(c, Rect2(rect.get_center() - Vector2(13, 0), Vector2(26, 20)), Color("825b34"))
-			Character.oval(c, rect.get_center() + Vector2(0, 7), Vector2(5, 3), Color("c6b787"))
-		"warehouse", "market":
-			for index in range(4):
-				crate(c, inside + Vector2(index * 32, 12))
-			barrel(c, inside + Vector2(0, 53))
-			barrel(c, inside + Vector2(27, 53))
-			if int(stock.get("log", 0)) > 0:
-				for row in range(3):
-					Character.limb(c, inside + Vector2(85, 35 + row * 7), inside + Vector2(134, 35 + row * 7), Color("9d7440"), 6)
-		"sawmill":
-			box(c, Rect2(inside + Vector2(10, 8), Vector2(104, 27)), Color("715033"))
-			Character.limb(c, inside + Vector2(2, 16), inside + Vector2(124, 16), Color("bd945b"), 9)
-			c.draw_circle(inside + Vector2(65, 14), 12, INK)
-			c.draw_circle(inside + Vector2(65, 14), 9, Color("b6b2a0"))
-			for index in range(10):
-				var angle: float = index * TAU / 10
-				c.draw_line(inside + Vector2(65, 14), inside + Vector2(65, 14) + Vector2(cos(angle), sin(angle)) * 13, INK, 1)
-			crate(c, inside + Vector2(0, 60))
+static func building(c: Node2D, entity: Dictionary) -> void:
+	for y in range(entity.footprint[1] + 1, entity.footprint[1] + entity.footprint[3] - 1):
+		for x in range(entity.footprint[0] + 1, entity.footprint[0] + entity.footprint[2] - 1):
+			if World.building_contains(entity, [x, y]):
+				floor_tile(c, Rect2(Vector2(x, y) * 24 - Vector2(12, 12), Vector2(24, 24)), x, y)
+	var threshold := Rect2(Vector2(entity.cell[0], entity.cell[1]) * 24 - Vector2(12, 12), Vector2(24, 24))
+	floor_tile(c, threshold, entity.cell[0], entity.cell[1])
+	c.draw_rect(Rect2(threshold.position + Vector2(0, 19), Vector2(24, 5)), Color("b58f5f"))
+	c.draw_line(threshold.end - Vector2(24, 1), threshold.end - Vector2(0, 1), Color("634327"), 1)
+
+static func furnishings(entity: Dictionary) -> Array[Dictionary]:
+	var items: Array[Dictionary] = []
+	for layout in entity.get("furniture", []):
+		var cells: Array = layout.rect
+		var rect := Rect2(Vector2(cells[0], cells[1]) * 24 - Vector2(12, 12), Vector2(cells[2], cells[3]) * 24)
+		var point := rect.position + Vector2(4, 3)
+		var bottom := 0.0
+		match layout.kind:
+			"lamp", "chair", "chest": point = rect.get_center() + Vector2(0, 8)
+			"bed": bottom = 36.0
+			"table": bottom = 39.0
+			"shelf": bottom = 35.0
+		items.append({"kind": layout.kind, "point": point, "bottom": bottom,
+			"width": rect.size.x - 8, "color": Color("9fa7a5")})
+	return items
+
+static func draw_furnishing(c: Node2D, item: Dictionary) -> void:
+	var p: Vector2 = item.point
+	match item.kind:
+		"lamp": lamp(c, p)
+		"bed": Furniture.bed(c, p, item.color)
+		"table": Furniture.table(c, p)
+		"chair": chair(c, p)
+		"shelf": Furniture.shelf(c, p, item.width)
+		"stove": Furniture.stove(c, p)
+		"chest": chest(c, p)
 
 static func cart(c: Node2D, p: Vector2) -> void:
-	for x in [-18, 18]:
-		Character.oval(c, p + Vector2(x, 2), Vector2(5, 10), Color("4b3b25"))
-	box(c, Rect2(p - Vector2(20, 21), Vector2(40, 25)), Color("a17b45"))
-	for x in range(-15, 20, 7):
-		c.draw_line(p + Vector2(x, -19), p + Vector2(x, 2), Color("67482b"), 1)
-	crate(c, p + Vector2(-8, -11))
-	Character.oval(c, p + Vector2(10, -21), Vector2(8, 10), Color("c4b386"))
-	for x in [-12, 12]:
-		Character.limb(c, p + Vector2(x, 4), p + Vector2(x, 23), Color("876539"), 2)
+	Props.ellipse(c, p + Vector2(1, 9), Vector2(27, 9), Color(0, 0, 0, 0.17), 0, INK, 0)
+	for x in [-21, 21]:
+		var hub := p + Vector2(x, 2)
+		Props.ellipse(c, hub, Vector2(5.1, 10.1), Color("4d4537"))
+		Props.ellipse(c, hub, Vector2(3.7, 7.9), Color("8e6b43"), 0, Color("b39162"), 0.5)
+		for spoke in range(5):
+			var radius := Vector2.from_angle(spoke * TAU / 5.0) * Vector2(3.5, 7.1)
+			c.draw_line(hub, hub + radius, Color("574331"), 0.7, true)
+		Props.nail(c, hub, 1.25)
+	for x in [-11, 11]:
+		Character.limb(c, p + Vector2(x, 1), p + Vector2(x, 23), Color("a27a4b"), 2.8)
+	Furniture.timber(c, Rect2(p - Vector2(19, 21), Vector2(38, 24)), Color("9c754b"), 4)
+	for y in [-16, -10, -4]:
+		c.draw_line(p + Vector2(-18, y), p + Vector2(18, y), Color("6e4f33"), 0.75, true)
+	crate(c, p + Vector2(-7, -1))
+	Props.ellipse(c, p + Vector2(11, -10), Vector2(7.5, 9.5), Color("bbab84"), 0.19)
+	c.draw_line(p + Vector2(7, -16), p + Vector2(14, -17), Color("726343"), 0.8, true)
+	Props.nail(c, p + Vector2(16, -3), 0.9)
+
+# Coordinates are relative to the southern ground edge used for depth sorting.
+# The wall top sits inside its 1 m footprint. Only exposed edges get bevels.
+static func cutaway_wall(c: Node2D, neighbours: Dictionary) -> void:
+	var north: bool = neighbours.get("north", false)
+	var south: bool = neighbours.get("south", false)
+	var west: bool = neighbours.get("west", false)
+	var east: bool = neighbours.get("east", false)
+	var left: float = -12.0 if west else -8.0
+	var right: float = 12.0 if east else 8.0
+	var front: float = 0.0 if south else -9.0
+	var top_color := Color("704722")
+	var bevel := Color("caa576")
+	var lip := Color("dfbf8f")
+	var edge := Color("51341f")
+	c.draw_rect(Rect2(-12, -24, 24, 24), top_color)
+	if not west:
+		c.draw_colored_polygon(PackedVector2Array([
+			Vector2(-12, -24), Vector2(left, -24), Vector2(left, front), Vector2(-12, 0),
+		]), Color("b49264"))
+		c.draw_line(Vector2(-12, -24), Vector2(-12, 0), edge, 1)
+		c.draw_line(Vector2(left, -24), Vector2(left, front), Color("896540"), 0.8)
+	if not east:
+		c.draw_colored_polygon(PackedVector2Array([
+			Vector2(right, -24), Vector2(12, -24), Vector2(12, 0), Vector2(right, front),
+		]), Color("ad875a"))
+		c.draw_line(Vector2(12, -24), Vector2(12, 0), edge, 1)
+		c.draw_line(Vector2(right, -24), Vector2(right, front), Color("896540"), 0.8)
+	if not south:
+		c.draw_rect(Rect2(-12, 0, 24, 3), Color(0.16, 0.09, 0.04, 0.22))
+		var ridge_left := lerpf(left, -12.0, 0.55)
+		var ridge_right := lerpf(right, 12.0, 0.55)
+		c.draw_colored_polygon(PackedVector2Array([
+			Vector2(left, front), Vector2(right, front), Vector2(ridge_right, -4), Vector2(ridge_left, -4),
+		]), bevel)
+		c.draw_colored_polygon(PackedVector2Array([
+			Vector2(ridge_left, -4), Vector2(ridge_right, -4), Vector2(12, 0), Vector2(-12, 0),
+		]), lip)
+		c.draw_line(Vector2(left, front), Vector2(right, front), Color("8f6943"), 0.8)
+		c.draw_line(Vector2(-12, 0), Vector2(12, 0), edge, 1)
+	else:
+		# At a concave corner the neighbouring front and side bevels meet
+		# inside this tile, without drawing a border across the solid top.
+		for side in [-1, 1]:
+			var connected: bool = west if side < 0 else east
+			var diagonal: bool = neighbours.get("southwest" if side < 0 else "southeast", false)
+			if connected and not diagonal:
+				var corner := Vector2(side * 12, 0)
+				var inset := Vector2(side * 8, -9)
+				var ridge := Vector2(side * 12, -4)
+				c.draw_colored_polygon(PackedVector2Array([corner, ridge, inset, Vector2(side * 8, 0)]), Color("b49264") if side < 0 else Color("ad875a"))
+				c.draw_colored_polygon(PackedVector2Array([corner, Vector2(side * 12, -9), inset]), bevel)
+	if north:
+		for side in [-1, 1]:
+			var connected: bool = west if side < 0 else east
+			var diagonal: bool = neighbours.get("northwest" if side < 0 else "northeast", false)
+			if connected and not diagonal:
+				c.draw_colored_polygon(PackedVector2Array([
+					Vector2(side * 8, -24), Vector2(side * 12, -24), Vector2(side * 12, -20),
+				]), Color("b49264") if side < 0 else Color("ad875a"))
+	else:
+		c.draw_line(Vector2(-12, -24), Vector2(12, -24), edge, 1)
+
+static func build_piece(c: Node2D, kind: String, fraction: float, cell: Array) -> void:
+	var progress := clampf(fraction, 0.0, 1.0)
+	match kind:
+		"walls":
+			# A timber sill becomes a full wall, anchored at the eventual depth edge.
+			c.draw_set_transform(Vector2.ZERO, 0.0, Vector2(1.0, progress))
+			cutaway_wall(c, {"west": true, "east": true})
+			c.draw_set_transform(Vector2.ZERO)
+		"floor":
+			var sample := Rect2(Vector2(posmod(int(cell[0]), 4), posmod(int(cell[1]), 4)) * 48, Vector2(48, 48 * progress))
+			c.draw_texture_rect_region(FLOOR, Rect2(-12, -24, 24, 24 * progress), sample)
+		"roof":
+			roof_shakes(c, Vector2(-12, -24), progress)
+		"door":
+			var door := Rect2(-12, -24, 24 * progress, 24)
+			c.draw_rect(door, Color("ad854f"))
+
+static func roof_shakes(c: Node2D, point: Vector2, progress: float = 1.0) -> void:
+	var height := progress * 24.0
+	c.draw_rect(Rect2(point, Vector2(24, height)), Color("8d654d"))
+	for i in range(4):
+		var y := float(i * 6)
+		if height <= y: break
+		c.draw_line(point + Vector2(0, y + 1), point + Vector2(24, y + 1), Color("b68d65"), 1)
+		var x := 7.0 if i % 2 == 0 else 16.0
+		c.draw_line(point + Vector2(x, y), point + Vector2(x, minf(y + 6, height)), Color("674532"), 1)
+
+static func construction(c: Node2D, entity: Dictionary, site: Dictionary, rect: Rect2) -> void:
+	c.draw_rect(rect, Color(0.13, 0.09, 0.04, 0.13))
+	var tiles: Dictionary = site.get("built_tiles", {})
+	for cell in tiles.get("floor", []):
+		var tile := Rect2(Vector2(cell[0], cell[1]) * 24 - Vector2(12, 12), Vector2(24, 24))
+		floor_tile(c, tile, cell[0], cell[1])
+	for cell in tiles.get("roof", []):
+		roof_shakes(c, Vector2(cell[0], cell[1]) * 24 - Vector2(12, 12))
+	if not tiles.get("door", []).is_empty():
+		var door := Vector2(entity.cell[0], entity.cell[1]) * 24 - Vector2(12, 12)
+		box(c, Rect2(door, Vector2(24, 24)), Color("ad854f"), 1)
+		box(c, Rect2(door + Vector2(4, 0), Vector2(16, 6)), Color("d2b47e"), 1)
+	c.draw_rect(rect, Color("dfc58f", 0.55), false, 1)
+
+static func lamp(c: Node2D, p: Vector2) -> void:
+	for radius in [23, 17, 11]:
+		c.draw_circle(p + Vector2(0, -24), radius, Color(1.0, 0.77, 0.32, 0.045))
+	c.draw_colored_polygon(PackedVector2Array([
+		p + Vector2(-8, 0), p + Vector2(-4, -4), p + Vector2(4, -4),
+		p + Vector2(8, 0), p + Vector2(5, 3), p + Vector2(-5, 3),
+	]), Color("8f5b31"))
+	c.draw_line(p, p + Vector2(0, -25), Color("6c462b"), 3, true)
+	c.draw_line(p + Vector2(0.5, -2), p + Vector2(0.5, -25), Color("b18653"), 1, true)
+	var shade := PackedVector2Array([
+		p + Vector2(-6, -32), p + Vector2(-10, -26), p + Vector2(-9, -22),
+		p + Vector2(-5, -19), p + Vector2(5, -19), p + Vector2(9, -22),
+		p + Vector2(10, -26), p + Vector2(6, -32),
+	])
+	c.draw_colored_polygon(shade, Color("e1c586"))
+	shade.append(shade[0])
+	c.draw_polyline(shade, Color("85643e"), 1, true)
+	for side in [-1, 1]:
+		c.draw_line(p + Vector2(side * 4, -30), p + Vector2(side * 5, -20), Color("ad8e57"), 0.8, true)
+	var crown := PackedVector2Array()
+	for index in range(24):
+		var angle := TAU * index / 24.0
+		crown.append(p + Vector2(7 * cos(angle), -32 + 3.6 * sin(angle)))
+	c.draw_colored_polygon(crown, Color("f2dfae"))
+	crown.append(crown[0])
+	c.draw_polyline(crown, Color("85643e"), 1, true)
+	c.draw_arc(p + Vector2(0, 0.1), 4.0, PI * 0.12, PI * 0.90, 10, Color("cb9e63"), 0.6, true)
+	c.draw_line(p + Vector2(7, -21), p + Vector2(7, -16), Color("714d2d"), 0.68, true)
+	Props.ellipse(c, p + Vector2(7, -15.5), Vector2(0.85, 1.3), Color("ad7745"), 0, Color("805735"), 0.45)
+
+static func chair(c: Node2D, p: Vector2) -> void:
+	for x in [-7, 7]:
+		Character.limb(c, p + Vector2(x, -7), p + Vector2(x, 5), Color("745237"), 2.3)
+		Character.limb(c, p + Vector2(x, -26), p + Vector2(x, -8), Color("926a43"), 2.4)
+	Furniture.timber(c, Rect2(p - Vector2(9, 12), Vector2(18, 10)), Color("ba8f5f"), 2.7)
+	for offset in [-4, 1, 5]:
+		c.draw_line(p + Vector2(offset, -11), p + Vector2(offset, -3), Color("967046"), 0.63, true)
+	for y in [-26, -19]:
+		Furniture.timber(c, Rect2(p + Vector2(-9, y), Vector2(18, 4)), Color("9f744a"), 1.4)
+		for x in [-7, 7]: Props.nail(c, p + Vector2(x, y + 2), 0.65)
+
+static func chest(c: Node2D, p: Vector2) -> void:
+	Props.ellipse(c, p + Vector2(1, 3), Vector2(18, 4), Color(0, 0, 0, 0.18), 0, INK, 0)
+	Furniture.timber(c, Rect2(p - Vector2(16, 17), Vector2(32, 17)), Color("815637"), 2.0)
+	for y in [-9, -4]:
+		c.draw_line(p + Vector2(-15, y), p + Vector2(15, y), Color("64412c"), 0.7, true)
+	Props.polygon(c, PackedVector2Array([p + Vector2(-16, -14), p + Vector2(-14, -21),
+		p + Vector2(-10, -24), p + Vector2(11, -24), p + Vector2(15, -21),
+		p + Vector2(16, -14)]), Color("a57b4d"))
+	Props.grain(c, Rect2(p - Vector2(12, 23), Vector2(24, 9)), Color("89613d"))
+	for x in [-11, 10]:
+		c.draw_polyline(PackedVector2Array([p + Vector2(x, -23), p + Vector2(x, -15),
+			p + Vector2(x, -6), p + Vector2(x, 0)]), Color("57615a"), 3.1, true)
+		c.draw_line(p + Vector2(x - 0.6, -21), p + Vector2(x - 0.6, -3), Color("9da396"), 0.7, true)
+		for y in [-20, -11, -4]: Props.nail(c, p + Vector2(x, y), 0.66)
+	Props.ellipse(c, p + Vector2(0, -12), Vector2(3.1, 2.7), Color("cead62"), 0, Color("6c572f"))
+	c.draw_line(p + Vector2(0, -13), p + Vector2(0, -10.8), Color("604823"), 1.0, true)
+
+static func frontage(c: Node2D, entity: Dictionary, rect: Rect2) -> void:
+	var door := Vector2(entity.cell[0], entity.cell[1]) * 24
+	# A short stoop marks the open doorway and leaves the rest of the facade clear.
+	var stoop := Rect2(door.x - 12, rect.end.y, 24, 12)
+	c.draw_rect(stoop, Color("9e7448"))
+	c.draw_line(stoop.position + Vector2(0, 5), stoop.position + Vector2(24, 5), Color("bd9665"), 1)
+	c.draw_line(stoop.end - Vector2(24, 1), stoop.end - Vector2(0, 1), Color("65452c"), 1)
+
+static func square(c: Node2D, center: Vector2) -> void:
+	for dx in [-75, 75]:
+		box(c, Rect2(center + Vector2(dx - 20, 26), Vector2(40, 9)), Color("8d643a"), 1)
+		lamp(c, center + Vector2(dx, -20))
+
+static func vegetation(c: Node2D, bounds: Rect2, buildings: Array, wind_phase: float = 0.0, wind_strength: float = 0.0, road_coverage: Callable = Callable()) -> void:
+	for y in range(floori(bounds.position.y / 24), ceili(bounds.end.y / 24)):
+		for x in range(floori(bounds.position.x / 24), ceili(bounds.end.x / 24)):
+			var hash_value: int = absi(x * 719 ^ y * 113 ^ x * y * 31)
+			if hash_value % 5 != 0 or absf(float(y) - 48.0) < 2.0: continue
+			var cell_rect := Rect2(Vector2(x, y) * 24, Vector2(24, 24))
+			var intersects: bool = false
+			for rect in buildings:
+				if rect.has_point(cell_rect.get_center()): intersects = true; break
+			if intersects: continue
+			var base := cell_rect.position + Vector2(6 + hash_value % 9, 17)
+			if road_coverage.is_valid() and road_coverage.call(base) > 0.53: continue
+			var shade: Color = Color("355a33") if hash_value % 2 == 0 else Color("53723e")
+			var sway: float = sin(wind_phase + float(x) * 0.19 + float(y) * 0.13) * wind_strength * 2.0
+			c.draw_line(base, base + Vector2(-2 + sway, -6), shade, 1.4, true)
+			c.draw_line(base + Vector2(1, 0), base + Vector2(3 + sway, -8), shade.lightened(0.12), 1.4, true)

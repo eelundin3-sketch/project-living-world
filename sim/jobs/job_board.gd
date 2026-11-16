@@ -1,5 +1,6 @@
 extends RefCounted
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
+const World = preload("res://sim/world/world_db.gd")
 const Nav = preload("res://sim/movement/navigation.gd")
 
 static func initialize(state: Dictionary) -> void:
@@ -51,6 +52,7 @@ static func release(state: Dictionary, job_id: int, reason: String) -> void:
 	job.progress = 0
 
 static func try_claim(state: Dictionary, job_id: int, npc_id: int) -> bool:
+	if state.get("player_control",{}).get("work",{}).get("target",0) == state.jobs.get(str(job_id),{}).get("target",-1): return false
 	if not state.jobs.has(str(job_id)) or not state.residents.has(str(npc_id)):
 		return false
 	var job: Dictionary = state.jobs[str(job_id)]
@@ -67,7 +69,7 @@ static func try_claim(state: Dictionary, job_id: int, npc_id: int) -> bool:
 		job.reason = "STORE_FULL"
 		job.retry_at = state.tick + 100
 		return false
-	var route := Nav.request_path(state, state.entities[str(npc_id)].cell, target.cell)
+	var route := Nav.request_path(state, state.entities[str(npc_id)].cell, source_stance(state, job))
 	if not route.ok:
 		Inventory.release(state, job.destination, str(job.id))
 		job.reason = route.error_code
@@ -113,8 +115,8 @@ static func advance(sim: RefCounted, npc_id: int) -> void:
 	job.lease_until = s.tick + (150 if npc.fidelity == "aggregate" else 50)
 	var actor: Dictionary = s.entities[str(npc_id)]
 	if npc.nav_revision != s.world.nav_revision:
-		var target: int = job.destination if job.state == "MOVING_TO_DEST" else job.target
-		var route := Nav.request_path(s, actor.cell, s.entities[str(target)].cell)
+		var goal: Array = World.Fixtures.interaction_cell(s, job.destination) if job.state in ["MOVING_TO_DEST", "DEPOSITING"] else source_stance(s, job)
+		var route := Nav.request_path(s, actor.cell, goal)
 		if not route.ok:
 			release(s, job.id, route.error_code)
 			return
@@ -131,11 +133,18 @@ static func advance(sim: RefCounted, npc_id: int) -> void:
 			job.progress += 2
 			if job.progress < 20:
 				return
+			job.state = "PICKING_UP"
+			job.progress = 0
+			npc.status = "Picking up " + job.item
+		"PICKING_UP":
+			job.progress += 2
+			if job.progress < 6:
+				return
 			var moved := Inventory.transfer(s, job.target, npc_id, job.item, job.quantity)
 			if not moved.ok:
 				release(s, job.id, moved.error_code)
 				return
-			var route := Nav.request_path(s, actor.cell, s.entities[str(job.destination)].cell)
+			var route := Nav.request_path(s, actor.cell, World.Fixtures.interaction_cell(s, job.destination))
 			if not route.ok:
 				release(s, job.id, route.error_code)
 				return
@@ -143,6 +152,13 @@ static func advance(sim: RefCounted, npc_id: int) -> void:
 			job.state = "MOVING_TO_DEST"
 			npc.status = "Hauling %d %s" % [job.quantity, job.item]
 		"MOVING_TO_DEST":
+			job.state = "DEPOSITING"
+			job.progress = 0
+			npc.status = "Putting down " + job.item
+		"DEPOSITING":
+			job.progress += 2
+			if job.progress < 6:
+				return
 			var moved := Inventory.transfer(s, npc_id, job.destination, job.item, job.quantity, str(job.id))
 			if not moved.ok:
 				release(s, job.id, moved.error_code)
@@ -185,3 +201,13 @@ static func advance_many(sim: RefCounted, npc_id: int, actions: int) -> void:
 				break
 		advance(sim, npc_id)
 		actions -= 1
+
+static func source_stance(s: Dictionary, job: Dictionary) -> Array:
+	var cell: Array = s.entities[str(job.target)].cell
+	if not World.walkable(s, cell):
+		return cell
+	for offset in [[0, 1], [-1, 0], [1, 0], [0, -1]]:
+		var stance: Array = [cell[0] + offset[0], cell[1] + offset[1]]
+		if World.walkable(s, stance):
+			return stance
+	return cell

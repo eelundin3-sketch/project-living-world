@@ -14,8 +14,10 @@ func _initialize() -> void:
 	sim.enable_production()
 	sim.enable_economy()
 	var s: Dictionary = sim.state
-	for tick in range(12000):
+	# Three 385-tile homes require over a thousand round trips from the pile.
+	for tick in range(80000):
 		sim.step()
+		if s.completed_buildings >= 3: break
 	check(s.completed_buildings >= 3 and s.settlements["1"].housing >= 20, "Demand builds homes with delivered planks")
 	check(Checks.validate(s).is_empty(), "Construction conserves accounted goods")
 	var before: int = s.accounts[str(s.player)]

@@ -45,6 +45,7 @@ static func update(sim: RefCounted) -> void:
 	var route: Dictionary = s.routes["1"]
 	var guards: int = 0
 	for npc in s.residents.values():
+		if npc.health <= 0 or s.tick < int(npc.get("impact_until", 0)) or s.get("local_combat", {}).get("fighters", {}).has(str(npc.id)): continue
 		if npc.occupation == "Guard":
 			if npc.goal.is_empty() and npc.hunger < 60 and npc.fatigue < 75:
 				guards += 1

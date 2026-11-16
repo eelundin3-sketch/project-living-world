@@ -3,6 +3,7 @@ const World = preload("res://sim/world/world_db.gd")
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const Jobs = preload("res://sim/jobs/job_board.gd")
 const Nav = preload("res://sim/movement/navigation.gd")
+const LocalCombat = preload("res://sim/factions/local_combat.gd")
 const NAMES: Array[String] = ["Ada", "Bram", "Cora", "Darin", "Edda", "Finn", "Galen", "Hana", "Ivo", "Juna", "Kira", "Leif", "Mara", "Neri", "Orin", "Pia", "Quin", "Runa", "Soren", "Tavi"]
 
 static func spawn(sim: RefCounted, count: int, settlement: int = 1, origin: Array = [60, 49]) -> void:
@@ -21,6 +22,8 @@ static func update(sim: RefCounted) -> void:
 	var s: Dictionary = sim.state
 	for key in s.residents:
 		var npc: Dictionary = s.residents[key]
+		if s.tick < int(npc.get("impact_until", 0)): continue
+		if LocalCombat.busy(s, npc.id) or npc.health <= 0: continue
 		if not npc.get("migration", {}).is_empty():
 			continue
 		if s.tick % 100 == 0:
@@ -59,9 +62,11 @@ static func _decide(sim: RefCounted, npc: Dictionary) -> void:
 		if npc.goal.is_empty():
 			set_goal(s, npc, "eat" if npc.hunger >= 60 else "rest")
 		return
+	if npc.get("work_pause_until", 0) > s.tick:
+		return
 	if npc.job != 0 or not npc.goal.is_empty():
 		return
-	if npc.occupation == "Builder" or npc.get("work_cargo", false):
+	if npc.occupation == "Builder" or npc.get("work_cargo", false) or npc.get("production_delivery", false):
 		return
 	if Inventory.used(s.inventories[str(npc.id)]) > 0:
 		set_goal(s, npc, "deposit")
@@ -70,7 +75,7 @@ static func _decide(sim: RefCounted, npc: Dictionary) -> void:
 
 static func set_goal(s: Dictionary, npc: Dictionary, goal: String) -> void:
 	var target: int = _destination(s, npc, "home" if goal == "rest" else "warehouse")
-	var route := Nav.request_path(s, s.entities[str(npc.id)].cell, s.entities[str(target)].cell)
+	var route := Nav.request_path(s, s.entities[str(npc.id)].cell, World.Fixtures.interaction_cell(s, target))
 	if not route.ok:
 		npc.status = goal + ": " + route.error_code
 		npc.retry_at = s.tick + 100
@@ -117,6 +122,8 @@ static func _need_action(sim: RefCounted, npc: Dictionary) -> void:
 					break
 			npc.goal = ""
 			npc.production_delivery = false
+			npc.work_pause_until = s.tick + 6
+			npc.status = "Putting down carried goods"
 
 static func remove(sim: RefCounted, id: int) -> void:
 	var s: Dictionary = sim.state

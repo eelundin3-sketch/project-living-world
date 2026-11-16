@@ -1,4 +1,6 @@
 extends RefCounted
+const PlayerActions = preload("res://sim/player/player_actions.gd")
+const BodyHealth = preload("res://sim/player/body_health.gd")
 const Canonical = preload("res://sim/core/canonical.gd")
 const Invariants = preload("res://sim/diagnostics/invariants.gd")
 const FORMAT_VERSION: int = 2
@@ -64,6 +66,10 @@ static func load_into(sim: RefCounted, path: String) -> Dictionary:
 	return result
 
 static func validate_schema(s: Dictionary) -> String:
+	var health_error: String=BodyHealth.validate(s)
+	if not health_error.is_empty(): return health_error
+	var control_error: String=PlayerActions.validate(s)
+	if not control_error.is_empty(): return control_error
 	for field in ["tick", "seed", "next_id"]:
 		if not s[field] is int or (field != "seed" and s[field] < 0):
 			return "Invalid core integer: " + field

@@ -47,6 +47,12 @@ static func transfer(state: Dictionary, source: int, destination: int, item: Str
 		return result(false, "DESTINATION_FULL")
 	_change(state, source, item, -quantity)
 	_change(state, destination, item, quantity)
+	# Bounded deterministic transfer observations, consumed only by presentation.
+	if state.has("world"):
+		state.transfer_serial = int(state.get("transfer_serial",0)) + 1
+		if not state.has("transfer_observations"): state.transfer_observations = []
+		state.transfer_observations.append({"serial":state.transfer_serial,"source":source,"destination":destination,"item":item,"quantity":quantity})
+		if state.transfer_observations.size()>32: state.transfer_observations.pop_front()
 	if not token.is_empty():
 		release(state, destination, token)
 	return result(true, "", [source, destination])

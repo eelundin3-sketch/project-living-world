@@ -1,0 +1,282 @@
+extends RefCounted
+## Presentation state only. Inventory, work progress and positions remain in Simulation.
+const Planner = preload("res://sim/settlement/planner.gd")
+const World = preload("res://sim/world/world_db.gd")
+const CELL: float = 24.0
+const WALK_CYCLE_METERS := 2.0
+const RUN_CYCLE_METERS := 3.25
+var actors: Dictionary = {}
+var trees: Dictionary = {}
+var cues: Array[Dictionary] = []
+var time: float = 0.0
+var previous_tick: int = -1
+var reduced_motion: bool = false
+var wind_strength: float = 1.0
+var player_aiming: bool = false
+var player_ready: bool = false
+var player_aim_position: Vector2 = Vector2.ZERO
+
+func reset() -> void:
+	actors.clear()
+	trees.clear()
+	cues.clear()
+	time = 0.0
+	previous_tick = -1
+
+static func action_for(s: Dictionary, entity: Dictionary) -> Dictionary:
+	var npc: Dictionary = s.get("residents", {}).get(str(entity.id), {})
+	var result := {"action": "idle", "phase": -1.0, "target": 0, "target_cell": [], "expected_item": "", "expected_quantity": 0}
+	if not npc.is_empty() and int(npc.get("health", 100)) <= 0:
+		result.action = "down"
+		return result
+	if int(npc.get("impact_until", 0)) > s.tick:
+		result.action = "stagger" if npc.get("impact_kind", "") == "shove" else "hit"
+		result.phase = 1.0 - float(npc.impact_until - s.tick) / 12.0
+		return result
+	var fighter: Dictionary = s.get("local_combat", {}).get("fighters", {}).get(str(entity.id), {})
+	if not fighter.is_empty():
+		result.target = fighter.target
+		if fighter.health <= 0: result.action = "down"
+		elif int(fighter.get("impact_until", 0)) > s.tick: result.action = "hit"
+		elif s.tick - fighter.hit_tick < 5: result.action = "hit"
+		elif s.tick - fighter.attack_tick < 8: result.action = "shoot" if fighter.weapon == "ranged" else "melee"
+		else: result.action = "aim" if fighter.weapon == "ranged" else "combat_idle"
+		if result.action in ["shoot", "melee"]:
+			result.phase = clampf(float(s.tick - fighter.attack_tick) / 8.0, 0.0, 1.0)
+		elif result.action == "hit":
+			result.phase = clampf(float(s.tick - fighter.hit_tick) / 5.0, 0.0, 1.0)
+		return result
+	if entity.kind == "player":
+		var unarmed: Dictionary = s.get("player_control", {}).get("unarmed", {})
+		if not unarmed.is_empty() and s.tick < int(unarmed.end):
+			result.action = unarmed.kind
+			result.phase = clampf(float(s.tick - unarmed.start) / maxf(1.0, float(unarmed.end - unarmed.start)), 0.0, 1.0)
+			return result
+	if entity.kind=="player" and s.get("player_control",{}).get("running",false) and s.get("player_control",{}).get("running_tick",-1)==s.tick:
+		result.action="run"
+		return result
+	if entity.kind=="player" and not s.get("player_control",{}).get("work",{}).is_empty():
+		var work: Dictionary=s.player_control.work
+		result.action=work.kind; result.target=work.target
+		return result
+	var job: Dictionary = s.get("jobs", {}).get(str(npc.get("job", 0)), {})
+	if not job.is_empty():
+		result.target = job.target
+		result.expected_item = job.item
+		result.expected_quantity = job.quantity
+		match job.state:
+			"WORKING": result.action = "chop" if job.item == "log" else "harvest"
+			"PICKING_UP":
+				result.action = "pickup"
+				result.phase = clampf(float(job.progress) / 6.0, 0, 1)
+			"DEPOSITING":
+				result.action = "drop"
+				result.phase = clampf(float(job.progress) / 6.0, 0, 1)
+	if result.action == "idle":
+		for workshop in s.get("workshops", {}).values():
+			if workshop.worker == entity.id and workshop.active and workshop.get("enabled",true) and npc.get("hunger",0)<60 and npc.get("fatigue",0)<75 and entity.cell == World.Fixtures.interaction_cell(s,workshop.id) and npc.get("goal", "").is_empty() and npc.get("status", "") == "Sawing logs into planks":
+				result.action = "saw"
+				result.target = workshop.id
+		var status: String = npc.get("status", "")
+		var pause_left: int = npc.get("work_pause_until", 0) - s.tick
+		if pause_left > 0 and (status.begins_with("Picking up") or status.begins_with("Putting down")):
+			result.action = "pickup" if status.begins_with("Picking up") else "drop"
+			var duration := 4 if status == "Putting down planks at work" else 6
+			result.phase = clampf(1.0 - float(pause_left) / duration, 0.0, 1.0)
+			result.duration = float(duration) / 10.0
+			if status == "Putting down planks at work":
+				for site in s.get("construction", {}).values():
+					if site.worker != entity.id or site.done: continue
+					result.target_cell = Planner.current_tile(site).get("cell", [])
+					break
+		elif status.begins_with("Building:"):
+			for site in s.get("construction", {}).values():
+				if site.worker != entity.id or site.done or site.get("build_phase", "") != "build": continue
+				var tile := Planner.current_tile(site)
+				if tile.is_empty(): break
+				result.action = "build"
+				result.target_cell = tile.cell
+				result.build_kind = tile.kind
+				result.phase = tile.progress
+				break
+		elif status == "Resting at home": result.action = "rest"
+		elif status == "Ate from communal stores": result.action = "eat"
+	return result
+
+func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
+	cues.clear()
+	wind_strength = 0.4 + float(s.get("weather", {}).get("wind", 25)) / 100.0
+	if previous_tick > s.tick:
+		reset()
+	var first: bool = previous_tick < 0
+	var dt: float = 0.0 if paused else minf(delta, 0.1) * speed
+	time += dt
+	var live_ids: Dictionary = {}
+	for entity in s.entities.values():
+		if not entity.has("cell"):
+			continue
+		var key: String = str(entity.id)
+		if entity.kind == "tree":
+			var logs: int = s.inventories[key].items.get("log", 0)
+			var tree: Dictionary = trees.get(key, {"logs": logs, "fall": -1.0, "hit": -10.0})
+			if tree.logs > 0 and logs == 0 and not first:
+				tree.fall = time
+				cues.append({"kind": "fall", "position": Vector2(entity.cell[0], entity.cell[1]) * CELL})
+			tree.logs = logs
+			trees[key] = tree
+			continue
+		if entity.kind not in ["resident", "player", "raider"]:
+			continue
+		live_ids[key] = true
+		var target := Vector2(entity.cell[0], entity.cell[1]) * CELL
+		var items: Dictionary = s.inventories[key].items
+		if entity.kind=="player" and s.has("player_control"):
+			items={}
+			if s.player_control.held_quantity>0: items[s.player_control.held_item]=s.player_control.held_quantity
+		var pose: Dictionary = actors.get(key, {"position": target, "facing": 1.0, "back": false, "heading": PI / 2.0, "gait": 0.0, "action": "idle", "age": 0.0, "items": items.duplicate(), "handling": "", "handling_age": 1.0, "last_item": "", "last_quantity": 0})
+		var before: Vector2 = pose.position
+		var run_tick: int = s.get("player_control", {}).get("running_tick", -100)
+		var sprinting: bool = entity.kind == "player" and run_tick > 0 and run_tick >= s.tick - 1
+		var jumped: bool = before.distance_to(target) > CELL * 4
+		if jumped:
+			pose.position = target
+		elif not paused:
+			# Match the authoritative tile cadence: five walking cells per second,
+			# ten sprinting cells per second. A faster interpolation reaches each
+			# cell too early and produces a visible stop before the next tick.
+			pose.position = before.move_toward(target, CELL * dt * (10.0 if sprinting else 5.0))
+		# At high simulation speed a frame can skip a corner; never interpolate feet
+		# through a solid fixture/wall while catching up with authoritative movement.
+		if not World.walkable(s,[roundi(pose.position.x/CELL),roundi(pose.position.y/CELL)]):
+			pose.position=target
+			jumped=true
+		var motion: Vector2 = pose.position - before
+		pose.moving = motion.length() > 0.01 and not jumped
+		var old_gait: float = pose.gait
+		if pose.moving:
+			pose.move_direction = motion.normalized()
+			pose.gait += motion.length() / (CELL * (RUN_CYCLE_METERS if sprinting else WALK_CYCLE_METERS))
+			if absf(motion.x) > 0.05: pose.facing = signf(motion.x)
+			pose.back = motion.y < -0.05 and absf(motion.y) > absf(motion.x)
+			if floori((old_gait + 0.00001) * 2) != floori((float(pose.gait) + 0.00001) * 2):
+				cues.append({"kind": "step", "position": pose.position, "actor": entity.id})
+		var state_action := action_for(s, entity)
+		var action: String = state_action.action
+		var look: Vector2 = motion if pose.moving else Vector2.ZERO
+		if action in ["build", "drop"] and not state_action.target_cell.is_empty() and not pose.moving:
+			look = Vector2(state_action.target_cell[0] - entity.cell[0], state_action.target_cell[1] - entity.cell[1])
+		if action in ["aim", "shoot", "melee", "hit", "combat_idle", "chop", "saw", "harvest", "pickup"] and s.entities.has(str(state_action.target)):
+			var target_cell: Array = s.entities[str(state_action.target)].cell
+			var dx: int = target_cell[0] - entity.cell[0]
+			look = Vector2(dx, target_cell[1] - entity.cell[1])
+		if entity.kind == "player" and player_aiming:
+			var aim_vector: Vector2 = player_aim_position - pose.position
+			if aim_vector.length_squared() > 16.0: look = aim_vector
+		if entity.kind == "player" and action in ["punch", "shove"]:
+			var strike: Dictionary = s.player_control.unarmed
+			look = Vector2(strike.direction[0], strike.direction[1])
+		if look.length_squared() > 0.0001:
+			var desired: float = look.angle()
+			# Mouse aim follows exactly; other turns ease across the shortest arc.
+			if first or jumped or (entity.kind == "player" and player_aiming):
+				pose.heading = desired
+			else:
+				pose.heading = lerp_angle(float(pose.get("heading", desired)), desired, clampf(dt * 12.0, 0.0, 1.0))
+		pose.facing = -1.0 if cos(float(pose.heading)) < 0.0 else 1.0
+		pose.back = sin(float(pose.heading)) < -0.35
+		pose.aiming = entity.kind == "player" and player_aiming
+		pose.ready = entity.kind == "player" and player_ready
+		var status: String = s.get("residents", {}).get(key, {}).get("status", "")
+		if status != pose.get("last_status", "") and status == "Ate from communal stores" and not first:
+			pose.eat_until = time + 0.8
+		pose.last_status = status
+		if action == "eat" and time >= float(pose.get("eat_until", 0)):
+			action = "idle"
+		var item: String = ""
+		var quantity: int = 0
+		for candidate in ["log", "plank", "food", "bandage", "antiseptic"]:
+			if int(items.get(candidate, 0)) > 0:
+				item = candidate
+				quantity = items[candidate]
+				break
+		pose.handling_age += dt
+		if not first and not paused and pose.items != items:
+			var old_total: int = 0
+			var new_total: int = 0
+			for value in pose.items.values(): old_total += value
+			for value in items.values(): new_total += value
+			if old_total != new_total:
+				pose.handling = "pickup" if new_total > old_total else "drop"
+				# An authored pickup/drop may have already played before the transfer.
+				pose.handling_age = 1.0 if pose.action == pose.handling else 0.0
+				pose.last_item = item if new_total > old_total else pose.get("cargo_item", "")
+				pose.last_quantity = quantity if new_total > old_total else pose.get("cargo_quantity", 0)
+				cues.append({"kind": "pickup" if new_total > old_total else "drop", "position": pose.position})
+		pose.items = items.duplicate()
+		pose.cargo_item = item
+		pose.cargo_quantity = quantity
+		# Explicit handling phases take precedence; other transfers receive a short follow-through.
+		if pose.handling_age < 0.5 and action == "idle" and not pose.moving:
+			action = pose.handling
+			state_action.phase = pose.handling_age / 0.5
+		if pose.moving and action not in ["punch", "shove", "hit", "stagger", "down"]:
+			action = "run" if sprinting else ("carry" if quantity > 0 else "walk")
+		elif entity.kind == "player" and player_ready and action == "idle":
+			action = "ready"
+		var changed: bool = action != pose.action
+		var old_age: float = pose.age
+		var old_phase: float = pose.get("phase", 0.0)
+		pose.age = (float(state_action.phase) * 0.6 if state_action.phase >= 0 else 0.0) if changed else pose.age + dt
+		pose.action = action
+		pose.phase = clampf(float(pose.age) / 0.6, 0, 1) if state_action.phase >= 0 else fmod(float(pose.age), 1.0)
+		if action in ["punch", "shove", "stagger", "shoot", "melee", "hit"] and state_action.phase >= 0:
+			var duration: float = 1.0
+			match action:
+				"stagger": duration = 1.2
+				"shoot", "melee": duration = 0.8
+				"hit": duration = 0.5 if not s.get("local_combat", {}).get("fighters", {}).get(key, {}).is_empty() else 1.2
+			if changed or float(state_action.phase) + 0.25 < float(pose.get("authored_phase", 0.0)):
+				pose.age = float(state_action.phase) * duration
+			pose.authored_phase = state_action.phase
+			# Blend between authoritative ticks; impact remains on its fixed tick.
+			pose.phase = clampf(maxf(float(state_action.phase), float(pose.age) / duration), 0.0, 1.0)
+		if action == "build":
+			var duration: float = Planner.WORK_PER_TILE / 10.0
+			if changed: pose.age = float(state_action.phase) * duration
+			pose.phase = clampf(pose.age / duration, maxf(0.0, state_action.phase), minf(1.0, state_action.phase + 0.2))
+			if not paused and not first and old_phase < 0.5 and pose.phase >= 0.5:
+				cues.append({"kind": "build", "position": pose.position})
+		elif action in ["pickup", "drop"] and state_action.has("duration"):
+			var duration: float = state_action.duration
+			if changed: pose.age = float(state_action.phase) * duration
+			pose.phase = clampf(maxf(state_action.phase, pose.age / duration), 0.0, 1.0)
+		pose.build_kind = state_action.get("build_kind", "")
+		if action in ["pickup", "drop"] and state_action.phase < 0:
+			pose.phase = clampf(float(pose.age) / 0.6, 0, 1)
+		pose.gait_phase = fmod(float(pose.gait), 1.0)
+		pose.reduced_motion = reduced_motion
+		pose.machine_work = action == "saw" and state_action.target != 0
+		if pose.machine_work: pose.back = true
+		pose.expected_item = state_action.expected_item
+		pose.expected_quantity = state_action.expected_quantity
+		if action in ["chop", "saw", "harvest"] and not paused and not first:
+			var period: float = 1.0 if action == "chop" else (0.6 if action == "saw" else 0.8)
+			pose.phase = fmod(float(pose.age) / period, 1.0)
+			if not changed and floori((old_age / period - 0.5)) < floori((float(pose.age) / period - 0.5)):
+				cues.append({"kind": action, "position": pose.position})
+				if action == "chop" and trees.has(str(state_action.target)):
+					trees[str(state_action.target)].hit = time
+		actors[key] = pose
+	for key in actors.keys():
+		if not live_ids.has(key): actors.erase(key)
+	previous_tick = s.tick
+
+func tree_pose(id: int, point: Vector2) -> Dictionary:
+	var tree: Dictionary = trees.get(str(id), {})
+	var wind: float = sin(time * 0.8 + point.x * 0.003) * 0.7 + sin(time * 1.7 + point.y * 0.005 + id * 0.37) * 0.3
+	var hit_age: float = time - float(tree.get("hit", -10.0))
+	var shake: float = sin(hit_age * 50) * exp(-hit_age * 12) * 3 if hit_age < 0.5 else 0.0
+	var fall: float = -1.0
+	if float(tree.get("fall", -1.0)) >= 0 and time - tree.fall < 1.2:
+		fall = (time - float(tree.fall)) / 1.2
+	return {"sway": wind * wind_strength * (0.5 if reduced_motion else 2.5) + shake, "fall": fall}

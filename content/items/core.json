@@ -1,1 +1,25 @@
-{"version":1,"items":{"log":{"id":"core:item/log","name":"Logs"},"food":{"id":"core:item/food","name":"Food"},"plank":{"id":"core:item/plank","name":"Planks"}}}
+{
+  "version": 1,
+  "items": {
+    "log": {
+      "id": "core:item/log",
+      "name": "Logs"
+    },
+    "food": {
+      "id": "core:item/food",
+      "name": "Food"
+    },
+    "plank": {
+      "id": "core:item/plank",
+      "name": "Planks"
+    },
+    "bandage": {
+      "id": "core:item/bandage",
+      "name": "Bandage"
+    },
+    "antiseptic": {
+      "id": "core:item/antiseptic",
+      "name": "Antiseptic"
+    }
+  }
+}

@@ -10,6 +10,7 @@ func capture() -> void:
 	for tick in range(1600):
 		main.simulation.step()
 	main.selected_id = main.simulation.state.workshops.values()[0].id
+	main.get_node("WorldView").snap_visuals()
 	main.refresh_view()
 	for frame in range(10):
 		await process_frame
@@ -26,6 +27,7 @@ func capture() -> void:
 			var current: Array = s.entities[str(s.player)].cell
 			main.simulation.submit("move_player", {"direction": [cell[0] - current[0], cell[1] - current[1]]})
 			main.simulation.step()
+		main.get_node("WorldView").snap_visuals()
 		main.selected_id = s.home
 		main.get_node("ObserverCamera").position = Vector2(house.cell[0], house.cell[1] - 1) * 24
 		main.get_node("ObserverCamera").zoom = Vector2.ONE * 1.3

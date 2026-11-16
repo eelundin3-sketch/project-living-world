@@ -12,18 +12,16 @@ static func initialize(sim: RefCounted) -> void:
 	Inventory.create(s, store, 3000)
 	Inventory.produce(s, store, "food", 400)
 	Inventory.produce(s, store, "log", 30)
-	var home := World.add_entity(sim, "home", "Reedbank lodge", [170, 42], 2)
-	var farm := World.add_entity(sim, "farm", "Reedbank fields", [190, 54], 2)
+	var home := World.add_entity(sim, "home", "Reedbank lodge", [162, 40], 2)
+	var farm := World.add_entity(sim, "farm", "Reedbank fields", [199, 60], 2)
 	Inventory.create(s, farm, 1500)
 	Inventory.produce(s, farm, "food", 700)
 	s.settlements["2"] = {"id": 2, "name": "Reedbank", "warehouse": store, "home": home, "housing": 12,
 		"population": 10, "policy": "Food exports", "demand": {}, "fidelity": "coarse", "faction": 2}
 	Residents.spawn(sim, 10, 2, [178, 48])
-	for index in range(8):
-		var id := World.add_entity(sim, "tree", "Reedbank willow", [169 + index % 4 * 3, 30 + index / 4 * 4], 2)
-		Inventory.create(s, id, 40)
-		Inventory.produce(s, id, "log", 30)
-	Recipes.add_workshop(sim, 2, [192, 42], store)
+	World.populate_forest(sim, 2, 140, [180, 46])
+	World.populate_dense_groves(sim, 2, 60, [180, 46])
+	Recipes.add_workshop(sim, 2, [197, 45], store)
 	Market.add_market(s, 2)
 	var merchant := World.add_entity(sim, "caravan", "Moss Road carrier", [64, 46], 1)
 	Inventory.create(s, merchant, 80)

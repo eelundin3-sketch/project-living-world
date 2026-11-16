@@ -2,6 +2,8 @@ extends RefCounted
 const World = preload("res://sim/world/world_db.gd")
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const Work = preload("res://sim/production/recipe_system.gd")
+const Nav = preload("res://sim/movement/navigation.gd")
+const WORK_PER_TILE: int = 10
 
 static func initialize(sim: RefCounted) -> void:
 	var s: Dictionary = sim.state
@@ -22,8 +24,10 @@ static func suitable(s: Dictionary, cell: Array, kind: String = "home") -> bool:
 			continue
 		if entity.has("footprint") and rect.intersects(World.building_rect(entity)):
 			return false
-		if entity.kind == "construction" and rect.intersects(World.footprint(entity.cell, "home")):
-			return false
+		if entity.kind == "construction":
+			var site: Dictionary = s.construction.get(str(entity.id), {})
+			var definition: Dictionary = s.building_defs.get(site.get("definition", ""), {})
+			if rect.intersects(World.plot_rect(entity, definition.get("kind", "home"))): return false
 		if rect.has_point(Vector2i(entity.cell[0], entity.cell[1])):
 			return false
 	return true
@@ -33,26 +37,48 @@ static func plan(sim: RefCounted, settlement_id: int, definition: String) -> int
 	if not s.building_defs.has(definition):
 		return 0
 	var town: Dictionary = s.settlements[str(settlement_id)]
-	var home: Array = s.entities[str(town.home)].cell
 	var location: Array = []
-	for radius in range(9, 45, 3):
-		for direction in [[1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [-1, -1]]:
-			var cell: Array = [home[0] + direction[0] * radius, home[1] + direction[1] * radius]
-			if suitable(s, cell, s.building_defs[definition].kind):
-				location = cell
-				break
-		if not location.is_empty():
+	# Street-facing plots preserve the common square and the workshop yard.
+	var store_cell: Array = s.entities[str(town.warehouse)].cell
+	for offset in World.VILLAGE_HOME_PLOTS + [Vector2i(18, 19), Vector2i(-18, 34), Vector2i(18, 34)]:
+		var plot: Array = [store_cell[0] + offset.x, store_cell[1] + offset.y]
+		if suitable(s, plot, s.building_defs[definition].kind):
+			location = plot
 			break
+	if location.is_empty():
+		# Find the nearest usable courtyard before sending a builder far out
+		# along one of the original six search rays.
+		location = _infill_plot(s, store_cell, s.building_defs[definition].kind)
 	if location.is_empty():
 		sim.record(town.name + ": no buildable construction site")
 		return 0
 	var def: Dictionary = s.building_defs[definition]
 	var id := World.add_entity(sim, "construction", "Planned " + def.kind, location, settlement_id)
 	Inventory.create(s, id, def.planks)
-	s.construction[str(id)] = {"id": id, "settlement": settlement_id, "definition": definition,
-		"cost": def.planks, "work_ticks": def.work_ticks, "progress": 0, "worker": 0, "status": "Waiting for planks", "done": false}
-	sim.record(town.name + " plans a " + def.kind + "; needs %d planks" % def.planks)
+	s.entities[str(id)].walls_first = true
+	if def.kind == "home": s.entities[str(id)].layout_shape = "stepped_joined"
+	var stages := World.construction_stages(s.entities[str(id)], def.kind)
+	var total_units: int = 0
+	var built_tiles: Dictionary = {}
+	for stage in stages:
+		total_units += stage.tiles.size()
+		built_tiles[stage.id] = []
+		s.construction[str(id)] = {"id": id, "settlement": settlement_id, "definition": definition,
+		"cost": def.planks, "work_ticks": total_units * WORK_PER_TILE, "progress": 0, "total_units": total_units,
+		"stages": stages, "stage_index": 0, "stage_progress": 0, "tile_work": 0,
+		"built_tiles": built_tiles, "worker": 0, "status": "Waiting for planks", "done": false}
+	sim.record(town.name + " marks a %s plot; needs %d planks for a staged build" % [def.kind, def.planks])
 	return id
+
+static func _infill_plot(s: Dictionary, center: Array, kind: String) -> Array:
+	for radius in range(12, 55):
+		for offset in range(-radius, radius + 1):
+			for direction in [Vector2i(offset, radius), Vector2i(radius, offset), Vector2i(-radius, offset), Vector2i(offset, -radius)]:
+				var cell: Array = [center[0] + direction.x, center[1] + direction.y]
+				var rect := World.footprint(cell, kind).grow(1)
+				if rect.intersects(Rect2i(35, 47, 181, 3)): continue
+				if suitable(s, cell, kind): return cell
+	return []
 
 static func update(sim: RefCounted) -> void:
 	var s: Dictionary = sim.state
@@ -74,8 +100,23 @@ static func update(sim: RefCounted) -> void:
 	for site in s.construction.values():
 		if site.done:
 			continue
-		if not s.residents.has(str(site.worker)):
+		if not site.has("stages"):
+			var planned_entity: Dictionary = s.entities[str(site.id)]
+			var building_kind: String = s.building_defs[site.definition].kind
+			site.stages = World.construction_stages(planned_entity, building_kind)
+			site.stage_index = 0
+			site.stage_progress = 0
+			site.tile_work = 0
+			site.built_tiles = {}
+			site.total_units = 0
+			for stage in site.stages:
+				site.total_units += stage.tiles.size()
+				site.built_tiles[stage.id] = []
+			site.work_ticks = site.total_units * WORK_PER_TILE
+		if not s.residents.has(str(site.worker)) or s.residents[str(site.worker)].health <= 0:
 			site.worker = 0
+			site.build_phase = "fetch"
+			site.tile_work = 0
 			for npc in s.residents.values():
 				if npc.settlement == site.settlement and npc.occupation == "Gatherer" and npc.get("migration", {}).is_empty() and npc.job == 0:
 					npc.occupation = "Builder"
@@ -85,43 +126,178 @@ static func update(sim: RefCounted) -> void:
 			site.status = "Waiting for available builder"
 			continue
 		var npc: Dictionary = s.residents[str(site.worker)]
+		if npc.health <= 0 or s.get("local_combat", {}).get("fighters", {}).has(str(npc.id)): continue
 		if not npc.goal.is_empty() or npc.hunger >= 60 or npc.fatigue >= 75:
 			site.status = "Builder attending to needs"
 			continue
+		if npc.get("work_pause_until", 0) > s.tick:
+			continue
 		var store: int = s.settlements[str(site.settlement)].warehouse
-		var delivered: int = Inventory.amount(s, site.id, "plank")
+		# Include already-used material in the received total, or consuming each
+		# placed tile would make the site mistakenly request its full cost again.
+		var delivered: int = Inventory.amount(s, site.id, "plank") + int(site.get("planks_spent", 0))
 		var carried: int = Inventory.amount(s, npc.id, "plank")
-		if delivered < site.cost:
+		var phase: String = site.get("build_phase", "fetch")
+		if delivered + (carried if phase != "fetch" else 0) < site.cost:
 			if carried == 0:
 				if Work.work_at(s, npc, store):
 					var quantity: int = mini(site.cost - delivered, mini(10, Inventory.amount(s, store, "plank")))
 					if quantity > 0:
 						Inventory.transfer(s, store, npc.id, "plank", quantity)
+						npc.work_pause_until = s.tick + 6
+						npc.status = "Picking up planks"
 					else:
 						site.status = "Waiting for planks from sawmill"
 			else:
 				npc.status = "Hauling planks to construction"
 				if Work.work_at(s, npc, site.id):
 					Inventory.transfer(s, npc.id, site.id, "plank", carried)
+					npc.work_pause_until = s.tick + 6
+					npc.status = "Putting down planks"
 			continue
-		if not Work.work_at(s, npc, site.id):
-			continue
-		site.status = "Building"
-		npc.status = "Building a home"
-		site.progress += 2
-		if site.progress >= site.work_ticks:
-			if not Inventory.consume(s, site.id, "plank", site.cost):
-				site.status = "Missing construction materials"
+		if phase == "return":
+			if not Work.work_at(s, npc, site.id):
+				npc.status = "Returning to construction supplies"
 				continue
-			var def: Dictionary = s.building_defs[site.definition]
-			site.done = true
-			site.status = "Completed"
-			s.entities[str(site.id)].kind = def.kind
-			s.entities[str(site.id)].name = "New " + def.kind
-			World.install_building(s, site.id)
-			s.settlements[str(site.settlement)].housing += int(def.get("housing", 0))
-			if def.has("capacity"):
-				s.inventories[str(site.id)].capacity = def.capacity
-			npc.occupation = "Gatherer"
-			s.completed_buildings += 1
-			sim.record("Finished %s using %d planks and worker time" % [def.kind, site.cost])
+			if carried > 0:
+				var returned := Inventory.transfer(s, npc.id, site.id, "plank", carried)
+				if not returned.ok:
+					site.status = "Waiting for space in the supply pile"
+					continue
+				npc.status = "Putting down planks"
+				npc.work_pause_until = s.tick + 6
+			site.build_phase = "fetch"
+			continue
+		var stage_index: int = site.stage_index
+		if stage_index >= site.stages.size():
+			_finish(sim, site, npc)
+			continue
+		var stage: Dictionary = site.stages[stage_index]
+		var tile_index: int = site.stage_progress
+		if tile_index >= stage.tiles.size():
+			site.stage_index += 1
+			site.stage_progress = 0
+			continue
+		var next_tile: Array = stage.tiles[tile_index]
+		if site.get("build_worker", npc.id) != npc.id:
+			phase = "fetch"
+			site.build_phase = phase
+			site.tile_work = 0
+		site.build_worker = npc.id
+		if phase == "fetch":
+			if not Work.work_at(s, npc, site.id):
+				npc.status = "Returning to construction supplies"
+				continue
+			if carried == 0:
+				var pickup := Inventory.transfer(s, site.id, npc.id, "plank", 1)
+				if not pickup.ok:
+					site.status = "Waiting for construction material"
+					continue
+			site.build_phase = "travel"
+			npc.work_pause_until = s.tick + 6
+			npc.status = "Picking up planks"
+			continue
+		if phase == "travel":
+			if carried == 0:
+				site.build_phase = "fetch"
+				continue
+			if not _work_at_tile(s, npc, site, next_tile):
+				npc.status = "Carrying planks to build site"
+				continue
+			site.build_phase = "build"
+			npc.work_pause_until = s.tick + 4
+			npc.status = "Putting down planks at work"
+			continue
+		if phase != "build":
+			site.build_phase = "fetch"
+			continue
+		if not _work_at_tile(s, npc, site, next_tile):
+			site.build_phase = "travel"
+			continue
+		if stage.id == "walls" and _actor_occupies(s, next_tile):
+			site.status = "Waiting for the wall space to clear"
+			continue
+		site.status = "%s · tile %d/%d" % [stage.label, tile_index + 1, stage.tiles.size()]
+		npc.status = "Building: " + stage.label.to_lower()
+		site.tile_work += 2
+		if site.tile_work < WORK_PER_TILE:
+			continue
+		var completed_units: int = site.progress + 1
+		var spend_target: int = site.cost if completed_units >= site.total_units else int(floor(float(site.cost * completed_units) / site.total_units))
+		var spend_now: int = spend_target - int(site.get("planks_spent", 0))
+		if spend_now > 0 and not Inventory.consume(s, npc.id, "plank", spend_now):
+			site.status = "Missing staged planks"
+			continue
+		site.planks_spent = spend_target
+		site.built_tiles[stage.id].append(next_tile.duplicate())
+		if stage.id == "walls": World.add_constructed_wall(s, site.id, next_tile)
+		if stage.id == "door": s.entities[str(site.id)].door_built = true
+		site.progress = completed_units
+		site.stage_progress += 1
+		site.tile_work = 0
+		site.build_phase = "return"
+		npc.status = "Returning to construction supplies"
+		if site.stage_progress >= stage.tiles.size():
+			site.stage_index += 1
+			site.stage_progress = 0
+
+
+static func current_tile(site: Dictionary) -> Dictionary:
+	var stages: Array = site.get("stages", [])
+	var stage_index: int = site.get("stage_index", 0)
+	if stage_index >= stages.size(): return {}
+	var stage: Dictionary = stages[stage_index]
+	var tile_index: int = site.get("stage_progress", 0)
+	if tile_index >= stage.tiles.size(): return {}
+	return {"cell": stage.tiles[tile_index], "kind": stage.id,
+		"progress": clampf(float(site.get("tile_work", 0)) / WORK_PER_TILE, 0.0, 1.0)}
+
+static func _work_at_tile(s: Dictionary, npc: Dictionary, site: Dictionary, tile: Array) -> bool:
+	var actor: Dictionary = s.entities[str(npc.id)]
+	var current: Array = actor.cell
+	if absi(current[0] - tile[0]) + absi(current[1] - tile[1]) == 1:
+		site.work_stance = current.duplicate()
+		return true
+	if site.get("tile_path_target", []) != tile or site.get("tile_path_revision", -1) != s.world.nav_revision or site.get("tile_path_from", []) != current:
+		var best: Array = []
+		var found: bool = false
+		for offset in [[0, -1], [-1, 0], [1, 0], [0, 1]]:
+			var stance: Array = [tile[0] + offset[0], tile[1] + offset[1]]
+			if not World.walkable(s, stance): continue
+			var route := Nav.request_path(s, current, stance)
+			if route.ok and (not found or route.path.size() < best.size()):
+				best = route.path
+				found = true
+				site.work_stance = stance
+		if not found:
+			site.status = "Waiting for a reachable position beside the build tile"
+			return false
+		site.tile_path = best
+		site.tile_path_target = tile.duplicate()
+		site.tile_path_revision = s.world.nav_revision
+	if not site.get("tile_path", []).is_empty():
+		actor.cell = site.tile_path.pop_front()
+	site.tile_path_from = actor.cell.duplicate()
+	return false
+
+static func _actor_occupies(s: Dictionary, cell: Array) -> bool:
+	for entity in s.entities.values():
+		if entity.get("kind", "") in ["resident", "player", "caravan"] and entity.get("cell", []) == cell:
+			return true
+	return false
+
+static func _finish(sim: RefCounted, site: Dictionary, npc: Dictionary) -> void:
+	var s: Dictionary = sim.state
+	if site.done: return
+	var def: Dictionary = s.building_defs[site.definition]
+	var entity: Dictionary = s.entities[str(site.id)]
+	site.done = true
+	site.status = "Completed"
+	entity.kind = def.kind
+	entity.name = "New " + def.kind
+	World.install_building(s, site.id)
+	s.settlements[str(site.settlement)].housing += int(def.get("housing", 0))
+	if def.has("capacity"): s.inventories[str(site.id)].capacity = def.capacity
+	npc.occupation = "Gatherer"
+	s.completed_buildings += 1
+	sim.record("Finished %s one tile at a time; used %d planks" % [def.kind, site.cost])

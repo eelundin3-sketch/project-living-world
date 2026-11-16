@@ -1,0 +1,19 @@
+{
+  "chunks": 27,
+  "cpu": "Apple M4",
+  "duration_seconds": 30,
+  "engine": "4.6-stable (official)",
+  "frames": 1788,
+  "gpu": "Apple M4",
+  "max_ms": 78.838,
+  "memory_bytes": 40904092,
+  "nodes": 87,
+  "p50_ms": 16.896,
+  "p95_ms": 25.3,
+  "p99_ms": 30.295,
+  "sim_p95_ms": 9.937,
+  "viewport": [
+    1280,
+    720
+  ]
+}

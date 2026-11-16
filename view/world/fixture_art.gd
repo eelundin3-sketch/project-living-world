@@ -1,0 +1,77 @@
+extends RefCounted
+const Furniture = preload("res://view/world/interior_art.gd")
+const Props = preload("res://view/world/prop_art.gd")
+const INK := Color("392b1e")
+static func item(c: Node2D, p: Vector2, kind: String) -> void:
+	match kind:
+		"log": Props.log_piece(c, p + Vector2(-11, 0), p + Vector2(10, -2))
+		"plank": Props.plank(c, p + Vector2(-13, 0), p + Vector2(13, -1))
+		_: Props.supply(c, p, kind)
+
+static func slot(entity: Dictionary, kind: String) -> Vector2:
+	var slot_index := 1 if entity.fixtures.size() > 1 else 0
+	var data: Array = entity.fixtures[slot_index].rect
+	if entity.fixtures[slot_index].kind == "stall":
+		var index: int = maxi(0, entity.sale_items.find(kind))
+		return Vector2(data[0], data[1]) * 24 + Vector2(3 + index * 26, 3)
+	if entity.fixtures[slot_index].kind == "saw":
+		return Vector2(data[0],data[1])*24-Vector2(12,12)+(Vector2(82,35) if kind=="plank" else Vector2(15,12))
+	var index: int = maxi(0,["log","plank","food"].find(kind))
+	return Vector2(data[0],data[1])*24 + Vector2(3+index*30,15)
+static func paint(c: Node2D, entity: Dictionary, stock: Dictionary, phase: float, active: bool, fixture_index: int = 0) -> void:
+	var fixture: Dictionary = entity.fixtures[fixture_index]
+	var data: Array = fixture.rect
+	var p := Vector2(data[0],data[1])*24-Vector2(12,12)
+	if fixture.kind == "saw":
+		var has_rack: bool = entity.fixtures.size() > 1
+		Furniture.workbench(c, p, phase, int(stock.get("log", 0)) if active or not has_rack else 0)
+		if not has_rack:
+			for i in range(mini(5, int(stock.get("plank", 0)))):
+				item(c, p+Vector2(82, 35-i*4), "plank")
+		if active:
+			for i in range(4):
+				var t: float = fmod(phase*0.15+i*0.23,1.0)
+				c.draw_line(p+Vector2(58+t*18,20+t*15),p+Vector2(61+t*18,22+t*15),Color("dcb77a"),1.5)
+	elif fixture.kind == "stall":
+		draw_stall(c, entity, p, stock)
+	elif entity.kind == "construction":
+		# A stack on timber bearers, drawn directly from the site's real inventory.
+		var center := slot(entity, "plank")
+		var quantity: int = stock.get("plank", 0)
+		for side in [-1, 1]:
+			var bearer := Rect2(center + Vector2(side * 15 - 2, 3), Vector2(5, 14))
+			Furniture.slab(c, bearer, Color("725032"))
+		var layers := mini(10, ceili(quantity / 3.0))
+		for layer in range(layers):
+			var width := 34.0 + (layer % 3) * 3.0
+			var board := center + Vector2(0, 7 - layer * 2.8)
+			Props.plank(c, board - Vector2(width * 0.5, 0), board + Vector2(width * 0.5, 0), 3.3,
+				Color("b68e59") if layer % 2 == 0 else Color("c7a16d"))
+		c.draw_string(ThemeDB.fallback_font, center + Vector2(-8, 28), str(quantity), HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color("e9d5a8"))
+	else:
+		Furniture.slab(c,Rect2(p,Vector2(96,48)),Color("775735"))
+		for index in range(3):
+			var kind: String = ["log","plank","food"][index]
+			var quantity: int = int(stock.get(kind,0))
+			for i in range(mini(6,ceili(quantity/5.0))):
+				item(c,slot(entity,kind)+Vector2(0,-i*4),kind)
+			c.draw_string(ThemeDB.fallback_font,p+Vector2(3+index*31,44),str(quantity),HORIZONTAL_ALIGNMENT_LEFT,-1,10,Color("f1dfac"))
+
+static func draw_stall(c: Node2D, entity: Dictionary, p: Vector2, stock: Dictionary) -> void:
+	var timber: bool = "plank" in entity.sale_items
+	var cloth := Color("957358") if timber else Color("6e8677")
+	Furniture.timber(c, Rect2(p + Vector2(0, 3), Vector2(96, 18)), Color("a37a53"), 4)
+	for x in [3, 91]:
+		c.draw_line(p + Vector2(x, -27), p + Vector2(x, 25), INK, 3.3, true)
+		c.draw_line(p + Vector2(x, -26), p + Vector2(x, 23), Color("b08a62"), 1.5, true)
+	for kind in entity.sale_items:
+		for i in range(mini(3, ceili(stock.get(kind, 0) / 4.0))):
+			item(c, slot(entity, kind) + Vector2(0, i * 3 - 5), kind)
+	var edge := PackedVector2Array([p + Vector2(-3, -29), p + Vector2(99, -29), p + Vector2(96, -10), p + Vector2(0, -10)])
+	Props.polygon(c, edge, cloth)
+	for stripe in range(6):
+		var x := 2 + stripe * 16
+		c.draw_rect(Rect2(p + Vector2(x, -28), Vector2(7, 17)), cloth.lightened(0.24))
+	c.draw_line(p + Vector2(0, -11), p + Vector2(96, -11), cloth.darkened(0.25), 2)
+	c.draw_string(ThemeDB.fallback_font, p + Vector2(10, 34), "TIMBER" if timber else "PROVISIONS",
+		HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("f0debb"))

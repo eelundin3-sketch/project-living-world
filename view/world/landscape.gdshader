@@ -1,0 +1,65 @@
+shader_type canvas_item;
+
+// Coordinates in metres keep the field continuous across the entire map.
+uniform vec2 world_origin;
+uniform float terrain_seed;
+uniform sampler2D road_mask : filter_linear, repeat_disable;
+varying vec2 land;
+
+void vertex() {
+	land = (VERTEX + world_origin) / 24.0;
+}
+
+float hash_cell(vec2 p) {
+	vec3 q = fract(vec3(p.xyx) * 0.1031);
+	q += dot(q, q.yzx + 33.33);
+	return fract((q.x + q.y) * q.z);
+}
+
+float field(vec2 p) {
+	vec2 cell = floor(p);
+	vec2 f = fract(p);
+	vec2 blend = f * f * (3.0 - 2.0 * f);
+	return mix(
+		mix(hash_cell(cell), hash_cell(cell + vec2(1.0, 0.0)), blend.x),
+		mix(hash_cell(cell + vec2(0.0, 1.0)), hash_cell(cell + vec2(1.0, 1.0)), blend.x),
+		blend.y);
+}
+
+void fragment() {
+	vec2 p = land + vec2(terrain_seed * 0.013, terrain_seed * 0.017);
+	vec2 warp = vec2(field(p * 0.023), field(p * 0.027 + 34.0)) * 15.0;
+	vec2 warped = p + warp;
+	float masses = field(warped * 0.037) * 0.69 + field(warped * 0.105) * 0.31;
+	float hollow = length((land - vec2(64.0, 47.0)) / vec2(35.0, 27.0));
+	float reedbank = length((land - vec2(180.0, 47.0)) / vec2(34.0, 26.0));
+	float village = 1.0 - smoothstep(0.52, 1.21, min(hollow, reedbank));
+	float upland = 1.0 - smoothstep(0.35, 1.4, length((land - vec2(89.0, 0.0)) / vec2(48.0, 24.0)));
+	float broken_edge = (field(warped * 0.32) - 0.5) * 0.077;
+	float woodland = smoothstep(0.43, 0.545, masses + 0.045 + broken_edge - village * 0.37 - upland * 0.22);
+
+	float ground_grain = field(vec2(p.x * 1.9, p.y * 3.7));
+	float earth_bands = field(warped * vec2(0.27, 0.48));
+	vec3 loam = mix(vec3(0.56, 0.40, 0.22), vec3(0.80, 0.65, 0.39), earth_bands * 0.68 + ground_grain * 0.32);
+	loam = mix(loam, vec3(0.77, 0.64, 0.41), village * 0.42);
+
+	// Small undergrowth patches give the forest texture at overview zoom.
+	vec2 leaf = p * 0.76 + vec2(field(p * 0.62 + 8.0), field(p * 0.71 + 29.0)) * 0.83;
+	vec2 leaf_cell = floor(leaf);
+	vec2 leaf_center = vec2(hash_cell(leaf_cell + 16.0), hash_cell(leaf_cell + 71.0)) * 0.66 + 0.17;
+	vec2 leaf_offset = (fract(leaf) - leaf_center) * vec2(1.0, 1.28);
+	float undergrowth = 1.0 - smoothstep(0.06, 0.61, length(leaf_offset));
+	float green = field(warped * 0.42) * 0.65 + undergrowth * 0.24 + ground_grain * 0.11;
+	vec3 fern = mix(vec3(0.035, 0.13, 0.093), vec3(0.17, 0.31, 0.21), green);
+	vec3 color = mix(loam, fern, woodland);
+	float grid_distance = min(fract(land.x + 0.5), fract(land.y + 0.5));
+	float grid = (1.0 - smoothstep(0.0, 0.04, grid_distance)) * (1.0 - smoothstep(0.05, 0.12, fwidth(land.x)));
+	float track = texture(road_mask, UV).r;
+	float edge_grain = field(p * 0.91 + 13.0);
+	float blend = smoothstep(0.06, 0.91, track + (edge_grain - 0.52) * track * 0.45);
+	vec3 sand = mix(vec3(0.60, 0.48, 0.29), vec3(0.82, 0.73, 0.54), ground_grain * 0.40 + earth_bands * 0.60);
+	float grit = smoothstep(0.69, 0.94, field(p * 10.0));
+	sand *= 1.0 - grit * 0.20;
+	color = mix(color, sand, blend * 0.96);
+	COLOR = vec4(color * (1.0 - grid * 0.065 * (1.0 - blend)), 1.0);
+}

@@ -1,7 +1,8 @@
 extends RefCounted
+const World = preload("res://sim/world/world_db.gd")
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
-const BASE: Dictionary = {"log": 12, "food": 8, "plank": 7}
-const TARGET: Dictionary = {"log": 100, "food": 100, "plank": 100}
+const BASE: Dictionary = {"log": 12, "food": 8, "plank": 7, "bandage": 6, "antiseptic": 12}
+const TARGET: Dictionary = {"log": 100, "food": 100, "plank": 100, "bandage": 30, "antiseptic": 12}
 
 static func initialize(s: Dictionary) -> void:
 	s.accounts = {str(s.player): 1000}
@@ -16,6 +17,50 @@ static func add_market(s: Dictionary, town_id: int) -> void:
 	s.accounts[str(town.warehouse)] = 10000
 	s.money_initial += 10000
 	s.markets[str(town_id)] = {"settlement": town_id, "store": town.warehouse, "last": {}, "history": [], "orders": []}
+
+static func install_stalls(sim: RefCounted) -> void:
+	var s: Dictionary = sim.state
+	if not s.has("routes") or not s.has("markets") or s.world.get("stall_version", 0) >= 1: return
+	for town in s.settlements.values():
+		town.stalls = []
+		var store: Dictionary = s.entities[str(town.warehouse)]
+		for spec in [
+			{"name": "Timber stall", "items": ["plank", "log"], "stock": {"log": 6}, "side": -1},
+			{"name": "Provisions stall", "items": ["food", "bandage", "antiseptic"], "stock": {"food": 18, "bandage": 5, "antiseptic": 3}, "side": 1},
+		]:
+			var cell := _stall_cell(s, store.cell, spec.side)
+			if cell.is_empty(): continue
+			var id := World.add_entity(sim, "market_stall", spec.name, cell, town.id)
+			var stall: Dictionary = s.entities[str(id)]
+			stall.sale_items = spec.items.duplicate()
+			town.stalls.append(id)
+			Inventory.create(s, id, 120)
+			var funds: int = mini(700, s.accounts.get(str(town.warehouse), 0))
+			s.accounts[str(town.warehouse)] -= funds
+			s.accounts[str(id)] = funds
+			for item in spec.stock:
+				var quantity: int = mini(spec.stock[item], Inventory.amount(s, town.warehouse, item))
+				if quantity > 0: Inventory.transfer(s, town.warehouse, id, item, quantity)
+	s.world.stall_version = 1
+
+static func _stall_cell(s: Dictionary, store: Array, side: int) -> Array:
+	for y_offset in [4, 5, 7, 9, 11]:
+		for width in [7, 10, 13, 17]:
+			var x: int = store[0] + side * width
+			var y: int = store[1] + y_offset
+			var rect := Rect2i(x - 1, y, 4, 2)
+			var clear := true
+			for cy in range(y, y + 2):
+				for cx in range(x - 1, x + 3):
+					if not World.walkable(s, [cx, cy]): clear = false
+			for entity in s.entities.values():
+				if entity.kind in ["tree", "farm"] and rect.has_point(Vector2i(entity.cell[0], entity.cell[1])): clear = false
+				if entity.kind == "construction":
+					var site: Dictionary = s.construction.get(str(entity.id), {})
+					var definition: Dictionary = s.building_defs.get(site.get("definition", ""), {})
+					if rect.intersects(World.plot_rect(entity, definition.get("kind", "home"))): clear = false
+			if clear: return [x, y]
+	return []
 
 static func quote(s: Dictionary, town_id: int, item: String, buying: bool) -> int:
 	if not BASE.has(item) or not s.markets.has(str(town_id)):

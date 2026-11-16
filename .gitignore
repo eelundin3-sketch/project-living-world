@@ -1,3 +1,12 @@
 .godot/
 .DS_Store
 builds/
+
+# Local runtime data and credentials
+*.save
+*.save.bak
+*.save.tmp
+controls.cfg
+.env
+.env.*
+!.env.example
