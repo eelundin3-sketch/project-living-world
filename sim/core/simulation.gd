@@ -77,6 +77,7 @@ func start_game(population: int = 5) -> void:
 	Sheriff.install(self)
 	Households.upgrade(self)
 	Chests.ensure_all(self)
+	World.lay_out_woodlands(self)
 	for town in state.settlements.values(): Professions.assign(state, town.id)
 
 func new_id() -> int:
@@ -111,10 +112,24 @@ func step() -> void:
 		Brawl.update(self)
 		ContextActions.update(self)
 		LocalCombat.update(self)
-		if state.tick % 2 == 0 and not state.get("player_path", []).is_empty():
+		var travelling: bool = not state.get("player_path", []).is_empty()
+		# Holding Shift while following a route runs it: a step every tick (three in four when fatigued).
+		var run_route: bool = travelling and _can_run_route()
+		var tired_route: bool = run_route and state.player_health.stamina <= BodyHealth.WINDED_AT
+		if run_route: state.player_control.crouching = false
+		var sneaking_route: bool = travelling and bool(state.get("player_control", {}).get("crouching", false))
+		var route_step: bool = (state.tick % 4 != 3 if tired_route else true) if run_route else (state.tick % 3 == 0 if sneaking_route else state.tick % 2 == 0)
+		if travelling and route_step:
 			var next: Array = state.player_path.pop_front()
 			if World.walkable(state, next):
+				var from_cell: Array = state.entities[str(state.player)].cell
+				state.player_control.last_dir = [signi(next[0] - from_cell[0]), signi(next[1] - from_cell[1])]
 				state.entities[str(state.player)].cell = next
+				if run_route:
+					state.player_control.running = true
+					state.player_control.running_tick = state.tick
+					state.player_health.stamina = maxi(0, state.player_health.stamina - 1)
+				if state.player_path.is_empty(): state.player_control.travel_run = false
 			else:
 				var destination: Array = state.get("player_travel_goal", [])
 				state.player_path = []
@@ -155,6 +170,12 @@ func step() -> void:
 					else:
 						Inventory.produce(state, entity.id, "log", mini(2, Inventory.available(state, entity.id)))
 			record("A new day: rye grew in the fields and woodland grew.")
+
+func _stamina_allows_run() -> bool:
+	return state.player_health.stamina > 0 and not state.player_health.get("exhausted", false)
+
+func _can_run_route() -> bool:
+	return state.has("player_control") and state.has("player_health") and state.player_control.get("travel_run", false) and _stamina_allows_run() and BodyHealth.move_delay(state) == 1 and not Brawl.player_down(state)
 
 func _drain(queue_name: String, is_command: bool) -> void:
 	state[queue_name].sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
@@ -227,6 +248,18 @@ func apply_command(entry: Dictionary) -> void:
 	if entry.kind == "context_action" and state.has("player_control"):
 		ContextActions.request(self, int(entry.payload.get("target", 0)), str(entry.payload.get("action", "")))
 		return
+	if entry.kind=="rummage" and state.has("player_control"):
+		# Opening the inventory: kneel and go through the backpack (purely a pose; it ends on any move).
+		state.player_control.rummaging=bool(entry.payload.get("open",false)) and not Brawl.player_down(state)
+		return
+	if entry.kind=="crouch_toggle" and state.has("player_control"):
+		if Brawl.player_down(state): return
+		state.player_control.crouching=not bool(state.player_control.get("crouching",false))
+		state.player_control.notice="You crouch low and move quietly." if state.player_control.crouching else "You stand up."
+		return
+	if entry.kind=="travel_run" and state.has("player_control"):
+		state.player_control.travel_run=bool(entry.payload.get("run",false))
+		return
 	if entry.kind=="stop_travel": state.player_path=[]; state.player_travel_goal=[]; return
 	if entry.kind in ["interact","hold_item","take_item","person_trade","treat_body","debug_injury"] and state.has("player_control"):
 		match entry.kind:
@@ -243,7 +276,9 @@ func apply_command(entry: Dictionary) -> void:
 		return
 	if entry.kind == "move_player" and state.has("player"):
 		state.player_path = []
-		if state.has("player_control"): state.player_control.pending = {}  # walking by hand cancels a click-to-act walk
+		if state.has("player_control"):
+			state.player_control.pending = {}  # walking by hand cancels a click-to-act walk
+			state.player_control.rummaging = false
 		if state.has("player_control"):
 			if BodyHealth.incapacitated(state) or state.tick<state.player_control.next_move: return
 		var direction: Array = entry.payload.get("direction", [0, 0])
@@ -255,10 +290,16 @@ func apply_command(entry: Dictionary) -> void:
 			var diagonal: bool = direction[0] != 0 and direction[1] != 0
 			if World.walkable(state, next) and (not diagonal or (World.walkable(state, [cell[0] + direction[0], cell[1]]) and World.walkable(state, [cell[0], cell[1] + direction[1]]))):
 				if state.has("player_control"):
-					var requested_run: bool=bool(entry.payload.get("run",false)) and state.player_health.stamina>0 and BodyHealth.move_delay(state)==1
+					var requested_run: bool=bool(entry.payload.get("run",false)) and _stamina_allows_run() and BodyHealth.move_delay(state)==1
+					# Sprinting from a crouch stands you up; otherwise a crouch is a slow, quiet walk.
+					if requested_run: state.player_control.crouching=false
+					var sneaking: bool=bool(state.player_control.get("crouching",false))
+					# Fatigued (orange stamina) running drops every other stride, so the pace visibly flags.
+					var tired_run: bool=requested_run and state.player_health.stamina<=BodyHealth.WINDED_AT and state.tick%2==0
 					state.player_control.running=requested_run
 					state.player_control.running_tick=state.tick if requested_run else -1
-					state.player_control.next_move=state.tick+(1 if requested_run else maxi(2, BodyHealth.move_delay(state))+(1 if diagonal else 0))
+					state.player_control.last_dir=[direction[0],direction[1]]
+					state.player_control.next_move=state.tick+(2 if tired_run else (1 if requested_run else maxi(3 if sneaking else 2, BodyHealth.move_delay(state)+(1 if sneaking else 0))+(1 if diagonal else 0)))
 					if requested_run: state.player_health.stamina=maxi(0,state.player_health.stamina-1)
 				state.entities[str(state.player)].cell = next
 	elif entry.kind == "cancel_job" and state.has("jobs"):

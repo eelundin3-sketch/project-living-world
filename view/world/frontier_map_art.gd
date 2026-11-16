@@ -34,8 +34,17 @@ static func tree(c: Node2D, p: Vector2, logs: int, id: int, pose: Dictionary = {
 		# there, leaning the way its id decides, until its wood has been gathered.
 		_stump(c, p)
 		var direction: float = 1.0 if id % 2 == 0 else -1.0
-		var eased: float = fall * fall * (3.0 - 2.0 * fall) if fall < 1.0 else 1.0
-		var angle: float = direction * (eased * eased * 0.6 + eased * 0.85)
+		# A felled tree creaks over slowly, gathers speed like anything falling, and keeps
+		# accelerating until it hits the ground, where it bounces once and settles.
+		var lie := 1.42
+		var angle: float
+		if fall < 0.8:
+			var u := fall / 0.8
+			angle = lie * (0.06 * u + 0.94 * u * u * u)
+		else:
+			var v := (fall - 0.8) / 0.2
+			angle = lie - 0.09 * sin(v * PI) * (1.0 - 0.4 * v)
+		angle *= direction
 		c.draw_set_transform(p + Vector2(0, -6), angle)
 		c.draw_texture_rect(_tree_texture(id, pose), Rect2(Vector2(-40, -88), Vector2(80, 100)), false, _tree_tint(id, pose))
 		c.draw_set_transform(Vector2.ZERO)

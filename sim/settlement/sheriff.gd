@@ -19,6 +19,23 @@ static func install(sim: RefCounted) -> void:
 		Inventory.produce(s, id, "shell", RACK_SHELLS)
 		town.office = id
 
+## Every sheriff wears the badge and goes by "Sheriff <surname>", so the law is easy to spot.
+static func dress(s: Dictionary) -> void:
+	var Outfits = load("res://sim/entities/outfits.gd")
+	var keys: Array = s.get("residents", {}).keys()
+	keys.sort()
+	for key in keys:
+		var npc: Dictionary = s.residents[key]
+		if npc.occupation != "Sheriff" or npc.health <= 0: continue
+		var entity: Dictionary = s.entities[str(npc.id)]
+		if not String(entity.name).begins_with("Sheriff "):
+			var parts: PackedStringArray = String(entity.name).split(" ")
+			entity.name = "Sheriff " + parts[parts.size() - 1]
+			load("res://sim/entities/names.gd").used(s)[entity.name] = true   # so reloads see the same pool
+		if not npc.get("sheriff_dressed", false):
+			Outfits.dress(s, npc.id, Outfits.SHERIFF)
+			npc.sheriff_dressed = true
+
 static func patrol_points(s: Dictionary, npc: Dictionary) -> Array:
 	var town: Dictionary = s.settlements[str(npc.settlement)]
 	var store: Array = s.entities[str(town.warehouse)].cell

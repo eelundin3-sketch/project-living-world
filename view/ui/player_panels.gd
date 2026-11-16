@@ -4,6 +4,10 @@ const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const Market = preload("res://sim/economy/market.gd")
 const BodyDiagram = preload("res://view/ui/body_diagram.gd")
 const Outfits = preload("res://sim/entities/outfits.gd")
+const InventoryGrid = preload("res://view/ui/inventory_grid.gd")
+const HealthWindow = preload("res://view/ui/health_window.gd")
+var health_window: Control
+var inventory_grid: Control
 var simulation: RefCounted
 var mode: String = ""
 var selected_part: String = "head"
@@ -81,6 +85,10 @@ func _ready() -> void:
 	summary = Label.new()
 	summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	status_column.add_child(summary)
+	inventory_grid = InventoryGrid.new()
+	inventory_grid.simulation = simulation
+	inventory_grid.visible = false
+	status_column.add_child(inventory_grid)
 	healthy_toggle = CheckButton.new()
 	healthy_toggle.text = "Show healthy areas"
 	healthy_toggle.toggled.connect(func(_active: bool) -> void: refresh())
@@ -110,6 +118,17 @@ func _ready() -> void:
 		simulation.submit("treat_body", {"part": treatment_part, "action": TREATMENTS[id]}))
 	panel.add_child(treatment_menu)
 	notice=Label.new(); notice.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART; notice.custom_minimum_size.y=42; notice.add_theme_color_override("font_color",Color("dec58e")); column.add_child(notice)
+	# The health screen is its own window with its own look.
+	var health_anchor := Control.new()
+	health_anchor.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	health_anchor.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(health_anchor)
+	health_window = HealthWindow.new()
+	health_window.simulation = simulation
+	health_window.visible = false
+	health_anchor.add_child(health_window)
+	health_window.close_requested.connect(func() -> void: show_mode(""))
+	health_window.minimize_requested.connect(minimize_window)
 	show_mode("")
 func _build_meter() -> void:
 	meter_column = VBoxContainer.new()
@@ -158,7 +177,7 @@ func _open_treatment(part: String, from_button: bool = false) -> void:
 	treatment_menu.popup(Rect2i(point, Vector2i.ZERO))
 
 func scrolls_health_list_at(point: Vector2) -> bool:
-	return mode == "health" and visible and scroll.get_v_scroll_bar().visible and scroll.get_global_rect().has_point(point)
+	return mode == "health" and visible and health_window != null and health_window.scrolls_list_at(point)
 
 func minimize_window() -> void:
 	if mode.is_empty(): return
@@ -176,10 +195,17 @@ func restore_window() -> void:
 func show_mode(value: String) -> void:
 	treatment_menu.hide()
 	var opening_health := value == "health" and mode != "health"
+	if simulation != null and (value == "inventory") != (mode == "inventory"):
+		simulation.submit("rummage", {"open": value == "inventory"})
 	mode = value
 	minimized = false
 	dock_button.visible = false
 	visible = not mode.is_empty()
+	panel.visible = mode != "health"
+	if health_window != null:
+		health_window.visible = mode == "health"
+		health_window.simulation = simulation
+	shade.color = Color(0.02, 0.03, 0.035, 0.55) if mode == "health" else Color(0.02, 0.03, 0.025, 0.62)
 	if simulation == null: return
 	if opening_health and simulation.state.has("player_health"):
 		var parts: Dictionary = simulation.state.player_health.parts
@@ -196,16 +222,15 @@ func toggle(value: String) -> void:
 func select_part(part: String) -> void:
 	if not Health.PARTS.has(part): return
 	selected_part = part
+	if health_window != null: health_window.select_part(part)
 	refresh()
-	if mode == "health" and rows[part].visible:
-		scroll.ensure_control_visible.call_deferred(rows[part])
 func add_button(parent: Node,text: String,callback: Callable) -> Button:
 	var button:=Button.new(); button.text=text; button.pressed.connect(callback); parent.add_child(button); return button
 func rebuild() -> void:
 	for child in list.get_children(): list.remove_child(child); child.queue_free()
 	rows.clear(); wound_labels.clear(); collect_buttons.clear(); cached_mode=mode
 	var is_health := mode == "health"
-	var half_size := Vector2(264, 251) if is_health else Vector2(430, 325)
+	var half_size := Vector2(264, 251) if is_health else (Vector2(305, 350) if mode == "inventory" else Vector2(430, 325))
 	panel.offset_left = -half_size.x
 	panel.offset_right = half_size.x
 	panel.offset_top = -half_size.y
@@ -213,39 +238,11 @@ func rebuild() -> void:
 	panel.add_theme_stylebox_override("panel", health_style if is_health else standard_style)
 	shade.color = Color(0.03, 0.04, 0.045, 0.27) if is_health else Color(0.02, 0.03, 0.025, 0.62)
 	if is_health:
-		empty_wounds = Label.new()
-		empty_wounds.text = "No injuries to treat."
-		list.add_child(empty_wounds)
-		for part in Health.PARTS:
-			var button := add_button(list, "", func() -> void: select_part(part))
-			button.custom_minimum_size.y = 44
-			button.toggle_mode = true
-			var selected_style := StyleBoxFlat.new()
-			selected_style.bg_color = Color("363c40")
-			selected_style.set_corner_radius_all(3)
-			button.add_theme_stylebox_override("pressed", selected_style)
-			button.add_theme_stylebox_override("hover_pressed", selected_style)
-			button.gui_input.connect(func(event: InputEvent) -> void:
-				if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
-					button.accept_event()
-					_open_treatment(part))
-			var labels := VBoxContainer.new()
-			labels.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			labels.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-			labels.offset_left = 9
-			labels.offset_top = 3
-			labels.add_theme_constant_override("separation", 0)
-			button.add_child(labels)
-			var name_label := Label.new()
-			name_label.text = _part_name(part)
-			labels.add_child(name_label)
-			var wound := Label.new()
-			wound.add_theme_font_size_override("font_size", 13)
-			labels.add_child(wound)
-			rows[part] = button
-			wound_labels[part] = wound
+		pass   # drawn by the health window
 	elif mode in ["loot", "wardrobe"]:
 		loot_signature = ""   # rows are built from the live contents in _refresh_loot
+	elif mode == "inventory":
+		pass   # the grid draws itself
 	else:
 		for item in ["log","plank","food","rye","bandage","antiseptic","shell","shotgun","tool","ore"]:
 			var row:=HBoxContainer.new(); list.add_child(row)
@@ -269,22 +266,31 @@ func refresh() -> void:
 		last_nonce=pc.ui_nonce; target=pc.ui_target; mode=str(pc.get("ui_kind","trade")); loot_signature=""; minimized=false; dock_button.visible=false; visible=true
 	if mode.is_empty(): return
 	if cached_mode!=mode: rebuild()
+	panel.visible = mode != "health"
+	health_window.visible = mode == "health" and not minimized
 	dock_button.visible = minimized
 	var is_health := mode == "health"
 	diagram.visible = is_health
+	inventory_grid.visible = mode == "inventory"
+	inventory_grid.simulation = simulation
+	scroll.visible = mode != "inventory"
 	meter_column.visible = is_health
 	healthy_toggle.visible = is_health
 	treatment_bar.visible = is_health
 	if is_health:
-		_refresh_health(s)
+		health_window.simulation = simulation
+		if health_window.selected_part != selected_part and Health.PARTS.has(selected_part): health_window.selected_part = selected_part
+		health_window.refresh(s)
+		selected_part = health_window.selected_part
 	elif mode in ["loot", "wardrobe"]:
 		_refresh_loot(s, pc)
 	elif mode=="inventory":
 		title.text="YOUR INVENTORY · I"
 		var inv: Dictionary=s.inventories[str(s.player)]
 		summary.text="Backpack: %d / %d   ·   %d coins\nHolding: %s" % [Inventory.used(inv),inv.capacity,s.accounts.get(str(s.player),0),"nothing" if pc.held_item.is_empty() else "%d %s" % [pc.held_quantity,pc.held_item]]
-		for item in rows: rows[item].text="%s   × %d" % [item.capitalize(),Inventory.amount(s,s.player,item)]
-		detail.text="Hold an item, close this panel, then press F to put it down.\nBandages and antiseptic are used from the H health screen."
+		inventory_grid.refresh(s)
+		inventory_grid.queue_redraw()
+		detail.text="Double-click clothing to wear it, or a worn piece to take it off. Hold an item, close this, then press F to put it down."
 		notice.text=pc.notice
 	else:
 		var e: Dictionary=s.entities.get(str(target),{})
@@ -305,69 +311,6 @@ func _part_name(part: String) -> String:
 func _is_injured(wound: Dictionary) -> bool:
 	return wound.damage > 0 or wound.infection > 0 or wound.bandage != "none"
 
-func _refresh_health(s: Dictionary) -> void:
-	var health: Dictionary = s.player_health
-	title.text = "Health"
-	var value := Health.overall(s)
-	var pain := Health.pain(s)
-	health_meter.value = value
-	health_meter.tooltip_text = "Overall health · %d%%" % value
-	var condition := "Healthy"
-	var injuries: Array[String] = []
-	for part in Health.PARTS:
-		var wound: Dictionary = health.parts[part]
-		if _is_injured(wound):
-			injuries.append(part)
-	if not injuries.is_empty(): condition = "Minor injuries" if value >= 90 else ("Injured" if value >= 65 else "Severe injuries")
-	if Health.incapacitated(s): condition = "Critical injuries"
-	summary.text = "Overall body status
-%s · %d%%
-%s · Stamina %d/%d" % [
-		condition, value, "No pain" if pain == 0 else "Pain %d/100" % pain,
-		health.stamina, health.stamina_max,
-	]
-	diagram.parts = health.parts
-	diagram.selected = selected_part
-	diagram.player_id = s.player
-	diagram.outfit = Outfits.worn(s, s.player)
-	diagram.queue_redraw()
-	empty_wounds.visible = injuries.is_empty() and not healthy_toggle.button_pressed
-	for part in Health.PARTS:
-		var data: Dictionary = health.parts[part]
-		var statuses: PackedStringArray = []
-		var color := Color("bcc4c3")
-		if data.bandage == "dirty":
-			statuses.append("Dirty bandage")
-			color = Color("e5a271")
-		elif data.bandage == "clean":
-			statuses.append("Bandaged")
-			color = Color("9dd391")
-		elif data.wound != "none":
-			statuses.append(data.wound.capitalize())
-			color = Color("e4adb1")
-		if data.bleeding:
-			statuses.append("Bleeding")
-			color = Color("f29996")
-		if data.infection > 0:
-			statuses.append("Infection %d%%" % data.infection)
-			if not data.bleeding and data.bandage != "dirty": color = Color("e5a271")
-		var label: Label = wound_labels[part]
-		label.text = "Healthy" if statuses.is_empty() else " · ".join(statuses)
-		label.add_theme_color_override("font_color", color)
-		rows[part].visible = healthy_toggle.button_pressed or injuries.has(part)
-		rows[part].set_pressed_no_signal(part == selected_part)
-	var limb: Dictionary = health.parts[selected_part]
-	detail.text = "%s · %d%% damage   |   %d bandages · %d antiseptic" % [
-		_part_name(selected_part), limb.damage, Inventory.amount(s, s.player, "bandage"),
-		Inventory.amount(s, s.player, "antiseptic"),
-	]
-	treatment_button.disabled = not health.treatment.is_empty()
-	notice.text = health.notice
-	if not health.treatment.is_empty():
-		notice.text += "  %.1f seconds remaining." % (maxi(0, health.treatment.finish - s.tick) / 10.0)
-
-## The search / chest / wardrobe window: live rows for what is worn and what is carried, each with
-## the buttons that act on it. Rebuilt only when the contents change.
 func _refresh_loot(s: Dictionary, pc: Dictionary) -> void:
 	var e: Dictionary = s.entities.get(str(target), {})
 	if e.is_empty(): show_mode(""); return

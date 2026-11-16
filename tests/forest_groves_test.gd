@@ -37,7 +37,7 @@ func _initialize() -> void:
 	older.world.forest_version = 2
 	var migrated := Sim.new()
 	migrated.restore(older)
-	check(migrated.state.world.forest_version == 3 and Checks.validate(migrated.state).is_empty(), "Older saves upgrade with accounted forest growth")
+	check(migrated.state.world.forest_version == 4 and Checks.validate(migrated.state).is_empty(), "Older saves upgrade with accounted forest growth")
 	for e in migrated.state.entities.values():
 		if e.get("kind", "") == "tree" and e.id >= next_before:
 			check(not protected_plot.has_point(Vector2i(e.cell[0],e.cell[1])), "Migration preserves active construction plots")

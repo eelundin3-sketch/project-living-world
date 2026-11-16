@@ -13,6 +13,7 @@ const BottomBar = preload("res://view/ui/bottom_bar.gd")
 const PerfOverlay = preload("res://view/ui/perf_overlay.gd")
 const ContextMenu = preload("res://view/ui/context_menu.gd")
 const ContextActions = preload("res://sim/player/context_actions.gd")
+const MainMenu = preload("res://view/ui/main_menu.gd")
 const CELL: float = 24.0
 var player_panels: CanvasLayer
 var world_audio: Node2D
@@ -28,6 +29,8 @@ var map_mode: bool = false
 var map_return_zoom: Vector2 = Vector2(2, 2)
 var map_return_follow: bool = true
 var pending_binding: String = ""
+var last_left_press: int = -10000
+var last_left_position: Vector2 = Vector2.ZERO
 var save_path: String = "user://living_world.save"
 var aiming: bool = false
 var pointer_held: bool = false
@@ -36,6 +39,10 @@ var moodles: Control
 var bottom_bar: Control
 var perf: Control
 var context_menu: Control
+var menu: CanvasLayer
+var menu_active: bool = false
+var menu_time: float = 0.0
+var intro_tween: Tween
 var last_right_press: int = -10000
 var last_right_position: Vector2 = Vector2.ZERO
 
@@ -86,13 +93,65 @@ func _ready() -> void:
 	$ObserverCamera.set_process(false)
 	selected_id = simulation.state.player
 	refresh_view()
+	call_deferred("_maybe_open_menu")
+
+## The title screen appears only when the game is launched normally (tests add this scene by hand).
+func _maybe_open_menu() -> void:
+	if get_tree().current_scene != self: return
+	menu_active = true
+	menu = MainMenu.new()
+	add_child(menu)
+	menu.start_requested.connect(_start_from_menu)
+	menu.quit_requested.connect(func() -> void: get_tree().quit())
+	_set_hud_visible(false)
+	follow_player = false
+	$ObserverCamera.zoom = Vector2.ONE * 0.6
+	$ObserverCamera.position = _menu_camera(0.0)
+
+var hud_was_visible: Dictionary = {}
+func _set_hud_visible(shown: bool) -> void:
+	for node in [moodles, bottom_bar, perf]:
+		if node != null:
+			if not shown: hud_was_visible[node.get_instance_id()] = node.visible
+			node.visible = bool(hud_was_visible.get(node.get_instance_id(), true)) if shown else false
+			if shown and node.visible:
+				node.modulate.a = 0.0
+				create_tween().tween_property(node, "modulate:a", 1.0, 0.6)
+	$DebugHUD.visible = shown
+	if not shown: player_panels.show_mode("")
+
+## A slow drift over the countryside around the first town.
+func _menu_camera(t: float) -> Vector2:
+	return Vector2(66, 54) * CELL + Vector2(sin(t * 0.045) * 1150.0, sin(t * 0.031 + 1.0) * 560.0)
+
+## Start: fly down to the player and zoom in; control is handed over once the camera has landed.
+func _start_from_menu() -> void:
+	var player_key := str(simulation.state.player)
+	var cell: Array = simulation.state.entities[player_key].cell
+	var landing: Vector2 = $WorldView.motion.actors.get(player_key, {}).get("position", Vector2(cell[0], cell[1]) * CELL)
+	intro_tween = create_tween()
+	intro_tween.tween_property($ObserverCamera, "position", landing, 2.2).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	intro_tween.parallel().tween_property($ObserverCamera, "zoom", Vector2.ONE * 0.9, 2.2).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	intro_tween.tween_property($ObserverCamera, "zoom", Vector2.ONE * 2.0, 1.6).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
+	intro_tween.tween_callback(_finish_intro)
+
+func _finish_intro() -> void:
+	menu_active = false
+	follow_player = true
+	intro_tween = null
+	if menu != null: menu.queue_free()
+	menu = null
+	_set_hud_visible(true)
 
 func _process(delta: float) -> void:
 	if perf != null: perf.sample(delta)
+	if menu_active and intro_tween == null:
+		menu_time += delta
+		$ObserverCamera.position = _menu_camera(menu_time)
 	var direction := Vector2(
 		Input.get_action_strength("walk_right") - Input.get_action_strength("walk_left"),
 		Input.get_action_strength("walk_down") - Input.get_action_strength("walk_up"))
-	if player_panels.visible: direction=Vector2.ZERO
+	if player_panels.visible or menu_active: direction=Vector2.ZERO
 	if follow_player:
 		# Commands execute on the next tick. Queue at the end of the preceding
 		# tick so the two-tick walking cadence has no extra idle tick.
@@ -104,11 +163,16 @@ func _process(delta: float) -> void:
 			last_input_tick = simulation.state.tick+1
 	else:
 		$ObserverCamera.position += direction.limit_length() * 480 * delta / $ObserverCamera.zoom.x
+	# Holding Shift while a route is being followed (double-click, or walking up to a target) runs it.
+	var route_active: bool = not simulation.state.get("player_path", []).is_empty()
+	if route_active and Input.is_key_pressed(KEY_SHIFT) != bool(simulation.state.player_control.get("travel_run", false)):
+		simulation.submit("travel_run", {"run": Input.is_key_pressed(KEY_SHIFT)})
 	var started := Time.get_ticks_usec()
 	var advanced: int = clock.advance(delta, simulation)
 	if advanced > 0:
 		tick_ms = float(Time.get_ticks_usec() - started) / 1000.0 / advanced
-	$WorldView.motion.player_aiming = (aiming or pointer_held) and not player_panels.visible
+	var shotgun_equipped: bool = simulation.state.get("shotgun", {}).get("equipped", false)
+	$WorldView.motion.player_aiming = (aiming or (pointer_held and not shotgun_equipped)) and not player_panels.visible and not map_mode
 	$WorldView.motion.player_ready = pointer_held and not player_panels.visible
 	$WorldView.motion.player_aim_position = get_global_mouse_position()
 	action_pointer.active = pointer_held and not player_panels.visible
@@ -205,6 +269,7 @@ func handle_action(kind: String) -> void:
 	refresh_view()
 
 func _input(event: InputEvent) -> void:
+	if menu_active: return
 	# Handle zoom before modal UI panels can consume trackpad/mouse scroll events.
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and not event.pressed:
 		aiming = false
@@ -219,11 +284,12 @@ func _input(event: InputEvent) -> void:
 		$ObserverCamera.adjust_zoom(event.factor); get_viewport().set_input_as_handled()
 
 func _unhandled_input(event: InputEvent) -> void:
+	if menu_active: return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT:
 		if event.pressed:
 			# Two quick right-clicks on the same spot: walk there by the shortest route.
 			var now := Time.get_ticks_msec()
-			if now - last_right_press < 380 and event.position.distance_to(last_right_position) < 30.0 and not player_panels.visible and not map_mode and follow_player:
+			if not simulation.state.get("shotgun", {}).get("equipped", false) and now - last_right_press < 380 and event.position.distance_to(last_right_position) < 30.0 and not player_panels.visible and not map_mode and follow_player:
 				var spot := get_global_mouse_position()
 				simulation.submit("walk_to", {"cell": [roundi(spot.x / CELL), roundi(spot.y / CELL)]})
 				context_menu.close()
@@ -246,13 +312,23 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		pointer_held = true
-		if aiming and not player_panels.visible and not clock.paused:
+		if aiming and not player_panels.visible and not clock.paused and not map_mode:
 			if simulation.state.get("shotgun", {}).get("equipped", false): _submit_shot()
 			else: _submit_strike("punch")
 		elif not player_panels.visible:
 			selected_id = $WorldView.pick(get_global_mouse_position())
 			refresh_view()
-			_open_context_menu(selected_id, event.position)
+			var now_left := Time.get_ticks_msec()
+			if selected_id == 0 and now_left - last_left_press < 380 and event.position.distance_to(last_left_position) < 30.0 and not map_mode and follow_player:
+				# Two quick left-clicks on open ground: walk there by the shortest route (Shift runs).
+				var spot_left := get_global_mouse_position()
+				simulation.submit("walk_to", {"cell": [roundi(spot_left.x / CELL), roundi(spot_left.y / CELL)]})
+				context_menu.close()
+				last_left_press = -10000
+			else:
+				last_left_press = now_left
+				last_left_position = event.position
+				_open_context_menu(selected_id, event.position)
 	if event is InputEventMouseButton:
 		$WorldView.queue_redraw()
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -260,9 +336,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_I: handle_action("inventory")
 			KEY_H: handle_action("health")
 			KEY_E: simulation.submit("eat")
-			KEY_X: simulation.submit("shotgun_toggle")
 			KEY_M: toggle_map()
 			KEY_C: simulation.submit("context_action", {"target": simulation.state.player, "action": "wardrobe"})
+			KEY_X: simulation.submit("crouch_toggle")
 			KEY_T: simulation.submit("rotate_furniture")
 			KEY_G: simulation.submit("rearrange_furniture")
 			KEY_R: simulation.submit("shotgun_reload")

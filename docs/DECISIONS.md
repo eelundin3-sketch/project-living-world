@@ -396,3 +396,33 @@ populations remain intact when the new-game default changes.
 - **Not done:** extra craftsmen (carpenter etc.) exist as a named trade with no
   production chain; objects facing "up" reuse the "down" art; the Windows/Linux
   exports were not rebuilt.
+
+
+## 2026-11-16 — Character proportions and drawn contours
+
+The existing 2D vector puppet remains the presentation model. This redesign uses
+29 px hip height, 49 px chest height and 60.5 px head height, with the existing world
+scale and foot anchor. The longer leg proportion and open resting arm pose make
+clothing and limbs readable without widening the character's collision footprint.
+The eight facing directions and existing pose blending remain in place.
+
+Cloth is drawn from two convex, rounded bone panels; their geometric union supplies
+one exterior ink outline. This avoids self-intersecting sleeve polygons when an
+arm folds back on itself or is foreshortened. Shading is flat and restrained rather
+than circular specular highlights. All artwork is original code-native vector art;
+no external assets, plugins or simulation/save contracts were added.
+
+The health diagram already derives its regions from the figure's joints. Tests
+now verify that the revised proportions fit the panel and its hands and feet
+remain individually selectable. World movement, inventory and collision stay in
+the authoritative simulation.
+
+
+### Character follow-up: neck and sprint recovery — 2026-11-16
+
+The head now sits 2.5 canvas pixels lower and the exposed neck is shortened; the
+health diagram's neck selection follows the new position. During sprint swing,
+the heel first travels 8 pixels farther behind toe-off, then folds up and recovers
+forward. Two cubic curves preserve the planted-foot horizontal velocity at
+lift-off and landing. The previous extra 10% reach at landing was removed so the
+cycle wraps continuously. Walking speed, stamina and simulation movement are unchanged.

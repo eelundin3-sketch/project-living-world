@@ -7,14 +7,14 @@ const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const SLOTS: Array[String] = ["hat", "vest", "shirt", "pants", "boots"]
 const SLOT_NAMES := {"hat": "Hat", "vest": "Vest", "shirt": "Shirt", "pants": "Trousers", "boots": "Boots"}
 const NAMES := {
-	"hat": ["Sun hat", "Brown hat", "Dark hat"],
-	"vest": ["Olive vest", "Drab vest", "Rust vest", "Moss vest"],
+	"hat": ["Sun hat", "Brown hat", "Dark hat", "Sheriff's hat"],
+	"vest": ["Olive vest", "Drab vest", "Rust vest", "Moss vest", "Sheriff's vest"],
 	"shirt": ["Cream shirt", "Tan shirt", "Sage shirt", "Sand shirt"],
 	"pants": ["Tan trousers", "Grey trousers", "Dark trousers"],
 	"boots": ["Brown boots", "Black boots"]}
 const COLORS := {
-	"hat": [Color("d3a35a"), Color("bf9558"), Color("4f453a")],
-	"vest": [Color("968057"), Color("887b57"), Color("a07551"), Color("8c9371")],
+	"hat": [Color("d3a35a"), Color("bf9558"), Color("4f453a"), Color("3a2c22")],
+	"vest": [Color("968057"), Color("887b57"), Color("a07551"), Color("8c9371"), Color("5a3b27")],
 	"shirt": [Color("d7d0ad"), Color("c8b086"), Color("a5ab8c"), Color("d5bc91")],
 	"pants": [Color("b58c54"), Color("7d7f78"), Color("4a463d")],
 	"boots": [Color("694722"), Color("2c2823")]}
@@ -47,6 +47,11 @@ static func color(item: String, fallback: Color = UNDERWEAR) -> Color:
 	return colors[variant_of(item) % colors.size()]
 
 ## The outfit implied by an id: matches the look people had before outfits existed.
+## The law's clothes: a dark sheriff's hat, a leather vest with the star, dark trousers and boots.
+const SHERIFF := {"hat": "hat:3", "vest": "vest:4", "shirt": "shirt:1", "pants": "pants:2", "boots": "boots:1"}
+static func is_sheriff_gear(item: String) -> bool:
+	return item == SHERIFF.hat or item == SHERIFF.vest
+
 static func default_for(id: int, player: bool = false) -> Dictionary:
 	var hatless: bool = not player and posmod(id, 4) == 1
 	return {"hat": "" if hatless else key("hat", 0 if player else 1 + posmod(id, 2)),
@@ -56,6 +61,9 @@ static func default_for(id: int, player: bool = false) -> Dictionary:
 static func worn(s: Dictionary, id: int) -> Dictionary:
 	var stored: Dictionary = s.get("outfits", {}).get(str(id), {})
 	return stored if not stored.is_empty() else default_for(id, id == s.get("player", -1))
+
+static func dress(s: Dictionary, id: int, outfit: Dictionary) -> void:
+	_store(s, id, outfit.duplicate())
 
 static func _store(s: Dictionary, id: int, outfit: Dictionary) -> void:
 	if not s.has("outfits"): s.outfits = {}

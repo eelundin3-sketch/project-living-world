@@ -47,6 +47,8 @@ static func options(s: Dictionary, id: int) -> Array:
 				result.append(_opt("trade", "Talk / trade", "talk"))
 				result.append(_opt("punch", "Punch", "fist"))
 				result.append(_opt("shove", "Shove", "fist"))
+			if not npc.is_empty() and int(npc.get("bleeding_until", 0)) > s.tick:
+				result.append(_opt("bandage", "Bandage wound", "heart", Inventory.amount(s, s.player, "bandage") > 0, "No bandages"))
 			result.append(_opt("examine", "Look at", "eye"))
 		"tree":
 			var logs: int = int(_items(s, id).get("log", 0))
@@ -184,7 +186,7 @@ static func update(sim: RefCounted) -> void:
 		pc.pending = {}
 		perform(sim, id, str(pending.action))
 	elif s.player_path.is_empty() or s.tick >= int(pending.repath):
-		pending.repath = s.tick + 12
+		pending.repath = s.tick + (5 if pc.get("travel_run", false) else 10)
 		var from: Array = s.entities[str(s.player)].cell
 		var best: Array = []
 		var best_distance := 9999
@@ -228,6 +230,12 @@ static func perform(sim: RefCounted, id: int, action: String) -> void:
 				Households.wake(s, sleeper)
 				sleeper.anger = mini(100, int(sleeper.get("anger", 0)) + 6)
 			pc.notice = "%s wakes up, grumbling." % e.name
+		"bandage":
+			var patient: Dictionary = s.residents.get(str(id), {})
+			if not patient.is_empty() and int(patient.get("bleeding_until", 0)) > s.tick and Inventory.consume(s, s.player, "bandage", 1):
+				patient.bleeding_until = 0
+				pc.notice = "You bind %s's wound. The bleeding stops." % e.name
+			else: pc.notice = "There is nothing to bandage."
 		"punch", "shove":
 			var from: Array = s.entities[str(s.player)].cell
 			var direction: Array = [signi(e.cell[0] - from[0]) * 1000, signi(e.cell[1] - from[1]) * 1000]

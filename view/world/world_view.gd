@@ -24,6 +24,9 @@ var font: Font = ThemeDB.fallback_font
 var motion := Director.new()
 var fixture_motion := Fixtures.new()
 var background: Node2D
+var shadows: Node2D
+var sun_overcast: float = 0.0
+var roofs: Array[Rect2] = []
 var landscape: ColorRect
 var landscape_region := Rect2()
 var landscape_seed: int = -1
@@ -43,6 +46,13 @@ class Background extends Node2D:
 	var projector: Node2D
 	func _draw() -> void:
 		projector.draw_static(self)
+
+## Sun shadows for everything that stands up: drawn above the ground and buildings' floors,
+## below trees and people.
+class ShadowLayer extends Node2D:
+	var projector: Node2D
+	func _draw() -> void:
+		projector.draw_shadows(self)
 
 ## Large, slow-changing ground art (the market plaza, one crop plot) is painted once into a
 ## texture and shown as a sprite. Thousands of small shapes cost real time to submit every
@@ -146,6 +156,10 @@ func _ready() -> void:
 	background.projector = self
 	background.z_index = -1
 	add_child(background)
+	shadows = ShadowLayer.new()
+	shadows.projector = self
+	shadows.z_index = -1
+	add_child(shadows)
 
 func animate(delta: float, paused: bool, speed: int) -> void:
 	if simulation == null:
@@ -163,6 +177,8 @@ func animate(delta: float, paused: bool, speed: int) -> void:
 	var weather: Dictionary = simulation.state.get("weather", {})
 	var overcast: float = _weather_amount(weather, "rain") * 0.17 + _weather_amount(weather, "snow") * 0.10 + _weather_amount(weather, "fog") * 0.13
 	daylight.color = Color("8797b0").lerp(Color("fff1d5"), light).darkened(overcast)
+	sun_overcast = overcast
+	shadows.queue_redraw()
 	refresh_age += delta
 	var camera := get_viewport().get_camera_2d()
 	if camera != null and (camera.position.distance_to(last_camera) > BACKGROUND_MARGIN * 0.4 or camera.zoom != last_zoom or refresh_age > 1.0):
@@ -704,6 +720,112 @@ func draw_decor(node: Node2D, decor: Decor) -> void:
 
 ## Below this zoom the view is a map: per-object nodes are dropped and trees are simple canopies.
 const FAR_ZOOM: float = 0.35
+
+## The sun's shadow for a point one pixel tall, in screen pixels, and how dark shadows are.
+## Morning sun in the east throws long shadows to the left; they shorten and swing north (up the
+## screen) towards noon, then lengthen to the right through the afternoon and fade at dusk.
+func sun_shadow(tick: int) -> Dictionary:
+	var day: float = float(tick % 14400) / 14400.0
+	var elevation: float = sin((day - 0.25) * TAU)          # matches the daylight colour cycle
+	var arc: float = clampf((day - 0.25) / 0.5, 0.0, 1.0)   # 06:00 east .. 18:00 west
+	var direction := Vector2(-cos(arc * PI), -0.42 * sin(arc * PI))
+	var angle: float = asin(clampf(elevation, 0.0, 1.0)) * 1.05
+	var length: float = clampf(cos(angle) / maxf(0.05, sin(angle)), 0.35, 3.4)
+	var strength: float = 0.30 * smoothstep(0.0, 0.16, elevation) * clampf(1.0 - sun_overcast * 3.2, 0.15, 1.0)
+	return {"vector": Vector2(direction.x, direction.y * 0.55) * length, "strength": strength}
+
+## A soft ellipse laid along the shadow direction.
+func _shadow_blob(canvas: Node2D, center: Vector2, along: Vector2, length: float, width: float, color: Color) -> void:
+	var axis: Vector2 = along.normalized() if along.length() > 0.001 else Vector2.RIGHT
+	var normal := axis.orthogonal()
+	var points := PackedVector2Array()
+	for i in range(18):
+		var a := float(i) / 18.0 * TAU
+		points.append(center + axis * cos(a) * length + normal * sin(a) * width)
+	_shadow_polygon(canvas, points, color)
+
+## Fills a shadow shape, cutting away any part that lies on a building's floor.
+func _shadow_polygon(canvas: Node2D, points: PackedVector2Array, color: Color) -> void:
+	var pieces: Array = [points]
+	var extent := Rect2(points[0], Vector2.ZERO)
+	for point in points: extent = extent.expand(point)
+	for roof in roofs:
+		if not roof.intersects(extent): continue
+		var cut := PackedVector2Array([roof.position, Vector2(roof.end.x, roof.position.y), roof.end, Vector2(roof.position.x, roof.end.y)])
+		var remaining: Array = []
+		for piece in pieces:
+			for part in Geometry2D.clip_polygons(piece, cut): remaining.append(part)
+		pieces = remaining
+	for piece in pieces:
+		# Holes come back wound the other way round; skip them.
+		if (piece as PackedVector2Array).size() >= 3 and (pieces.size() == 1 or Geometry2D.is_polygon_clockwise(piece) == Geometry2D.is_polygon_clockwise(points)):
+			canvas.draw_colored_polygon(piece, color)
+
+func draw_shadows(canvas: Node2D) -> void:
+	if simulation == null or is_far(): return
+	var s: Dictionary = simulation.state
+	var sun := sun_shadow(int(s.tick))
+	var strength: float = sun.strength
+	if strength < 0.01: return
+	var cast: Vector2 = sun.vector
+	var tone := Color(0.08, 0.10, 0.14, strength)
+	var soft := Color(0.08, 0.10, 0.14, strength * 0.55)
+	var bounds := view_bounds().grow(220)
+	# Interiors are under a roof: no sunlight, so no sun shadows fall on building floors.
+	roofs.clear()
+	for entity in s.entities.values():
+		if entity.has("footprint"):
+			var fp := World.building_rect(entity)
+			var area := Rect2(Vector2(fp.position) * CELL - Vector2.ONE * CELL / 2, Vector2(fp.size) * CELL)
+			if bounds.intersects(area): roofs.append(area)
+	for entity in s.entities.values():
+		if not entity.has("cell"): continue
+		var p := Vector2(entity.cell[0], entity.cell[1]) * CELL
+		match entity.get("kind", ""):
+			"tree":
+				if not bounds.has_point(p): continue
+				var logs: int = int(s.inventories.get(str(entity.id), {}).get("items", {}).get("log", 0))
+				if logs <= 0 or entity.get("felled", false):
+					continue
+				var dead: bool = entity.get("dead", false)
+				# Trunk, then the crown's shadow thrown out along the sun line.
+				var foot := p + Vector2(0, -2)
+				_shadow_polygon(canvas, PackedVector2Array([foot + cast.orthogonal().normalized() * 3.0, foot - cast.orthogonal().normalized() * 3.0, foot + cast * 46.0 - cast.orthogonal().normalized() * 1.6, foot + cast * 46.0 + cast.orthogonal().normalized() * 1.6]), tone)
+				var crown := foot + cast * 64.0
+				var spread: float = 15.0 if dead else 27.0
+				_shadow_blob(canvas, crown, cast, spread + 7.0 * cast.length(), spread * 0.82, tone)
+				_shadow_blob(canvas, crown + cast * 6.0, cast, (spread + 7.0 * cast.length()) * 0.7, spread * 0.6, soft)
+			"ore":
+				if entity.has("rock_rect"):
+					var r: Array = entity.rock_rect
+					_building_shadow(canvas, Rect2(Vector2(r[0], r[1]) * CELL - Vector2(12, 12), Vector2(r[2], r[3]) * CELL), 34.0, cast, tone, bounds)
+			"caravan":
+				if bounds.has_point(p): _shadow_blob(canvas, p + cast * 14.0, cast, 20.0 + 9.0 * cast.length(), 12.0, tone)
+		if entity.has("footprint"):
+			var fp := World.building_rect(entity)
+			_building_shadow(canvas, Rect2(Vector2(fp.position) * CELL - Vector2.ONE * CELL / 2, Vector2(fp.size) * CELL), 46.0, cast, tone, bounds)
+	# People: a body-long shadow from the feet, plus a small dark contact patch.
+	for key in motion.actors:
+		var pose: Dictionary = motion.actors[key]
+		var feet: Vector2 = pose.position
+		if not bounds.has_point(feet): continue
+		var action: String = pose.get("action", "idle")
+		var tall: float = 42.0 * (0.45 if action in ["down", "rest"] else (0.7 if action in ["fall", "getup"] else 1.0 - 0.3 * clampf(float(pose.get("sneak", 0.0)), 0.0, 1.0)))
+		_shadow_blob(canvas, feet + Vector2(0, 1), Vector2.RIGHT, 7.5, 3.0, Color(0.05, 0.06, 0.08, 0.16 + strength * 0.4))
+		_shadow_blob(canvas, feet + cast * tall * 0.5, cast, maxf(5.0, tall * cast.length() * 0.5 + 3.0), 5.5, tone)
+
+## A wall-high block's shadow: the footprint swept along the sun line, minus the footprint itself.
+func _building_shadow(canvas: Node2D, rect: Rect2, height: float, cast: Vector2, tone: Color, bounds: Rect2) -> void:
+	if not bounds.intersects(rect.grow(height * 3.5)): return
+	var offset := cast * height
+	var corners := PackedVector2Array([rect.position, Vector2(rect.end.x, rect.position.y), rect.end, Vector2(rect.position.x, rect.end.y)])
+	var swept := PackedVector2Array()
+	for corner in corners:
+		swept.append(corner)
+		swept.append(corner + offset)
+	var hull := Geometry2D.convex_hull(swept)
+	for piece in Geometry2D.clip_polygons(hull, corners):
+		if piece.size() >= 3: _shadow_polygon(canvas, piece, tone)
 
 func is_far() -> bool:
 	var camera := get_viewport().get_camera_2d()

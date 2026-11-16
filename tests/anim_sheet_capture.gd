@@ -19,10 +19,10 @@ func run() -> void:
 			for i in range(8):
 				var figure := Character.new(); holder.add_child(figure); figure.setup(0, true, false)
 				figure.scale = Vector2.ONE * 2.1
-				var anchor := Vector2(75 + i * 150, 150 + r * 175)
+				var anchor := Vector2(75 + i * 150, 165 + r * 175)
 				if action in ["down", "rest"]: anchor += Vector2(-6, -14)
 				var phase: float = float(i) / 8.0
-				figure.set_pose({"position": anchor, "heading": heading, "action": action, "moving": moving, "gait_phase": phase if moving else 0.0, "phase": phase,
+				figure.set_pose({"position": anchor, "heading": heading, "action": action, "moving": moving, "run_blend": 1.0 if action == "run" else 0.0, "gait_phase": phase if moving else 0.0, "phase": phase,
 					"cargo_item": "log" if action in ["carry", "pickup", "drop"] else "", "cargo_quantity": 2 if action in ["carry", "pickup", "drop"] else 0, "slung": action == "idle", "build_kind": "wall"})
 			var label := Label.new(); label.text = rows[r].capitalize(); label.position = Vector2(8, 44 + r * 175); label.add_theme_color_override("font_color", Color("2a1d12")); holder.add_child(label)
 		await process_frame; await RenderingServer.frame_post_draw

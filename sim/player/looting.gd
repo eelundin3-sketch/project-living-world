@@ -32,6 +32,22 @@ static func open(s: Dictionary, id: int, kind: String = "loot") -> void:
 static func _victim_robbed(s: Dictionary, id: int) -> void:
 	var npc: Dictionary = s.residents.get(str(id), {})
 	if npc.is_empty(): return
+	var asleep: bool = not npc.get("sleeping", {}).is_empty() and npc.get("knock", {}).is_empty()
+	if asleep:
+		# A sleeper only feels the hands in their pockets if you are not sneaking.
+		if bool(s.get("player_control", {}).get("crouching", false)):
+			s.player_control.notice += " They sleep on."
+			return
+		var Households = load("res://sim/entities/households.gd")
+		var Brawl = load("res://sim/player/brawl.gd")
+		Households.wake(s, npc)
+		npc.anger = 75
+		npc.offences = 2
+		npc.last_offence = s.tick
+		Brawl.engage(s, npc, "beat")
+		s.player_control.notice = "%s wakes up and catches you stealing!" % s.entities[str(id)].name
+		if s.has("factions"): Society.remember(s, id, "robbed", s.player, "The traveller went through my things.", -20)
+		return
 	npc.grudge = true   # they will remember when they come round
 	if s.has("factions"): Society.remember(s, id, "robbed", s.player, "The traveller went through my things.", -20)
 

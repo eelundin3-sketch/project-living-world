@@ -29,7 +29,7 @@ static func toggle(s: Dictionary) -> String:
 
 static func start_reload(s: Dictionary) -> String:
 	var gun: Dictionary = s.shotgun
-	if not gun.equipped: return "Ready the shotgun first (X)."
+	if not gun.equipped: return "Ready the shotgun first (its hotbar key)."
 	if gun.loaded >= CAPACITY: return "The shotgun is full."
 	if Inventory.amount(s, s.player, "shell") < 1: return "You have no shells."
 	gun.reloading = true

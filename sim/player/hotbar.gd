@@ -1,6 +1,6 @@
 extends RefCounted
 ## Four quick-access slots (keys 1-4). A slot names an inventory item; using it readies
-## that item: the shotgun is raised, anything else is taken in hand. Using the active
+## that item: the shotgun is carried, anything else is taken in hand. Using the active
 ## slot again puts the item away.
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const Shotgun = preload("res://sim/player/shotgun.gd")
@@ -48,7 +48,7 @@ static func assign(s: Dictionary, slot: int, item: String) -> String:
 	return "Slot %d cleared." % (slot + 1) if item == "" else "%s placed in slot %d." % [item.capitalize(), slot + 1]
 
 ## Selects a slot (exactly one is always selected, slot 1 to begin with) and puts its item in
-## hand: a shotgun is raised, anything else is held, an empty slot means empty hands. Pressing
+## hand: a shotgun is carried, anything else is held, an empty slot means empty hands. Pressing
 ## the selected slot again keeps it selected; only choosing another slot changes the selection.
 static func use(s: Dictionary, slot: int) -> String:
 	if not s.has("hotbar") or slot < 0 or slot >= SLOTS: return ""

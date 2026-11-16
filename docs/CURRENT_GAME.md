@@ -49,8 +49,10 @@ identities and population. The compact HUD reports Alder Hollow's local count.
   garden in the morning (06:00-07:30) and evening (17:30-19:30), then go back to
   their trade. Hungry residents eat at home first. Adults pair off and have
   children while there is room.
-- **You.** E eats, Q drinks at a well barrel, X/R/click use a shotgun taken from the
-  sheriff's office rack (F at the rack). The top-left circles show how you are doing.
+- **You.** E eats, Q drinks at a well barrel, and F at the sheriff's office rack takes a
+  shotgun. X equips it and R reloads. Hold right mouse to raise the shotgun, then
+  press left mouse while aiming to fire. It stays in your hands as you walk.
+  The top-left circles show how you are doing.
 
 ## What is stored and where
 
@@ -103,6 +105,7 @@ See the [screenshot gallery](SCREENSHOTS.md) for examples. All images live under
 | Example | Capture |
 |---|---|
 | [Regional landscape](screenshots/world-landscape.png), [larger village](screenshots/village-design.png), [cutaway lodge](screenshots/room-design.png) | [village design](../tests/village_design_capture.gd) |
+| [Character detail](screenshots/character-detail.png), [gameplay close-up](screenshots/character-gameplay.png) | [detail and gameplay capture](../tests/character_detail_capture.gd) |
 | [Character turnaround](screenshots/character-design.png), [sprint and handling animation](screenshots/character-motion.gif) | [turnaround](../tests/character_design_capture.gd), [motion frames](../tests/character_motion_capture.gd) |
 | [Health menu](screenshots/player-health.png), [inventory](screenshots/player-inventory.png) | [player panels](../tests/player_panels_capture.gd) |
 | [Object detail](screenshots/prop-detail.png), [machine](screenshots/working-machine.png), [stock handling](screenshots/stockpile-handling.png) | [prop design](../tests/prop_design_capture.gd), [live fixtures](../tests/fixture_capture.gd) |

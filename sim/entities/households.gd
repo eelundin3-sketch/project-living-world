@@ -270,7 +270,7 @@ static func bed_info(s: Dictionary, npc: Dictionary) -> Dictionary:
 				best = [x, y]
 				best_distance = distance
 	if best.is_empty(): return {}
-	return {"lie": lie, "approach": best, "rot": int(bed.get("rot", 3))}
+	return {"lie": lie, "approach": best, "rot": int(bed.get("rot", 3)), "rect": rect.duplicate()}
 
 ## Gets a sleeper out of bed (woken by morning, hunger, or a fight).
 static func wake(s: Dictionary, npc: Dictionary) -> void:

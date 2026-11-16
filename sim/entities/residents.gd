@@ -186,7 +186,7 @@ static func _need_action(sim: RefCounted, npc: Dictionary) -> void:
 					npc.goal = ""
 					return
 				s.entities[str(npc.id)].cell = bed.lie.duplicate()
-				npc.sleeping = {"lie": bed.lie, "approach": bed.approach, "rot": bed.rot, "night": Needs.is_night(s), "since": s.tick}
+				npc.sleeping = {"lie": bed.lie, "approach": bed.approach, "rot": bed.rot, "bed_rect": bed.get("rect", []), "night": Needs.is_night(s), "since": s.tick}
 				npc.status = "Sleeping in bed"
 			if s.tick % 10 == 0: npc.fatigue = maxi(0, npc.fatigue - 1)
 			var minute: int = (s.tick / 10) % 1440

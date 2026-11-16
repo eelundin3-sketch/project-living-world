@@ -1,5 +1,130 @@
 # Changelog
 
+## Title screen, sheriffs, backpack, beds, crouching, forests and sun shadows — 2026-11-16
+
+- **Title screen.** Launching the game opens a menu (Start Game, Options, Quit
+  Game) over the live world while the camera drifts slowly across the map.
+  Start fades the menu, flies the camera down to the player and zooms in; you
+  take control once it lands. Options is a placeholder layout (not wired up).
+- **Crouch (X).** Hips sink, the trunk leans in and the arms come up; walking
+  crouched is a slower, shorter, quieter stride. Crouching eases down and back up
+  instead of snapping. Sprinting stands you up. Robbing a sleeper while crouched
+  doesn't wake them; standing up, they wake and fight. The shotgun no longer uses
+  X (ready it from its hotbar key).
+- **Idle life.** People standing still breathe and shift their weight.
+- **Rifle low ready.** With the gun equipped but not aimed, the stock sits at the
+  right side of the chest and the barrel angles down across the body.
+- **Backpack and inventory.** The player wears a backpack. Opening the inventory
+  makes them kneel, swing the pack onto the ground, open it and dig through it;
+  closing packs it up, puts it back on and stands them up.
+- **Sheriffs.** Each sheriff is called "Sheriff <surname>" and wears a dark
+  cattleman hat, a leather vest with a gold star, and carries a slung shotgun.
+- **Beds.** Sleepers lie centred on the mattress under the blanket; they sit on
+  the edge, swing in and lie back, and get up the same way in reverse.
+- **Forests.** Around 1,070 trees now form real woods around Alder Hollow and
+  Reedbank, kept clear of houses, doors, workshops, the square, fields and roads.
+  Old saves keep their timber (moved away from buildings, not added).
+- **Sun shadows.** Trees, buildings, the iron rock, carts and people cast
+  shadows from the sun: long to the left in the morning, short and to the north
+  at noon, long to the right in the evening, gone at night. No shadows fall on
+  building floors (they are under a roof).
+
+## Health window, bruises and smoother reactions — 2026-11-16
+
+- New health window: vitals across the top (health, pain, bleeding, stamina),
+  your own figure with wounds marked where they are, injury cards with status
+  pills, and a detail panel with large treatment buttons that show supplies and
+  say why an action is unavailable. While treating, a progress card replaces the
+  buttons and the figure acts it out.
+- Self-treatment is animated in the world too: the hurt arm is held up while the
+  other hand winds the bandage on (or dabs antiseptic, or unwinds a dressing);
+  leg wounds make the character crouch, head wounds bring both hands up.
+- Bandaging needs a bandage in the inventory, and nothing can be treated while
+  unconscious (being knocked down also interrupts a treatment).
+- Punches are blunt damage: they bruise the body part they land on (mostly the
+  face and body) instead of cutting; only a blow to the face can draw blood.
+- Hit and stagger reactions snap the trunk and head back with the feet planted
+  instead of rotating the whole figure. People who die now fall forward with the
+  full fall; felled trees creak over, accelerate, and bounce once on landing.
+- Lying and falling legs are kept straight and parallel.
+
+## Forward falls in eight directions — 2026-11-16
+
+- Every fall is now a forward fall along the direction of the blow (or of the run
+  that ended in a collapse): a knocked trunk, a stumbling step, knees giving way,
+  arms thrown up over the head, hands hitting the ground, the chest landing with a
+  small rebound, then lying face down with the arms stretched out overhead.
+- Getting up is a full sequence: hands under the shoulders, a push-up, knees drawn
+  in to hands-and-knees, sitting back to kneel, one foot planted, and pushing up
+  off the front knee to stand on the same spot.
+- The poses are 3D keyframes projected along the fall direction, so the same
+  animation plays correctly in all eight directions; the head, coat and boots turn
+  with the trunk instead of the whole figure folding over like a flat cutout.
+- The fall now takes 1.4 s and the get-up 2.6 s (was 1.0 s and 2.0 s).
+- Review sheets: `docs/screenshots/animation-falls.png` and
+  `docs/screenshots/animation-getup.png` (`tests/fall_sheet_capture.gd`).
+
+## Fights, stamina and inventory — 2026-11-16
+
+- A shove and a punch now irritate equally. The first offence sends the villager
+  after the player to shove them down and walk away; a second one (within about
+  five minutes) is answered with a beating that ends when the player's health
+  bar falls below 20%. The health bar now weighs head and torso more heavily.
+- Villagers fall unconscious when their health drops below 20% (no more
+  punch-count rule). Falling is one continuous stumble-and-drop animation, and
+  the get-up is a staged push-up, kneel and stand.
+- Bleeding drops blood on the ground until bandaged; villagers' cuts can be
+  bandaged from the click menu.
+- Hold Shift to run a click-to-walk route or the walk to an action target.
+  Double left-click open ground to set a route (double right-click still works).
+- Stamina: at the orange part of the bar the run turns laboured and slower; at
+  zero the player falls forward, gets up winded, and cannot sprint again until
+  stamina is back to halfway. Heavy breathing plays until then.
+- The inventory is a 6x6 grid with hat, shirt, trousers and shoes squares on
+  its left for quick dressing and undressing.
+
+## Walking foot roll — 2026-11-16
+
+- Boots land heel first, flatten, then roll over the toes on push-off. The
+  shin follows the boot through the ankle bend.
+
+## Walking stride — 2026-11-16
+
+- Steps land closer to the hips, pass beneath the body and extend behind it
+  before the heel lifts. The knee bends as the foot swings forward.
+
+## Shorter shotgun and lowered carry — 2026-11-16
+
+- Shortened the shotgun artwork on the character by 25%.
+- The equipped shotgun stays in both hands during movement. Hold right mouse to
+  raise it and press left mouse while aiming to fire. Releasing right mouse
+  returns to the lowered pose. Movement and recoil can play together.
+
+## Shorter neck and stronger running kick — 2026-11-16
+
+- Lowered the head and shortened the visible neck, including its health-screen selection.
+- Sprinting now extends the trailing leg farther back, raises the recovering heel,
+  and returns the foot smoothly to the next landing without a cycle-wrap jump.
+- Refreshed character screenshots and the motion preview; rebuilt both Mac apps.
+
+## Drawn character redesign — 2026-11-16
+
+- Rebalanced the figure with longer legs, a defined waist, visible neck, slimmer
+  sleeves and relaxed hands beside the body. Foot anchors and world collision are unchanged.
+- Replaced overlapping oval limbs with curved cloth silhouettes and restrained
+  cel shading. Elbows and knees use fabric folds; tightly folded limbs keep a
+  valid joined outline through work, combat and sprint poses.
+- Redrew the face with almond-shaped eyes, brows, a softer profile, swept hair,
+  ears and small facial details. Added a shaped hat crown, hatband, stitched brim,
+  shirt collar, waistcoat pockets, buttons, back strap, boot shafts, soles and laces.
+- The same artwork is used by the player, villagers, raiders and the health diagram;
+  clothing colours and removable pieces still follow the character's actual outfit.
+- Refreshed the turnaround, motion preview, health/inventory screenshots, and added
+  a [detail sheet](screenshots/character-detail.png) and
+  [gameplay close-up](screenshots/character-gameplay.png).
+- Added a headless character-art regression test to the standard test runner.
+  macOS release and debug exports rebuilt; Windows/Linux exports not rebuilt.
+
 ## Rye, households, trades, shotgun, needs and names — 2026-11-16
 
 - **Farming.** Fields and household gardens grow rye through six visible stages

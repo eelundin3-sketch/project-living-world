@@ -83,6 +83,7 @@ static func assign(s: Dictionary, settlement: int) -> void:
 				ratio = shortfall
 		if best == "~": break
 		s.residents[str(free.pop_front())].occupation = best
+	if s.has("settlements"): load("res://sim/settlement/sheriff.gd").dress(s)
 
 static func gathers(npc: Dictionary, target_kind: String) -> bool:
 	return TARGETS.get(npc.occupation, []).has(target_kind)

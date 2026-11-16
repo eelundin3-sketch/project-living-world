@@ -1,4 +1,5 @@
 extends Control
+const ItemIcons = preload("res://view/ui/item_icons.gd")
 ## Bottom-of-screen controls: the stamina bar and four-slot hotbar with the inventory
 ## and health buttons (bottom centre), and the clock with time-lapse controls (bottom right).
 signal action(kind: String)
@@ -133,51 +134,7 @@ func _draw() -> void:
 
 ## Small vector pictograms for hotbar items, drawn around `c`.
 func _icon(item: String, c: Vector2, alpha: float) -> void:
-	var light := Color("efe3c6", alpha)
-	var dark := Color("3b2a1d", alpha)
-	match item:
-		"shotgun":
-			draw_colored_polygon(PackedVector2Array([c + Vector2(-22, 2), c + Vector2(-6, -3), c + Vector2(-4, 3), c + Vector2(-18, 8)]), Color("a8743c", alpha))
-			draw_rect(Rect2(c + Vector2(-6, -4), Vector2(11, 7)), Color("5f666a", alpha))
-			draw_line(c + Vector2(4, -1), c + Vector2(23, -1), Color("c9ccc4", alpha), 3.0)
-			draw_line(c + Vector2(2, 3), c + Vector2(16, 3), Color("8a9094", alpha), 2.0)
-			draw_rect(Rect2(c + Vector2(6, 2), Vector2(8, 4)), Color("a8743c", alpha))
-		"shell":
-			draw_rect(Rect2(c + Vector2(-5, -9), Vector2(10, 18)), Color("b2392e", alpha))
-			draw_rect(Rect2(c + Vector2(-5, 5), Vector2(10, 4)), Color("d9b45a", alpha))
-			draw_rect(Rect2(c + Vector2(-5, -9), Vector2(10, 18)), dark, false, 1.2)
-		"tool":
-			draw_line(c + Vector2(-10, 10), c + Vector2(8, -8), Color("8a5a30", alpha), 4.0)
-			draw_colored_polygon(PackedVector2Array([c + Vector2(2, -14), c + Vector2(14, -6), c + Vector2(10, -1), c + Vector2(-1, -9)]), Color("aab0b4", alpha))
-		"bandage":
-			draw_circle(c, 11, light)
-			draw_circle(c, 5, Color("b98c6a", alpha))
-			draw_arc(c, 11, 0, TAU, 20, dark, 1.4)
-			draw_line(c + Vector2(-11, 0), c + Vector2(-17, 7), light, 4.0)
-		"antiseptic":
-			draw_rect(Rect2(c + Vector2(-7, -4), Vector2(14, 15)), Color("5a8fb0", alpha))
-			draw_rect(Rect2(c + Vector2(-3, -11), Vector2(6, 8)), Color("d8d2c0", alpha))
-			draw_rect(Rect2(c + Vector2(-7, -4), Vector2(14, 15)), dark, false, 1.2)
-		"food":
-			draw_circle(c + Vector2(-5, 2), 8, Color("c98f4b", alpha))
-			draw_circle(c + Vector2(5, 2), 8, Color("c98f4b", alpha))
-			draw_arc(c + Vector2(0, 2), 12, PI, TAU, 14, dark, 1.2)
-		"rye":
-			for x in [-6, 0, 6]:
-				draw_line(c + Vector2(x, 12), c + Vector2(x, -2), Color("b59a4a", alpha), 2.0)
-				draw_line(c + Vector2(x, -1), c + Vector2(x, -12), Color("e6bf5a", alpha), 4.0)
-		"log":
-			draw_rect(Rect2(c + Vector2(-14, -6), Vector2(28, 13)), Color("8a6338", alpha))
-			draw_circle(c + Vector2(14, 0), 6.5, Color("c9a06a", alpha))
-			draw_rect(Rect2(c + Vector2(-14, -6), Vector2(28, 13)), dark, false, 1.2)
-		"plank":
-			draw_rect(Rect2(c + Vector2(-15, -4), Vector2(30, 8)), Color("c7a16d", alpha))
-			draw_rect(Rect2(c + Vector2(-15, -4), Vector2(30, 8)), dark, false, 1.2)
-		"ore":
-			draw_colored_polygon(PackedVector2Array([c + Vector2(-12, 6), c + Vector2(-9, -6), c + Vector2(2, -11), c + Vector2(12, -2), c + Vector2(9, 7)]), Color("7d7a6e", alpha))
-			draw_circle(c + Vector2(-2, -3), 2.3, Color("d09a52", alpha))
-		_:
-			draw_rect(Rect2(c + Vector2(-9, -9), Vector2(18, 18)), light)
+	ItemIcons.draw(self, item, c, alpha)
 
 func _backpack(c: Vector2) -> void:
 	var tone := Color("e1b94c")

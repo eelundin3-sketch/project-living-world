@@ -9,6 +9,9 @@ func check(value: bool, label: String) -> void:
 func effects(s: Dictionary) -> Array:
 	return s.shotgun.effects.map(func(e: Dictionary) -> String: return e.kind)
 func _initialize() -> void:
+	call_deferred("run")
+
+func run() -> void:
 	var sim := Sim.new(); sim.start_game(); var s: Dictionary = sim.state
 	check(not Shotgun.owns(s), "Player starts without a shotgun")
 	# The sheriff's office rack holds shotguns and shells.
@@ -67,5 +70,63 @@ func _initialize() -> void:
 	# Stowing keeps the gun on the back.
 	sim.submit("shotgun_toggle"); sim.step()
 	check(not s.shotgun.equipped and Shotgun.owns(s), "Stowed shotgun stays in inventory (drawn on the back)")
+	await _check_controls()
 	if failures == 0: print("Shotgun: PASS")
 	quit(failures)
+
+func _check_controls() -> void:
+	var main = load("res://app/main.tscn").instantiate()
+	root.add_child(main)
+	main.set_process(false)
+	main.world_audio.enabled = false
+	main.world_audio.wind.stop()
+	var sim: RefCounted = main.simulation
+	var s: Dictionary = sim.state
+	Inventory.produce(s, s.player, "shotgun", 1)
+	sim.submit("shotgun_toggle")
+	sim.step()
+	s.shotgun.loaded = 2
+	var key := str(s.player)
+	s.entities[key].cell = [60, 60]
+	World.apply_mutation(s, [61, 60], false)
+	var world = main.get_node("WorldView")
+	world.snap_visuals()
+	main._process(0.016)
+	check(world.motion.actors[key].action == "gun_carry", "Equipping the shotgun holds it lowered at rest")
+	var left := InputEventMouseButton.new()
+	left.button_index = MOUSE_BUTTON_LEFT
+	left.pressed = true
+	main._unhandled_input(left)
+	main._process(0.016)
+	check(not world.motion.player_aiming and world.motion.actors[key].action == "gun_carry", "Left mouse alone leaves the shotgun lowered")
+	check(s.shotgun.loaded == 2 and not s.commands.any(func(command: Dictionary) -> bool: return command.kind == "shotgun_fire"), "Left mouse alone cannot fire")
+	main.context_menu.close()
+	left.pressed = false
+	main._input(left)
+	s.entities[key].cell = [61, 60]
+	main._process(0.016)
+	check(world.motion.actors[key].moving and world.motion.actors[key].action == "gun_carry", "Walking retains the lowered weapon pose")
+	var right := InputEventMouseButton.new()
+	right.button_index = MOUSE_BUTTON_RIGHT
+	right.pressed = true
+	main._unhandled_input(right)
+	main._process(0.016)
+	check(world.motion.actors[key].moving and world.motion.actors[key].action == "aim", "Right mouse raises the gun while walking")
+	check(s.shotgun.loaded == 2, "Aiming does not fire")
+	left.pressed = true
+	main._unhandled_input(left)
+	sim.step()
+	main._process(0.016)
+	check(s.shotgun.loaded == 1 and world.motion.actors[key].action == "shoot", "Left press while aiming fires once and shows recoil while moving")
+	main._process(0.016)
+	check(s.shotgun.loaded == 1, "Holding the left button does not repeat a shot")
+	right.pressed = false
+	main._input(right)
+	main._process(0.016)
+	check(world.motion.actors[key].action == "gun_carry", "Releasing right mouse lowers the gun even while left is held")
+	right.pressed = true
+	main._unhandled_input(right)
+	main._process(0.016)
+	check(main.aiming, "A quick second aim press works with the shotgun equipped")
+	main.queue_free()
+	await process_frame

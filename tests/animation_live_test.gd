@@ -76,8 +76,8 @@ func _verify_blends(figure: Node2D) -> void:
 		_check(_same_joints(figure.frame, settled), "Blend reaches target pose for " + action)
 	for running in [false, true]:
 		var meters := 3.25 if running else 2.0
-		var previous: PackedVector2Array = figure.leg_joints(-1, Vector2(0, -23), 0.1 * TAU, true, running)
-		var current: PackedVector2Array = figure.leg_joints(-1, Vector2(0, -23), 0.2 * TAU, true, running)
+		var previous: PackedVector2Array = figure.leg_joints(-1, Vector2(0, -23), 0.15 * TAU, true, running)
+		var current: PackedVector2Array = figure.leg_joints(-1, Vector2(0, -23), 0.25 * TAU, true, running)
 		_check(is_equal_approx(current[2].x + 0.1 * meters * 24.0, previous[2].x), "Stance holds foot in world space")
 
 func _same_joints(actual: Dictionary, expected: Dictionary) -> bool:
