@@ -8,7 +8,7 @@ const GATHERERS: Array[String] = ["Gatherer", "Woodsman", "Farmer", "Miner"]
 const WORKSHOP_TRADES: Array[String] = ["Sawyer", "Baker", "Blacksmith"]
 ## Which resource entity kinds each gathering profession works.
 ## When several trades are equally short, the more essential one is filled first.
-const PRIORITY: Array[String] = ["Farmer", "Sheriff", "Woodsman", "Sawyer", "Miner", "Baker", "Blacksmith"]
+const PRIORITY: Array[String] = ["Farmer", "Sheriff", "Woodsman", "Sawyer", "Trader", "Miner", "Baker", "Blacksmith"]
 const TARGETS: Dictionary = {"Woodsman": ["tree"], "Farmer": ["farm"], "Miner": ["ore"], "Gatherer": ["tree", "farm", "ore"]}
 const DESCRIPTIONS: Dictionary = {
 	"Farmer": "Grows and harvests rye for the settlement's food supply.",
@@ -19,6 +19,7 @@ const DESCRIPTIONS: Dictionary = {
 	"Baker": "Bakes rye into bread for the provisions stall and storehouse.",
 	"Builder": "Raises homes and workshops from planks.",
 	"Sheriff": "Keeps the peace, patrols the square and guards the road.",
+	"Trader": "Walks between the markets, buying where goods are cheap and selling where they are dear.",
 	"Carpenter": "Craftsman: joinery and furniture for new homes.",
 	"Child": "Too young to work; helps in the household garden."}
 
@@ -55,6 +56,8 @@ static func demand(s: Dictionary, settlement: int) -> Dictionary:
 	if want.get("Miner", 0) > 0 and r.workshops.has("forge"): want.Blacksmith = 1
 	# Safety: a settlement large enough to have something worth stealing, or one beside a dangerous road.
 	if pop >= 3 or r.danger > 0: want.Sheriff = 1 + pop / 18
+	# A trader only while the price difference between markets pays for the walk.
+	if pop >= 4 and load("res://sim/economy/traders.gd").wanted(s, settlement) > 0: want.Trader = 1
 	return want
 
 static func count(s: Dictionary, settlement: int, occupation: String) -> int:
@@ -83,7 +86,9 @@ static func assign(s: Dictionary, settlement: int) -> void:
 				ratio = shortfall
 		if best == "~": break
 		s.residents[str(free.pop_front())].occupation = best
-	if s.has("settlements"): load("res://sim/settlement/sheriff.gd").dress(s)
+	if s.has("settlements"):
+		load("res://sim/settlement/sheriff.gd").dress(s)
+		load("res://sim/economy/traders.gd").ensure(s)
 
 static func gathers(npc: Dictionary, target_kind: String) -> bool:
 	return TARGETS.get(npc.occupation, []).has(target_kind)

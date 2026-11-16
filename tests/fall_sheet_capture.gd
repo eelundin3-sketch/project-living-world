@@ -13,7 +13,7 @@ func sheet(action_steps: Array, path: String, name: String) -> void:
 			var figure := Character.new(); holder.add_child(figure); figure.setup(0, true, false)
 			figure.scale = Vector2.ONE * 0.95
 			figure.position = Vector2(140 + i * 150, 86 + r * 104)
-			figure.set_pose({"position": figure.position, "heading": DIRECTIONS[r][1], "action": action_steps[i][0], "phase": action_steps[i][1], "moving": false, "fall_side": 1, "age": 0.0})
+			figure.set_pose({"position": figure.position, "heading": DIRECTIONS[r][1], "action": action_steps[i][0], "phase": action_steps[i][1], "moving": false, "fall_side": 1, "age": 0.0, "backpack": true, "slung": true})
 			figure.position = Vector2(140 + i * 150, 86 + r * 104)
 	await process_frame; await RenderingServer.frame_post_draw
 	root.get_texture().get_image().save_png(path)

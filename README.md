@@ -1,7 +1,7 @@
 # Project Living World
 
 A single-player frontier life sandbox built in Godot 4.6. Three towns (Alder
-Hollow, Reedbank and dusty Dustvale) live on one map: villagers farm rye, fell
+Hollow, Reedbank and dusty Dustvale) live far apart on one large, forested map: villagers farm rye, fell
 trees, saw planks, bake, mine iron, trade at the market, keep households, sleep
 in their beds at night, and remember who wronged them. You arrive with a
 backpack and nothing else.
@@ -18,7 +18,8 @@ backpack and nothing else.
 | [![The health window while bandaging](docs/screenshots/health-window-bandaging.png)](docs/screenshots/health-window-bandaging.png) **Health.** Bruises, cuts, bleeding and infection per body part; treat them from a modern health window while your character bandages themselves. | [![The inventory grid with clothing slots](docs/screenshots/inventory-grid.png)](docs/screenshots/inventory-grid.png) **Inventory.** A 6×6 grid with hat, shirt, trousers and shoes squares. Opening it, you kneel and go through your backpack. |
 | [![A sheriff at his office](docs/screenshots/sheriff-in-town.png)](docs/screenshots/sheriff-in-town.png) **The law.** Every town has a Sheriff in a dark cattleman hat and a star on his vest, a shotgun on his back, and a weapon rack at the office. | [![A fight in the square](docs/screenshots/fight-punch.png)](docs/screenshots/fight-punch.png) **Fights.** Punch or shove someone and they come after you; do it twice and they'll beat you unconscious. Blunt hits bruise where they land. |
 | [![Crouching and sneaking in eight directions](docs/screenshots/animation-crouch.png)](docs/screenshots/animation-crouch.png) **Sneak.** Crouch with X to move quietly; rob a sleeper without waking them. | [![Falling forward and getting up](docs/screenshots/animation-falls.png)](docs/screenshots/animation-falls.png) **Falls.** A full forward fall and a staged get-up (push-up, hands and knees, kneel, stand) in all eight directions. |
-| [![Dustvale, the desert town](docs/screenshots/dustvale-town.png)](docs/screenshots/dustvale-town.png) **Dustvale.** A dry-country town to the south with a great iron rock to mine. | [![Rye from planting to harvest](docs/screenshots/rye-growth.png)](docs/screenshots/rye-growth.png) **Farming.** Rye grows through six stages; households keep gardens and pantries. |
+| [![Thirteen house types](docs/screenshots/house-types.png)](docs/screenshots/house-types.png) **Houses for households.** 13 house types with 1-3 beds; families build bigger, people living alone take a cabin or shack. Towns grow irregularly, never across the roads. | [![The market with a tent for each seller](docs/screenshots/market-tents.png)](docs/screenshots/market-tents.png) **Market tents and traders.** Every seller keeps their own tent; a trader walks between the towns buying cheap and selling dear, only while prices make it pay. |
+| [![The much bigger map](docs/screenshots/world-big-map.png)](docs/screenshots/world-big-map.png) **A bigger land.** The towns are a real journey apart, with wild forests filling the green ground between them. | [![Dustvale, the desert town](docs/screenshots/town-dustvale.png)](docs/screenshots/town-dustvale.png) **Dustvale.** A dry-country town far to the south, built in adobe and stone, with a great iron rock to mine. | [![Rye from planting to harvest](docs/screenshots/rye-growth.png)](docs/screenshots/rye-growth.png) **Farming.** Rye grows through six stages; households keep gardens and pantries. |
 
 **Also:** a click menu for every person and object (Kenshi-style) with walk-to-and-act,
 loot chests and people (including their clothes), 4-slot hotbar, needs

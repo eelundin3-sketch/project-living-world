@@ -6,45 +6,43 @@ const Residents = preload("res://sim/entities/residents.gd")
 const Recipes = preload("res://sim/production/recipe_system.gd")
 const Market = preload("res://sim/economy/market.gd")
 const Dustvale = preload("res://sim/settlement/dustvale.gd")
+const Traders = preload("res://sim/economy/traders.gd")
 
 static func initialize(sim: RefCounted) -> void:
 	var s: Dictionary = sim.state
-	s.world.bounds = [-64, -64, 320, 192]
-	var store := World.add_entity(sim, "warehouse", "Reedbank exchange", [180, 46], 2)
+	s.world.bounds = [-96, -84, 486, 336]   # a much larger region: towns are a journey apart
+	var store := World.add_entity(sim, "warehouse", "Reedbank exchange", [364, 46], 2)
 	Inventory.create(s, store, 3000)
 	Inventory.produce(s, store, "food", 400)
 	Inventory.produce(s, store, "log", 30)
-	var home := World.add_entity(sim, "home", "Reedbank lodge", [162, 40], 2)
-	var farm := World.add_entity(sim, "farm", "Reedbank fields", [199, 60], 2)
+	var home := World.add_entity(sim, "home", "Reedbank lodge", [346, 40], 2)
+	var farm := World.add_entity(sim, "farm", "Reedbank fields", [383, 60], 2)
 	Inventory.create(s, farm, 1500)
 	Inventory.produce(s, farm, "food", 700)
-	Crops.add_plot(s, "field", [193, 57, 12, 6], 2, farm, 0, 30000)
+	Crops.add_plot(s, "field", [377, 57, 12, 6], 2, farm, 0, 30000)
 	# Iron outcrops east of Reedbank give its miners and blacksmith a reason to exist.
-	for ore_cell in [[236, 54], [239, 57], [234, 59]]:
+	for ore_cell in [[420, 54], [423, 57], [418, 59]]:
 		var ore := World.add_entity(sim, "ore", "Iron outcrop", ore_cell, 2)
 		Inventory.create(s, ore, 80)
 		Inventory.produce(s, ore, "ore", 40)
 	s.settlements["2"] = {"id": 2, "name": "Reedbank", "warehouse": store, "home": home, "housing": 12,
 		"population": 5, "policy": "Food exports", "demand": {}, "fidelity": "coarse", "faction": 2}
-	Residents.spawn(sim, 5, 2, [178, 48])
-	World.populate_forest(sim, 2, 140, [180, 46])
-	World.populate_dense_groves(sim, 2, 60, [180, 46])
-	Recipes.add_workshop(sim, 2, [197, 45], store)
-	Recipes.add_workshop(sim, 2, [213, 45], store, "bakery")
-	Recipes.add_workshop(sim, 2, [229, 45], store, "forge")
+	Residents.spawn(sim, 5, 2, [362, 48])
+	World.populate_forest(sim, 2, 140, [364, 46])
+	World.populate_dense_groves(sim, 2, 60, [364, 46])
+	Recipes.add_workshop(sim, 2, [381, 45], store)
+	Recipes.add_workshop(sim, 2, [397, 45], store, "bakery")
+	Recipes.add_workshop(sim, 2, [413, 45], store, "forge")
 	Market.add_market(s, 2)
 	Dustvale.install(sim)
-	var merchant := World.add_entity(sim, "caravan", "Moss Road carrier", [64, 46], 1)
-	Inventory.create(s, merchant, 80)
-	s.accounts[str(merchant)] = 5000
-	s.money_initial += 5000
-	s.routes = {"1": {"id": 1, "from": 1, "to": 2, "blocked": false, "risk": 0, "guards": 0, "travel_ticks": 600}}
-	s.caravans = {str(merchant): {"id": merchant, "town": 1, "origin": 1, "destination": 2, "route": 1,
-		"status": "Looking for profitable cargo", "depart_tick": 0, "arrival_tick": 0, "event_id": 0,
-		"item": "", "quantity": 0, "in_transit": false, "deliveries": 0, "fidelity": "coarse"}}
+	s.routes = {"1": {"id": 1, "from": 1, "to": 2, "blocked": false, "risk": 0, "guards": 0, "travel_ticks": 1500}}
+	# Trade between the towns is carried by a villager who takes up trading when prices make it
+	# worth the walk (see traders.gd); there is no abstract cart.
+	s.caravans = {}
 
 static func dispatch(sim: RefCounted, caravan: Dictionary) -> bool:
 	var s: Dictionary = sim.state
+	if s.residents.has(str(caravan.id)): return Traders.decide(sim, caravan)
 	var route: Dictionary = s.routes[str(caravan.route)]
 	if s.has("treaty") and not s.treaty.open_trade:
 		caravan.status = "Trade suspended by treaty"
@@ -105,6 +103,9 @@ static func arrive(sim: RefCounted, event: Dictionary) -> void:
 		caravan.event_id = sim.schedule("caravan_arrival", caravan.arrival_tick, {"id": caravan.id})
 		caravan.status = "Waiting safely for route to reopen"
 		return
+	if s.residents.has(key):
+		Traders.arrive(sim, caravan)
+		return
 	caravan.in_transit = false
 	caravan.town = caravan.destination
 	caravan.event_id = 0
@@ -129,7 +130,9 @@ static func _sell_cargo(sim: RefCounted, caravan: Dictionary) -> void:
 
 static func update(sim: RefCounted) -> void:
 	var s: Dictionary = sim.state
+	Traders.update(sim)
 	for caravan in s.caravans.values():
+		if s.residents.has(str(caravan.id)): continue   # a walking trader (traders.gd)
 		if caravan.in_transit:
 			# Position is presentation of the single coarse travel commitment.
 			var start: Array = s.entities[str(s.settlements[str(caravan.origin)].warehouse)].cell

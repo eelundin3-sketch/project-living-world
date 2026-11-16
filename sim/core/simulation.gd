@@ -14,6 +14,7 @@ const Sheriff = preload("res://sim/settlement/sheriff.gd")
 const Placement = preload("res://sim/world/placement.gd")
 const Hotbar = preload("res://sim/player/hotbar.gd")
 const Brawl = preload("res://sim/player/brawl.gd")
+const Housing = preload("res://sim/settlement/housing.gd")
 const ContextActions = preload("res://sim/player/context_actions.gd")
 const Looting = preload("res://sim/player/looting.gd")
 const Chests = preload("res://sim/entities/chests.gd")
@@ -75,10 +76,12 @@ func start_game(population: int = 5) -> void:
 	Market.install_stalls(self)
 	enable_society()
 	Sheriff.install(self)
+	Housing.settle(self)
 	Households.upgrade(self)
 	Chests.ensure_all(self)
 	World.lay_out_woodlands(self)
 	for town in state.settlements.values(): Professions.assign(state, town.id)
+	Market.ensure_tents(self)
 
 func new_id() -> int:
 	var result: int = state.next_id
@@ -149,6 +152,7 @@ func step() -> void:
 			Recipes.update(self)
 		if state.has("construction"):
 			Planner.update(self)
+		if state.has("markets") and state.tick % 600 == 300: Market.ensure_tents(self)
 		if state.has("markets") and state.tick % 300 == 0:
 			for town_id in state.markets:
 				Market.clear_market(state, int(town_id))

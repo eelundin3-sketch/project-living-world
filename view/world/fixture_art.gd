@@ -75,6 +75,9 @@ static func paint(c: Node2D, entity: Dictionary, stock: Dictionary, phase: float
 static func draw_stall(c: Node2D, entity: Dictionary, p: Vector2, stock: Dictionary) -> void:
 	var timber: bool = "plank" in entity.sale_items
 	var cloth := Color("957358") if timber else Color("6e8677")
+	if entity.has("keeper"):
+		# Each keeper's tent has its own colour of canvas.
+		cloth = [Color("9a5b47"), Color("5f7f9b"), Color("8f8a4e"), Color("7a5f8c"), Color("4f7d6b"), Color("a0773e")][posmod(int(entity.keeper), 6)]
 	Furniture.timber(c, Rect2(p + Vector2(0, 3), Vector2(96, 18)), Color("a37a53"), 4)
 	for x in [3, 91]:
 		c.draw_line(p + Vector2(x, -27), p + Vector2(x, 25), INK, 3.3, true)
@@ -88,5 +91,5 @@ static func draw_stall(c: Node2D, entity: Dictionary, p: Vector2, stock: Diction
 		var x := 2 + stripe * 16
 		c.draw_rect(Rect2(p + Vector2(x, -28), Vector2(7, 17)), cloth.lightened(0.24))
 	c.draw_line(p + Vector2(0, -11), p + Vector2(96, -11), cloth.darkened(0.25), 2)
-	c.draw_string(ThemeDB.fallback_font, p + Vector2(10, 34), "TIMBER" if timber else "PROVISIONS",
+	c.draw_string(ThemeDB.fallback_font, p + Vector2(10, 34), str(entity.get("label", "TIMBER" if timber else "PROVISIONS")),
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("f0debb"))

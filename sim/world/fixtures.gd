@@ -18,6 +18,7 @@ static func install(s: Dictionary, building: Dictionary) -> void:
 			building.fixtures.append(_fixture("stall", [x-1, y, 4, 1], [x, y+1]))
 		"construction":
 			var offset := 7 if building.get("building_scale", 1) >= 2 else 5
+			if building.has("house_size"): offset = clampi(int(building.house_size[1]) - 3, 3, 7)   # small houses: keep the pile inside
 			var stance_y := y - (5 if offset == 7 else 2)
 			building.fixtures.append(_fixture("stockpile", [x-1, y-offset, 4, 2], [x+1, stance_y]))
 		"sawmill", "bakery", "forge", "office", "warehouse", "market":
@@ -34,6 +35,8 @@ static func install(s: Dictionary, building: Dictionary) -> void:
 		var top: int = footprint[1]
 		var right: int = left + footprint[2]
 		match building.kind:
+			"home" when building.has("house_type"):
+				building.furniture = []   # placed below, after the beds, to suit the house
 			"home":
 				building.furniture = [
 					{"kind": "table", "rect": [left+1, top+2, 3, 2], "rot": 2},
@@ -69,6 +72,16 @@ static func install(s: Dictionary, building: Dictionary) -> void:
 			if found.is_empty(): break
 			building.furniture.append({"kind": "bed", "rect": found.rect, "rot": found.rot})
 			_occupy(s, found.rect, building.id)
+		if building.has("house_type"):
+			# The rest of the household's things, fitted to the room that is left.
+			var wanted: Array = ["chest", "lamp"]
+			if int(footprint[2]) >= 11: wanted = ["table", "chest", "chair", "lamp"]
+			if int(footprint[2]) >= 15: wanted.append("shelf")
+			for kind in wanted:
+				var spot: Dictionary = Placement.best_placement(s, building, kind, [int(footprint[0]) + 2, int(footprint[1]) + 2])
+				if spot.is_empty(): continue
+				building.furniture.append({"kind": kind, "rect": spot.rect, "rot": spot.rot})
+				_occupy(s, spot.rect, building.id)
 	for actor in s.entities.values():
 		if actor.kind not in ["resident", "player", "caravan", "raider"]: continue
 		var key := "%d,%d" % [actor.cell[0], actor.cell[1]]
@@ -76,6 +89,7 @@ static func install(s: Dictionary, building: Dictionary) -> void:
 			actor.cell = interaction_cell(s, building.id).duplicate()
 
 static func _bed_count(s: Dictionary, building: Dictionary) -> int:
+	if building.has("house_beds"): return int(building.house_beds)
 	# Settlements do not exist yet when the first lodge is built, so identify lodges by name.
 	return 6 if "lodge" in String(building.get("name", "")).to_lower() else 3
 

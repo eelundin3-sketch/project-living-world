@@ -3,7 +3,7 @@ extends RefCounted
 const World = preload("res://sim/world/world_db.gd")
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const Nav = preload("res://sim/movement/navigation.gd")
-const OFFICE_CELLS: Dictionary = {1: [29, 42], 2: [141, 42], 3: [88, 124]}
+const OFFICE_CELLS: Dictionary = {1: [29, 42], 2: [325, 42], 3: [116, 246]}
 const RACK_SHOTGUNS := 2
 const RACK_SHELLS := 30
 

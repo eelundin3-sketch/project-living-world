@@ -13,7 +13,7 @@ const PITCH := CELL + GAP
 const SLOT_WIDTH := 64.0
 const GRID_LEFT := SLOT_WIDTH + 22.0
 ## The four equipment squares, top to bottom, and the outfit slot each one stands for.
-const EQUIPMENT: Array[Array] = [["hat", "Hat"], ["shirt", "Shirt"], ["pants", "Trousers"], ["boots", "Shoes"]]
+const EQUIPMENT: Array[Array] = [["hat", "Hat"], ["shirt", "Shirt"], ["pants", "Trousers"], ["boots", "Shoes"], ["pack", "Backpack"]]
 const PREFERRED: Array[String] = ["shotgun", "shell", "tool", "bandage", "antiseptic", "food", "rye", "log", "plank", "ore"]
 const GOLD := Color("c79a3e")
 const WELL := Color("0f1715")
@@ -27,9 +27,19 @@ var info: Label
 var signature: String = ""
 var last_click_msec: int = -10000
 var last_click_key: String = ""
+var drop_target: String = ""   # where a dragged item would land, for highlighting
+
+## The picture that follows the pointer while an item is dragged.
+class DragIcon extends Control:
+	var item: String = ""
+	func _draw() -> void:
+		draw_circle(Vector2.ZERO, 26.0, Color(0.06, 0.08, 0.07, 0.75))
+		if Outfits.is_clothing(item): ItemIcons.draw_clothing(self, Outfits.slot_of(item), Outfits.color(item), Vector2.ZERO, 1.0)
+		else: ItemIcons.draw(self, item, Vector2.ZERO, 1.0)
 
 func _init() -> void:
-	custom_minimum_size = Vector2(GRID_LEFT + COLUMNS * PITCH, ROWS * PITCH + 92.0)
+	custom_minimum_size = Vector2(GRID_LEFT + COLUMNS * PITCH - GAP, ROWS * PITCH - GAP)
+	size = custom_minimum_size
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	info = Label.new()
 	info.position = Vector2(0, ROWS * PITCH + 6.0)
@@ -42,6 +52,10 @@ func _init() -> void:
 	action_row.position = Vector2(0, ROWS * PITCH + 36.0)
 	action_row.add_theme_constant_override("separation", 6)
 	add_child(action_row)
+	# The window shows only the grid and the clothing squares; actions are double-click,
+	# right-click and the number keys over an item (see the hover card).
+	info.visible = false
+	action_row.visible = false
 
 func _slot_rect(index: int) -> Rect2:
 	var total: float = EQUIPMENT.size() * PITCH
@@ -149,11 +163,76 @@ func _gui_input(event: InputEvent) -> void:
 				simulation.submit("take_off", {"slot": key.substr(5)})
 			else:
 				var item: String = key.substr(5)
+				var held_now: String = str(simulation.state.player_control.get("held_item", ""))
 				if Outfits.is_clothing(item): simulation.submit("wear_item", {"item": item})
+				elif item == held_now: simulation.submit("hold_item", {"item": ""})
 				else: simulation.submit("hold_item", {"item": item})
 		signature = ""
 		refresh(simulation.state)
 		accept_event()
+
+# --- drag and drop -------------------------------------------------------------------------
+# Drag an item onto its clothing square to put it on, a worn piece back into the grid to take it
+# off, or an item onto a hotbar slot (the bottom bar accepts the same drag data).
+func _get_drag_data(at_position: Vector2) -> Variant:
+	if simulation == null: return null
+	var key := _hit(at_position)
+	var data: Dictionary = {}
+	if key.begins_with("item:"):
+		data = {"type": "lw_item", "item": key.substr(5), "from": "grid", "slot": ""}
+	elif key.begins_with("slot:"):
+		var worn: String = str(Outfits.worn(simulation.state, simulation.state.player).get(key.substr(5), ""))
+		if worn.is_empty(): return null
+		data = {"type": "lw_item", "item": worn, "from": "slot", "slot": key.substr(5)}
+	else:
+		return null
+	var holder := Control.new()
+	var icon := DragIcon.new()
+	icon.item = data.item
+	holder.add_child(icon)
+	set_drag_preview(holder)
+	return data
+
+func _drop_key(at_position: Vector2, data: Variant) -> String:
+	if not (data is Dictionary) or data.get("type", "") != "lw_item": return ""
+	for index in range(EQUIPMENT.size()):
+		if _slot_rect(index).has_point(at_position):
+			var slot: String = EQUIPMENT[index][0]
+			return "slot:" + slot if data.from == "grid" and Outfits.slot_of(str(data.item)) == slot else ""
+	var grid_area := Rect2(Vector2(GRID_LEFT, 0), Vector2(COLUMNS * PITCH, ROWS * PITCH))
+	if grid_area.has_point(at_position) and data.from == "slot": return "grid"
+	return ""
+
+func _can_drop_data(at_position: Vector2, data: Variant) -> bool:
+	var key := _drop_key(at_position, data)
+	if key != drop_target:
+		drop_target = key
+		queue_redraw()
+	return not key.is_empty()
+
+func _drop_data(at_position: Vector2, data: Variant) -> void:
+	var key := _drop_key(at_position, data)
+	drop_target = ""
+	if key.begins_with("slot:"): simulation.submit("wear_item", {"item": data.item})
+	elif key == "grid": simulation.submit("take_off", {"slot": data.slot})
+	signature = ""
+	queue_redraw()
+
+## Number keys 1-4 put the item under the pointer on that hotbar slot.
+func _input(event: InputEvent) -> void:
+	if simulation == null or not is_visible_in_tree() or not hover.begins_with("item:"): return
+	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode in [KEY_1, KEY_2, KEY_3, KEY_4]:
+		var slot: int = [KEY_1, KEY_2, KEY_3, KEY_4].find(event.physical_keycode)
+		simulation.submit("hotbar_assign", {"slot": slot, "item": hover.substr(5)})
+		get_viewport().set_input_as_handled()
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_MOUSE_EXIT and not hover.is_empty():
+		hover = ""
+		queue_redraw()
+	if what == NOTIFICATION_DRAG_END and not drop_target.is_empty():
+		drop_target = ""
+		queue_redraw()
 
 func _frame(rect: Rect2, lit: bool, active: bool) -> void:
 	draw_rect(rect.grow(2), Color("3b2a1d"))
@@ -172,6 +251,7 @@ func _draw() -> void:
 		var item: String = str(outfit.get(slot, ""))
 		var key := "slot:" + slot
 		_frame(rect, hover == key, selected == key)
+		if drop_target == key: draw_rect(rect.grow(1), Color("74d08f"), false, 2.5)
 		var centre := rect.get_center()
 		if item.is_empty():
 			ItemIcons.draw_clothing(self, slot, Color("6e6652"), centre, 0.28)
@@ -194,3 +274,35 @@ func _draw() -> void:
 		var hotbar_index: int = slots.find(item)
 		if hotbar_index >= 0: draw_string(font, rect.position + Vector2(4, 13), str(hotbar_index + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("ffd98a"))
 		if item == held: draw_string(font, rect.position + Vector2(4, rect.size.y - 5), "held", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color("9fd18a"))
+	if drop_target == "grid": draw_rect(Rect2(Vector2(GRID_LEFT - 3, -3), Vector2(COLUMNS * PITCH + 2, ROWS * PITCH + 2)), Color("74d08f"), false, 2.0)
+	if get_viewport().gui_is_dragging(): return
+	_draw_hover_card(s, font, outfit)
+
+## A small card under the pointer: what the item is and what you can do with it.
+func _draw_hover_card(s: Dictionary, font: Font, outfit: Dictionary) -> void:
+	if hover.is_empty(): return
+	var title := ""
+	var hint := ""
+	var anchor := Rect2()
+	if hover.begins_with("item:"):
+		var item: String = hover.substr(5)
+		var index: int = stacks.find(item)
+		if index < 0: return
+		anchor = _cell_rect(index)
+		title = "%s × %d" % [Outfits.label(item) if Outfits.is_clothing(item) else item.capitalize(), Inventory.amount(s, s.player, item)]
+		hint = "Double-click to wear" if Outfits.is_clothing(item) else "Double-click to hold · 1-4: hotbar"
+	elif hover.begins_with("slot:"):
+		var worn: String = str(outfit.get(hover.substr(5), ""))
+		if worn.is_empty(): return
+		for index in range(EQUIPMENT.size()):
+			if EQUIPMENT[index][0] == hover.substr(5): anchor = _slot_rect(index)
+		title = Outfits.label(worn)
+		hint = "Double-click to take off"
+	var width: float = maxf(font.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x, font.get_string_size(hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x) + 18.0
+	var at := Vector2(clampf(anchor.position.x, 0.0, size.x - width), anchor.end.y + 4.0)
+	if at.y + 40.0 > size.y: at.y = anchor.position.y - 44.0
+	draw_rect(Rect2(at + Vector2(2, 3), Vector2(width, 40)), Color(0, 0, 0, 0.35))
+	draw_rect(Rect2(at, Vector2(width, 40)), Color("101614"))
+	draw_rect(Rect2(at, Vector2(width, 40)), GOLD, false, 1.0)
+	draw_string(font, at + Vector2(9, 17), title, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("f0e4c8"))
+	draw_string(font, at + Vector2(9, 32), hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("a89c7e"))

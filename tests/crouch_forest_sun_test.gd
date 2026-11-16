@@ -51,7 +51,7 @@ func _initialize() -> void:
 	check(close == 0, "No tree stands within four cells of a building (%d do)" % close)
 	var on_road := 0
 	for tree in trees:
-		if tree.cell[0] > 30 and tree.cell[0] < 224 and absi(tree.cell[1] - 48) <= 3: on_road += 1
+		if tree.cell[0] > 30 and tree.cell[0] < int(s.entities[str(s.settlements["2"].warehouse)].cell[0]) + 40 and absi(tree.cell[1] - 48) <= 3: on_road += 1
 	check(on_road == 0, "The road and its verges stay clear (%d trees on it)" % on_road)
 	# The sun: long shadows to the left in the morning, short at noon, long to the right in the evening, none at night.
 	var view = load("res://view/world/world_view.gd").new()

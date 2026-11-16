@@ -68,6 +68,14 @@ static func draw_clothing(canvas: CanvasItem, slot: String, tone: Color, c: Vect
 			canvas.draw_colored_polygon(PackedVector2Array([c + Vector2(-10, -11), c + Vector2(10, -11), c + Vector2(12, 12), c + Vector2(3, 12), c + Vector2(0, -2), c + Vector2(-3, 12), c + Vector2(-12, 12)]), fill)
 			canvas.draw_line(c + Vector2(-10, -7), c + Vector2(10, -7), shade, 2.0)
 			canvas.draw_polyline(PackedVector2Array([c + Vector2(-10, -11), c + Vector2(10, -11), c + Vector2(12, 12), c + Vector2(3, 12), c + Vector2(0, -2), c + Vector2(-3, 12), c + Vector2(-12, 12), c + Vector2(-10, -11)]), ink, 1.2, true)
+		"pack":
+			canvas.draw_colored_polygon(PackedVector2Array([c + Vector2(-9, -8), c + Vector2(9, -8), c + Vector2(10, 9), c + Vector2(7, 12), c + Vector2(-7, 12), c + Vector2(-10, 9)]), fill)
+			canvas.draw_colored_polygon(PackedVector2Array([c + Vector2(-8.5, -8), c + Vector2(8.5, -8), c + Vector2(7.5, 2), c + Vector2(-7.5, 2)]), Color("5a4027", alpha))
+			canvas.draw_rect(Rect2(c + Vector2(-9, -13), Vector2(18, 5)), Color("8c8f7e", alpha))
+			for x in [-4.0, 4.0]:
+				canvas.draw_line(c + Vector2(x, 1), c + Vector2(x, 6), Color("5a4027", alpha), 1.6)
+				canvas.draw_rect(Rect2(c + Vector2(x - 1.2, 1), Vector2(2.4, 2)), Color("c9b06a", alpha))
+			canvas.draw_polyline(PackedVector2Array([c + Vector2(-9, -8), c + Vector2(9, -8), c + Vector2(10, 9), c + Vector2(7, 12), c + Vector2(-7, 12), c + Vector2(-10, 9), c + Vector2(-9, -8)]), ink, 1.2, true)
 		"boots":
 			for side in [-1.0, 1.0]:
 				var x: float = side * 7.0

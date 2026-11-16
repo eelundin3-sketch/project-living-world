@@ -6,6 +6,9 @@ const BodyDiagram = preload("res://view/ui/body_diagram.gd")
 const Outfits = preload("res://sim/entities/outfits.gd")
 const InventoryGrid = preload("res://view/ui/inventory_grid.gd")
 const HealthWindow = preload("res://view/ui/health_window.gd")
+const InventoryWindow = preload("res://view/ui/inventory_window.gd")
+var inventory_window: Control
+var inventory_moved := false
 var health_window: Control
 var inventory_grid: Control
 var simulation: RefCounted
@@ -129,6 +132,13 @@ func _ready() -> void:
 	health_anchor.add_child(health_window)
 	health_window.close_requested.connect(func() -> void: show_mode(""))
 	health_window.minimize_requested.connect(minimize_window)
+	# The inventory is a small draggable window at the left; the world stays visible around it.
+	inventory_window = InventoryWindow.new()
+	inventory_window.simulation = simulation
+	inventory_window.visible = false
+	add_child(inventory_window)
+	inventory_window.close_requested.connect(func() -> void: show_mode(""))
+	inventory_window.minimize_requested.connect(minimize_window)
 	show_mode("")
 func _build_meter() -> void:
 	meter_column = VBoxContainer.new()
@@ -201,7 +211,13 @@ func show_mode(value: String) -> void:
 	minimized = false
 	dock_button.visible = false
 	visible = not mode.is_empty()
-	panel.visible = mode != "health"
+	panel.visible = mode not in ["health", "inventory"]
+	shade.visible = mode != "inventory"
+	if inventory_window != null:
+		var opening_inventory: bool = mode == "inventory" and not inventory_window.visible
+		inventory_window.visible = mode == "inventory"
+		inventory_window.simulation = simulation
+		if opening_inventory and not inventory_moved: inventory_window.position = inventory_window.home_position()
 	if health_window != null:
 		health_window.visible = mode == "health"
 		health_window.simulation = simulation
@@ -266,8 +282,10 @@ func refresh() -> void:
 		last_nonce=pc.ui_nonce; target=pc.ui_target; mode=str(pc.get("ui_kind","trade")); loot_signature=""; minimized=false; dock_button.visible=false; visible=true
 	if mode.is_empty(): return
 	if cached_mode!=mode: rebuild()
-	panel.visible = mode != "health"
+	panel.visible = mode not in ["health", "inventory"]
 	health_window.visible = mode == "health" and not minimized
+	inventory_window.visible = mode == "inventory" and not minimized
+	shade.visible = mode != "inventory"
 	dock_button.visible = minimized
 	var is_health := mode == "health"
 	diagram.visible = is_health
@@ -285,12 +303,8 @@ func refresh() -> void:
 	elif mode in ["loot", "wardrobe"]:
 		_refresh_loot(s, pc)
 	elif mode=="inventory":
-		title.text="YOUR INVENTORY · I"
-		var inv: Dictionary=s.inventories[str(s.player)]
-		summary.text="Backpack: %d / %d   ·   %d coins\nHolding: %s" % [Inventory.used(inv),inv.capacity,s.accounts.get(str(s.player),0),"nothing" if pc.held_item.is_empty() else "%d %s" % [pc.held_quantity,pc.held_item]]
-		inventory_grid.refresh(s)
-		inventory_grid.queue_redraw()
-		detail.text="Double-click clothing to wear it, or a worn piece to take it off. Hold an item, close this, then press F to put it down."
+		inventory_window.refresh(s)
+		if inventory_window.position != inventory_window.home_position(): inventory_moved = true
 		notice.text=pc.notice
 	else:
 		var e: Dictionary=s.entities.get(str(target),{})

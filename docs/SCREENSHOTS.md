@@ -18,6 +18,14 @@ graphical display, for example `godot --path . --script res://tests/menu_capture
 | [![07:00](screenshots/shadows-07h00.png)](screenshots/shadows-07h00.png) **07:00 — long shadows to the left** | [![12:30](screenshots/shadows-12h30.png)](screenshots/shadows-12h30.png) **12:30 — short noon shadows** |
 | [![17:30](screenshots/shadows-17h30.png)](screenshots/shadows-17h30.png) **17:30 — long shadows to the right** | [![Tree shadows in the afternoon](screenshots/forest-16h.png)](screenshots/forest-16h.png) **Tree shadows swing with the sun** |
 
+## Towns, houses and trade
+
+| | |
+|---|---|
+| [![Alder Hollow](screenshots/town-alder-hollow.png)](screenshots/town-alder-hollow.png) **Alder Hollow: houses scattered around the square** | [![Reedbank](screenshots/town-reedbank.png)](screenshots/town-reedbank.png) **Reedbank, far to the east** |
+| [![House types](screenshots/house-types.png)](screenshots/house-types.png) **The 13 house types** | [![Market tents](screenshots/market-tents.png)](screenshots/market-tents.png) **A tent for every seller** |
+| [![The trader](screenshots/trader-on-the-road.png)](screenshots/trader-on-the-road.png) **Ruth the trader, back at the square** | [![The big map](screenshots/world-big-map.png)](screenshots/world-big-map.png) **The whole region: three towns and the roads between them** |
+
 ## People and animation
 
 | | |

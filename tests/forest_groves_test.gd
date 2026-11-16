@@ -26,7 +26,7 @@ func _initialize() -> void:
 			check(absi(e.cell[1] - 48) >= 3, "New groves leave the road clear")
 			check(World.inside_building(s, e.cell) == 0, "New trees do not occupy buildings")
 	check(dense == 160, "Both towns receive dense forest stands")
-	check(Nav.request_path(s, [62,49], [180,46]).ok, "Village road remains navigable")
+	check(Nav.request_path(s, [62,49], s.entities[str(s.settlements["2"].warehouse)].cell).ok, "The road to Reedbank remains navigable")
 	check(Checks.validate(s).is_empty(), "New harvestable wood is accounted for")
 	var site_id := World.add_entity(first, "construction", "Existing worksite", [30, 21], 1)
 	Inventory.create(s, site_id, 30)

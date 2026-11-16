@@ -16,10 +16,36 @@ var hover: String = ""
 ## Set by the owner while a modal panel covers the bar.
 var blocked: bool = false
 
+## An invisible target over one hotbar slot that accepts items dragged out of the inventory.
+class SlotDrop extends Control:
+	var bar: Control
+	var index: int = 0
+	func _can_drop_data(_at: Vector2, data: Variant) -> bool:
+		return data is Dictionary and data.get("type", "") == "lw_item" and data.get("from", "") == "grid" and not str(data.item).contains(":")
+	func _drop_data(_at: Vector2, data: Variant) -> void:
+		bar.simulation.submit("hotbar_assign", {"slot": index, "item": data.item})
+
+var drop_zones: Array[Control] = []
+
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	# Full-screen and see-through: clicks are picked out in _input so everything underneath keeps working.
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for index in range(4):
+		var zone := SlotDrop.new()
+		zone.bar = self
+		zone.index = index
+		zone.mouse_filter = Control.MOUSE_FILTER_PASS
+		add_child(zone)
+		drop_zones.append(zone)
+	resized.connect(_place_drop_zones)
+	_place_drop_zones()
+
+func _place_drop_zones() -> void:
+	var rects := _layout()
+	for index in range(drop_zones.size()):
+		drop_zones[index].position = rects["slot%d" % index].position
+		drop_zones[index].size = rects["slot%d" % index].size
 
 func refresh() -> void:
 	queue_redraw()

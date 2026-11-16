@@ -8,7 +8,10 @@ const Nav = preload("res://sim/movement/navigation.gd")
 const BodyHealth = preload("res://sim/player/body_health.gd")
 const Society = preload("res://sim/factions/society.gd")
 const Households = preload("res://sim/entities/households.gd")
-const FALL_TICKS := 14           # the drop to the ground
+const FALL_TICKS := 14          # an unforced collapse (and older saves)
+## How long the drop itself takes: forced falls are quick. A shove throws you down; running out of
+## breath at full tilt pitches you over at running pace; a beating crumples you a little slower.
+const FALL_TICKS_BY_KIND := {"fall": 6, "exhaust": 5, "ko": 9}           # the drop to the ground
 const SHOVE_LIE_TICKS := 16      # lying stunned after a shove
 const KO_TICKS := 420            # lying unconscious after too many blows (about 42 s at 1x)
 const RISE_TICKS := 26           # getting back to their feet
@@ -75,7 +78,8 @@ static func fall_style(s: Dictionary, cell: Array, kind: String, direction: Arra
 static func knockdown(s: Dictionary, holder: Dictionary, cell: Array, kind: String, direction: Array = [0, 0], style: String = "") -> void:
 	var lie: int = KO_TICKS if kind == "ko" else (EXHAUST_LIE_TICKS if kind == "exhaust" else SHOVE_LIE_TICKS)
 	var side: int = 1 if int(direction[0]) > 0 else (-1 if int(direction[0]) < 0 else (1 if (s.tick + int(cell[0])) % 2 == 0 else -1))
-	holder.knock = {"kind": kind, "start": s.tick, "down_until": s.tick + FALL_TICKS + lie, "rise_until": s.tick + FALL_TICKS + lie + RISE_TICKS,
+	var drop: int = int(FALL_TICKS_BY_KIND.get(kind, FALL_TICKS))
+	holder.knock = {"kind": kind, "start": s.tick, "fall_ticks": drop, "down_until": s.tick + drop + lie, "rise_until": s.tick + drop + lie + RISE_TICKS,
 		"style": style if not style.is_empty() else fall_style(s, cell, kind, direction), "side": side,
 		"dir": [signi(int(direction[0])), signi(int(direction[1]))]}
 	event(s, "fall", cell, direction)

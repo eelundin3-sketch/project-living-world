@@ -4,20 +4,22 @@ extends RefCounted
 ## the outfit is stored (copy on write) only once somebody changes it. Pieces are real inventory
 ## items when carried, so stealing clothes moves actual goods and conservation still holds.
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
-const SLOTS: Array[String] = ["hat", "vest", "shirt", "pants", "boots"]
-const SLOT_NAMES := {"hat": "Hat", "vest": "Vest", "shirt": "Shirt", "pants": "Trousers", "boots": "Boots"}
+const SLOTS: Array[String] = ["hat", "vest", "shirt", "pants", "boots", "pack"]
+const SLOT_NAMES := {"hat": "Hat", "vest": "Vest", "shirt": "Shirt", "pants": "Trousers", "boots": "Boots", "pack": "Backpack"}
 const NAMES := {
 	"hat": ["Sun hat", "Brown hat", "Dark hat", "Sheriff's hat"],
 	"vest": ["Olive vest", "Drab vest", "Rust vest", "Moss vest", "Sheriff's vest"],
 	"shirt": ["Cream shirt", "Tan shirt", "Sage shirt", "Sand shirt"],
 	"pants": ["Tan trousers", "Grey trousers", "Dark trousers"],
-	"boots": ["Brown boots", "Black boots"]}
+	"boots": ["Brown boots", "Black boots"],
+	"pack": ["Canvas backpack"]}
 const COLORS := {
 	"hat": [Color("d3a35a"), Color("bf9558"), Color("4f453a"), Color("3a2c22")],
 	"vest": [Color("968057"), Color("887b57"), Color("a07551"), Color("8c9371"), Color("5a3b27")],
 	"shirt": [Color("d7d0ad"), Color("c8b086"), Color("a5ab8c"), Color("d5bc91")],
 	"pants": [Color("b58c54"), Color("7d7f78"), Color("4a463d")],
-	"boots": [Color("694722"), Color("2c2823")]}
+	"boots": [Color("694722"), Color("2c2823")],
+	"pack": [Color("8a6d47")]}
 ## What shows when a piece is missing: pale long underwear for body and legs, bare feet, no hat.
 const UNDERWEAR := Color("e4ddca")
 
@@ -56,11 +58,17 @@ static func default_for(id: int, player: bool = false) -> Dictionary:
 	var hatless: bool = not player and posmod(id, 4) == 1
 	return {"hat": "" if hatless else key("hat", 0 if player else 1 + posmod(id, 2)),
 		"vest": key("vest", 0 if player else posmod(id, 4)), "shirt": key("shirt", 0 if player else posmod(id, 4)),
-		"pants": key("pants", 0), "boots": key("boots", 0)}
+		"pants": key("pants", 0), "boots": key("boots", 0), "pack": key("pack", 0) if player else ""}
 
 static func worn(s: Dictionary, id: int) -> Dictionary:
 	var stored: Dictionary = s.get("outfits", {}).get(str(id), {})
-	return stored if not stored.is_empty() else default_for(id, id == s.get("player", -1))
+	if stored.is_empty(): return default_for(id, id == s.get("player", -1))
+	if not stored.has("pack"):
+		# Outfits stored before backpacks were wearable: the player still has theirs on.
+		var upgraded := stored.duplicate()
+		upgraded.pack = key("pack", 0) if id == s.get("player", -1) else ""
+		return upgraded
+	return stored
 
 static func dress(s: Dictionary, id: int, outfit: Dictionary) -> void:
 	_store(s, id, outfit.duplicate())

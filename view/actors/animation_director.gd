@@ -39,10 +39,12 @@ static func action_for(s: Dictionary, entity: Dictionary, aim_held: bool = false
 		result.style = knock.get("style", "back")
 		result.side = int(knock.get("side", 1))
 		result.fall_dir = knock.get("dir", [0, 0])
-		var fall_end: int = int(knock.start) + Brawl.FALL_TICKS
+		var drop: int = int(knock.get("fall_ticks", Brawl.FALL_TICKS))
+		var fall_end: int = int(knock.start) + drop
 		if s.tick < fall_end:
 			result.action = "fall"
-			result.phase = float(s.tick - int(knock.start)) / float(Brawl.FALL_TICKS)
+			result.phase = float(s.tick - int(knock.start)) / float(drop)
+			result.duration = float(drop) / 10.0
 		elif s.tick < int(knock.down_until):
 			result.action = "down"
 		else:
@@ -375,7 +377,7 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 			var duration: float = 1.0
 			match action:
 				"stagger": duration = 1.2
-				"fall": duration = Brawl.FALL_TICKS / 10.0
+				"fall": duration = float(state_action.get("duration", Brawl.FALL_TICKS / 10.0))
 				"getup": duration = Brawl.RISE_TICKS / 10.0
 				"treat": duration = float(state_action.get("duration", 3.0))
 				"shoot", "melee": duration = 0.8
@@ -416,7 +418,7 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 		var stamina_now: int = int(stamina_state.get("stamina", 100))
 		pose.fatigue = clampf(1.0 - float(stamina_now) / 20.0, 0.0, 1.0) if not stamina_state.is_empty() and stamina_now <= 20 else 0.0
 		pose.breath = clampf(1.0 - float(stamina_now - 20) / 40.0, 0.35, 1.0) if bool(stamina_state.get("winded", false)) else 0.0
-		pose.backpack = is_player
+		pose.gun_equipped = gun_equipped
 		pose.treat_part = state_action.get("treat_part", "")
 		pose.treat_kind = state_action.get("treat_kind", "")
 		pose.fall_style = state_action.get("style", "back")

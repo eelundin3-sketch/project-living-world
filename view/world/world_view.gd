@@ -1,4 +1,5 @@
 extends Node2D
+const Terrain = preload("res://sim/world/terrain.gd")
 const MapArt = preload("res://view/world/frontier_map_art.gd")
 const CropArt = preload("res://view/world/crop_art.gd")
 const MarketArt = preload("res://view/world/market_art.gd")
@@ -27,6 +28,17 @@ var background: Node2D
 var shadows: Node2D
 var sun_overcast: float = 0.0
 var roofs: Array[Rect2] = []
+var shadow_list: Array = []
+## Timber and floor tints per house style (see housing.gd), so every house type looks its own.
+const HOUSE_TINTS := {
+	"weathered": Color(0.8, 0.82, 0.86), "log": Color(0.76, 0.56, 0.42), "pine": Color(1.28, 1.16, 0.84),
+	"adobe": Color(1.36, 1.0, 0.74), "whitewash": Color(1.55, 1.5, 1.4), "redwood": Color(1.16, 0.64, 0.52),
+	"grey": Color(0.72, 0.75, 0.82), "stone": Color(1.0, 1.02, 1.1)}
+static func house_tint(s: Dictionary, building_id: int) -> Color:
+	var building: Dictionary = s.entities.get(str(building_id), {})
+	return HOUSE_TINTS.get(str(building.get("house_style", "")), Color.WHITE)
+var shadow_list_count: int = -1
+var shadow_list_age: int = 0
 var landscape: ColorRect
 var landscape_region := Rect2()
 var landscape_seed: int = -1
@@ -204,6 +216,10 @@ func _sync_landscape() -> void:
 	landscape.size = region.size
 	landscape.material.set_shader_parameter("world_origin", region.position)
 	landscape.material.set_shader_parameter("terrain_seed", float(seed_value))
+	var centres: Dictionary = Terrain.town_centres(state)
+	landscape.material.set_shader_parameter("hollow_center", centres[1])
+	landscape.material.set_shader_parameter("reedbank_center", centres[2])
+	landscape.material.set_shader_parameter("dust_center", centres[3])
 	landscape.material.set_shader_parameter("road_mask", roads.bake(state, region))
 
 func snap_visuals() -> void:
@@ -309,6 +325,7 @@ func _sync_depth_objects() -> void:
 			"southeast": s.world.building_walls.get("%d,%d" % [x + 1, y + 1], 0) == owner,
 		}
 		var wall: DepthObject = depth_objects[key]
+		wall.modulate = house_tint(s, owner)
 		if wall.wall_neighbours != neighbours:
 			wall.wall_neighbours = neighbours
 			wall.queue_redraw()
@@ -417,9 +434,10 @@ func draw_static(canvas: Node2D) -> void:
 		# Map view: canopies as dots instead of thousands of grass tufts and tree nodes.
 		for tree in s.entities.values():
 			if tree.get("kind", "") == "tree" and bounds.has_point(Vector2(tree.cell[0], tree.cell[1]) * CELL) and s.inventories[str(tree.id)].items.get("log", 0) > 0:
-				canvas.draw_circle(Vector2(tree.cell[0], tree.cell[1]) * CELL + Vector2(0, -14), 12.0, Color("14452f"))
+				canvas.draw_circle(Vector2(tree.cell[0], tree.cell[1]) * CELL + Vector2(0, -14), 15.0, Color("0d3322"))
+				canvas.draw_circle(Vector2(tree.cell[0], tree.cell[1]) * CELL + Vector2(-2, -17), 11.0, Color("2a6a45"))
 	else:
-		MapArt.vegetation(canvas, bounds, garden_exclusions, atmosphere_time, motion.wind_strength, roads.coverage)
+		MapArt.vegetation(canvas, bounds, garden_exclusions, atmosphere_time, motion.wind_strength, roads.coverage, Terrain.town_centres(s)[3] - Vector2(0, 2))
 	var weather: Dictionary = s.get("weather", {})
 	var snow: float = float(weather.get("snow", 0)) / 100.0
 	if snow > 0.0:
@@ -778,7 +796,21 @@ func draw_shadows(canvas: Node2D) -> void:
 			var fp := World.building_rect(entity)
 			var area := Rect2(Vector2(fp.position) * CELL - Vector2.ONE * CELL / 2, Vector2(fp.size) * CELL)
 			if bounds.intersects(area): roofs.append(area)
-	for entity in s.entities.values():
+	# Trees: only the ones on screen (they have depth nodes); everything else from a short cached list.
+	var casters: Array = []
+	for key in depth_objects:
+		var node: DepthObject = depth_objects[key]
+		if node.object_kind == "tree" and s.entities.has(str(node.entity_id)): casters.append(s.entities[str(node.entity_id)])
+	if shadow_list_age <= 0 or s.entities.size() != shadow_list_count:
+		shadow_list.clear()
+		for entity in s.entities.values():
+			if entity.has("footprint") or entity.has("rock_rect") or entity.get("kind", "") == "caravan": shadow_list.append(int(entity.id))
+		shadow_list_count = s.entities.size()
+		shadow_list_age = 90
+	shadow_list_age -= 1
+	for id in shadow_list:
+		if s.entities.has(str(id)): casters.append(s.entities[str(id)])
+	for entity in casters:
 		if not entity.has("cell"): continue
 		var p := Vector2(entity.cell[0], entity.cell[1]) * CELL
 		match entity.get("kind", ""):
@@ -866,6 +898,7 @@ func _sync_decor(delta: float) -> void:
 			add_child(node)
 			move_child(node, background.get_index())
 			decor_nodes[key] = node
+		if entry[0] == "building": decor_nodes[key].modulate = house_tint(s, int(entry[1]))
 		if decor_signatures.get(key, "") != entry[2]:
 			decor_signatures[key] = entry[2]
 			decor_nodes[key].set_area(entry[3])

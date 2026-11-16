@@ -15,6 +15,7 @@ const EVENING := Vector2i(1050, 1170) # 17:30-19:30
 
 static func capacity(s: Dictionary, home_id: int) -> int:
 	var town: Dictionary = s.settlements.get(str(s.entities[str(home_id)].settlement), {})
+	if s.entities[str(home_id)].has("house_beds"): return int(s.entities[str(home_id)].house_beds)   # one bed each
 	return LODGE_CAPACITY if town.get("home", 0) == home_id else HOME_CAPACITY
 
 static func members_of(s: Dictionary, home_id: int) -> int:

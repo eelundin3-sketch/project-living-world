@@ -108,6 +108,9 @@ var pants_color: Color = PANTS
 var boot_color: Color = BOOT
 var hat_item: String = "<legacy>"
 var wears_badge := false
+## Underwear only: no shirt shows bare arms (and chest, without a vest); no trousers shows bare legs and boxers.
+var bare_arms := false
+var bare_legs := false
 var has_boots := true
 var has_vest := true
 var has_shirt := true
@@ -176,6 +179,8 @@ func _blend_frame(weight: float) -> void:
 		for joint in range(target.size()):
 			target[joint] = start[joint].lerp(target[joint], weight)
 		frame[part] = target
+	if frame.has("pack_center") and blend_from.has("pack_center"):
+		frame.pack_center = (blend_from.pack_center as Vector2).lerp(frame.pack_center, weight)
 	if frame.carrying and blend_from.carrying:
 		frame.cargo = (blend_from.cargo as Vector2).lerp(frame.cargo, weight)
 	if frame.armed:
@@ -498,7 +503,7 @@ func _build_frame() -> Dictionary:
 		var bend := sqrt(maxf(0.0, 13.4 * 13.4 - reach_now * reach_now * 0.25))
 		left_leg = PackedVector2Array([left_leg[0], left_leg[1].lerp(left_leg[0].lerp(planted, 0.5) + travel * bend, kneel), planted])
 		right_leg = PackedVector2Array([right_leg[0], right_leg[1].lerp(_joint(5.3, 2.0, 2.5), kneel), right_leg[2].lerp(_joint(5.3, -11.0, 3.0), kneel)])
-	if pose.get("backpack", false):
+	if _wears_pack():
 		var worn := chest.lerp(hip, 0.42) + _joint(0, -6.5, 0)
 		var ground := _joint(0, 15.0, 6.0)
 		pack_center = worn.bezier_interpolate(worn + _joint(13, 3, 3), ground + _joint(11, 2, 9), ground, pack_move)
@@ -564,9 +569,9 @@ func _build_frame() -> Dictionary:
 		"right_foot_pitch": walking_foot_pitch(1, gait) * (1.0 - run_w) if moving else 0.0,
 		"origin": origin, "tilt": tilt, "item": item, "quantity": quantity, "carrying": carrying,
 		"rest_lying": lying if action == "rest" else 0.0,
-		"pack_center": pack_center, "pack_move": pack_move, "pack_open": pack_open, "backpack": bool(pose.get("backpack", false)),
+		"pack_center": pack_center, "pack_move": pack_move, "pack_open": pack_open, "backpack": _wears_pack(),
 		"treat_center": treat_center, "treat_hand": treat_hand, "treat_reach": treat_reach,
-		"armed": armed, "impact": impact, "show_cargo": show_cargo and not armed, "build_raise": build.raise, "build_carry": build.carry, "build_check": build.check, "pump": pump, "slung": bool(pose.get("slung", false)) and not armed,
+		"armed": armed, "impact": impact, "show_cargo": show_cargo and not armed, "build_raise": build.raise, "build_carry": build.carry, "build_check": build.check, "pump": pump, "slung": (bool(pose.get("slung", false)) or bool(pose.get("gun_equipped", false))) and not armed,
 	}
 
 ## The keyframed pose at `phase` of a key list: centripetal-free Catmull-Rom in time, so the body
@@ -620,6 +625,9 @@ func _fall_frame(action: String, phase: float) -> Dictionary:
 	var to_local := func(p: Vector2) -> Vector2: return (p - hip_s).rotated(-tilt)
 	var trunk: Vector3 = (joints.chest as Vector3) - (joints.hip as Vector3)
 	var pitch := atan2(trunk.y, trunk.z)
+	# Gear stays on through the whole fall: the pack sits on the back, which faces up once face down.
+	var back3 := Vector3(0, -trunk.z, trunk.y).normalized() if trunk.length() > 0.01 else Vector3(0, -1, 0)
+	var pack3: Vector3 = (joints.hip as Vector3).lerp(joints.chest, 0.58) + back3 * 6.5
 	var arms := {}
 	var legs := {}
 	for side in [-1, 1]:
@@ -634,9 +642,20 @@ func _fall_frame(action: String, phase: float) -> Dictionary:
 		"left_arm": arms[-1], "right_arm": arms[1], "left_leg": legs[-1], "right_leg": legs[1], "lie_scale": 1.0,
 		"left_foot_pitch": 0.0, "right_foot_pitch": 0.0, "origin": hip_s, "tilt": tilt,
 		"item": "", "quantity": 0, "carrying": false, "armed": false, "impact": 0.0, "show_cargo": false,
-		"build_raise": 0.0, "build_carry": 0.0, "build_check": 0.0, "pump": 0.0, "slung": false,
+		"build_raise": 0.0, "build_carry": 0.0, "build_check": 0.0, "pump": 0.0,
+		"slung": bool(pose.get("slung", false)) or bool(pose.get("gun_equipped", false)),
+		"backpack": _wears_pack(), "pack_center": to_local.call(project.call(pack3)), "pack_move": 0.0, "pack_open": 0.0,
+		# Face down, the back (and whatever is on it) is the side towards the viewer.
+		"pack_front": pitch > deg_to_rad(40.0),
 		"face_down": pitch > deg_to_rad(58.0),
 	}
+
+## A backpack is drawn whenever one is worn: the outfit decides; review sheets without an outfit
+## can ask for one with `backpack`.
+func _wears_pack() -> bool:
+	var outfit: Dictionary = pose.get("outfit", {})
+	if outfit.has("pack"): return not str(outfit.pack).is_empty()
+	return bool(pose.get("backpack", false))
 
 ## Self-treatment. The hurt arm is held up across the body (or the body bends to the hurt leg, or
 ## the hands go to the head or ribs) and the other hand works around the wound: winding a bandage
@@ -710,10 +729,12 @@ func _draw() -> void:
 	has_boots = not str(outfit.get("boots", "legacy")).is_empty()
 	has_vest = not str(outfit.get("vest", "legacy")).is_empty()
 	has_shirt = not str(outfit.get("shirt", "legacy")).is_empty()
+	bare_arms = not outfit.is_empty() and str(outfit.get("shirt", "")).is_empty()
+	bare_legs = not outfit.is_empty() and str(outfit.get("pants", "")).is_empty()
 	if not outfit.is_empty():
-		shirt = Outfits.color(str(outfit.get("shirt", "")))
+		shirt = Outfits.color(str(outfit.get("shirt", "")), skin)
 		vest = Outfits.color(str(outfit.get("vest", "")), shirt)
-		pants_color = Outfits.color(str(outfit.get("pants", "")))
+		pants_color = Outfits.color(str(outfit.get("pants", "")), skin)
 		boot_color = Outfits.color(str(outfit.get("boots", "")), skin.darkened(0.08))
 		hat_item = str(outfit.get("hat", ""))
 	wears_badge = str(outfit.get("vest", "")) == "vest:4"
@@ -735,7 +756,7 @@ func _draw() -> void:
 	# The backpack: behind the body while worn and seen from the front or side, over the back when
 	# seen from behind; on the ground in front of a kneeling player it is nearer or further than them.
 	var pack_drawn := false
-	var pack_in_front: bool = (forward.y >= 0.0) if float(frame.get("pack_move", 0.0)) > 0.5 else front < -0.08
+	var pack_in_front: bool = (forward.y >= 0.0) if float(frame.get("pack_move", 0.0)) > 0.5 else (front < -0.08 or bool(frame.get("pack_front", false)))
 	if frame.get("backpack", false) and not pack_in_front:
 		_draw_pack(frame.pack_center, float(frame.pack_open), float(frame.pack_move))
 		pack_drawn = true
@@ -748,9 +769,10 @@ func _draw() -> void:
 	if object_behind:
 		if frame.show_cargo: _draw_cargo(frame.item, frame.quantity, frame.cargo)
 		if frame.armed: _draw_rifle(frame.stock, frame.muzzle, frame.pump)
-	if frame.slung and front >= -0.08: _draw_slung(frame.chest, frame.hip, front)
+	var slung_on_top: bool = front < -0.08 or bool(frame.get("pack_front", false))
+	if frame.slung and not slung_on_top: _draw_slung(frame.chest, frame.hip, front)
 	_draw_coat(frame.chest, frame.hip, width, vest, shirt)
-	if frame.slung and front < -0.08: _draw_slung(frame.chest, frame.hip, front)
+	if frame.slung and slung_on_top: _draw_slung(frame.chest, frame.hip, front)
 	if frame.get("backpack", false) and float(frame.pack_move) < 0.5 and front > -0.08:
 		# Shoulder straps over the front of the shirt.
 		for strap_side in [-1.0, 1.0]:
@@ -926,12 +948,21 @@ func _draw_leg(side: int, points: PackedVector2Array, body_transform: Transform2
 	var pitch: float = frame.left_foot_pitch if side < 0 else frame.right_foot_pitch
 	var shoe_transform := boot_roll(pitch)
 	var cuff := shoe_transform * Vector2(0, -4)
-	_limb_chain(PackedVector2Array([top, knee, foot + cuff]), Vector3(4.2, 3.4, 2.7), tone)
+	_limb_chain(PackedVector2Array([top, knee, foot + cuff]), Vector3(3.9, 3.0, 2.4) if bare_legs else Vector3(4.2, 3.4, 2.7), tone)
 	var shin := (foot - knee).normalized()
 	var cross := shin.orthogonal()
-	# Small fabric folds, not round kneecaps.
-	draw_line(knee - cross * 2.5 + shin, knee + cross * 0.7 + shin * 1.8, tone.darkened(0.3), 0.65, true)
-	draw_line(knee + cross * 0.4 + shin * 3.1, knee + cross * 2.0 + shin * 2.5, tone.darkened(0.21), 0.5, true)
+	if bare_legs:
+		# Boxer shorts over the top of the thigh.
+		var thigh := (knee - top).normalized()
+		var side_of := thigh.orthogonal()
+		var hem := top.lerp(knee, 0.42)
+		var shorts := PackedVector2Array([top - side_of * 4.9 - thigh * 1.5, top + side_of * 4.9 - thigh * 1.5, hem + side_of * 4.7, hem - side_of * 4.7])
+		_shape(shorts, Color("ece6d8"), 0.9)
+		draw_line(hem + side_of * 4.4 - thigh * 0.8, hem - side_of * 4.4 - thigh * 0.8, Color("c9c0ad"), 0.6, true)
+	else:
+		# Small fabric folds, not round kneecaps.
+		draw_line(knee - cross * 2.5 + shin, knee + cross * 0.7 + shin * 1.8, tone.darkened(0.3), 0.65, true)
+		draw_line(knee + cross * 0.4 + shin * 3.1, knee + cross * 2.0 + shin * 2.5, tone.darkened(0.21), 0.5, true)
 	shoe_transform.origin = foot
 	draw_set_transform_matrix(body_transform * shoe_transform)
 	var shoe := _joint(0, 1.8, 0)
@@ -962,6 +993,12 @@ func _draw_leg(side: int, points: PackedVector2Array, body_transform: Transform2
 	draw_set_transform_matrix(body_transform)
 
 func _draw_arm(joints: PackedVector2Array, color: Color, skin: Color) -> void:
+	if bare_arms:
+		# A bare arm: skin all the way down, slimmer than a sleeve, no cuff.
+		_limb_chain(joints, Vector3(3.3, 2.7, 2.0), skin if color.v >= skin.v * 0.95 else skin.darkened(0.08))
+		var down := (joints[2] - joints[1]).normalized()
+		_oval(joints[2] + down * 0.7, Vector2(2.25, 2.7), skin, down.angle() - PI / 2.0, 1.15)
+		return
 	_limb_chain(joints, Vector3(3.8, 3.1, 2.2), color)
 	var fore := (joints[2] - joints[1]).normalized()
 	var cross := fore.orthogonal()
@@ -1002,7 +1039,17 @@ func _draw_coat(chest: Vector2, hip: Vector2, width: float, vest: Color, shirt: 
 		points.append(points[0])
 		draw_polyline(points, Color("7a5a1c"), 0.45, true)
 		draw_circle(star_at, 0.55, Color("fff0b0"))
-	if not has_shirt and not has_vest: return
+	if bare_legs:
+		# The shorts' waistband sits at the hips, over the bottom of the shirt or the bare belly.
+		_shape(PackedVector2Array([hip + Vector2(-width * 0.76, -2.6), hip + Vector2(width * 0.76, -2.6), hip + Vector2(width * 0.74, 2.4), hip + Vector2(-width * 0.74, 2.4)]), Color("ece6d8"), 0.9)
+		draw_line(hip + Vector2(-width * 0.7, -1.4), hip + Vector2(width * 0.7, -1.4), Color("bdb39e"), 0.6, true)
+	if not has_shirt and not has_vest:
+		if forward.y > -0.3:
+			# A bare chest: collarbones, a little shading and the navel.
+			draw_polyline(PackedVector2Array([chest + Vector2(-width * 0.5, 0.5), chest + Vector2(-1.0, 1.6), chest + Vector2(1.0, 1.6), chest + Vector2(width * 0.5, 0.5)]), vest.darkened(0.22), 0.6, true)
+			draw_line(chest + Vector2(forward.x * 2.0, 3.5), chest.lerp(hip, 0.45) + Vector2(forward.x * 2.0, 0), vest.darkened(0.15), 0.5, true)
+			draw_circle(chest.lerp(hip, 0.72) + Vector2(forward.x * 2.0, 0), 0.6, vest.darkened(0.3), true, -1, true)
+		return
 	var front := maxf(0.0, forward.y)
 	var seam_top := chest + Vector2(forward.x * width * 0.58, 1)
 	var seam_low := hip + Vector2(forward.x * width * 0.47, 0)
@@ -1065,7 +1112,8 @@ func _draw_blanket(chest: Vector2, amount: float) -> void:
 	if pull <= 0.01: return
 	amount = 1.0
 	var top: float = lerpf(-4.0, chest.y + 3.0, pull)
-	var shape := PackedVector2Array([Vector2(-13, top), Vector2(13, top + 0.5), Vector2(14.5, -14), Vector2(13.5, 2), Vector2(-13.5, 2), Vector2(-14.5, -14)])
+	var middle: float = (top + 2.0) * 0.5
+	var shape := PackedVector2Array([Vector2(-13, top), Vector2(13, top + 0.5), Vector2(14.5, middle), Vector2(13.5, 2), Vector2(-13.5, 2), Vector2(-14.5, middle)])
 	draw_colored_polygon(_rounded(shape, 0.2), cloth)
 	draw_line(Vector2(-12.5, top + 1.2), Vector2(12.5, top + 1.6), Color(0.93, 0.9, 0.82, amount), 2.2, true)
 	for x in [-6.0, 1.0, 8.0]:

@@ -407,7 +407,7 @@ static func square(c: Node2D, center: Vector2) -> void:
 		box(c, Rect2(center + Vector2(dx - 20, 26), Vector2(40, 9)), Color("8d643a"), 1)
 		lamp(c, center + Vector2(dx, -20))
 
-static func vegetation(c: Node2D, bounds: Rect2, buildings: Array, wind_phase: float = 0.0, wind_strength: float = 0.0, road_coverage: Callable = Callable()) -> void:
+static func vegetation(c: Node2D, bounds: Rect2, buildings: Array, wind_phase: float = 0.0, wind_strength: float = 0.0, road_coverage: Callable = Callable(), dry_center: Vector2 = Vector2(122, 126)) -> void:
 	for y in range(floori(bounds.position.y / 24), ceili(bounds.end.y / 24)):
 		for x in range(floori(bounds.position.x / 24), ceili(bounds.end.x / 24)):
 			var hash_value: int = absi(x * 719 ^ y * 113 ^ x * y * 31)
@@ -420,7 +420,7 @@ static func vegetation(c: Node2D, bounds: Rect2, buildings: Array, wind_phase: f
 			var base := cell_rect.position + Vector2(6 + hash_value % 9, 17)
 			if road_coverage.is_valid() and road_coverage.call(base) > 0.53: continue
 			var shade: Color = Color("355a33") if hash_value % 2 == 0 else Color("53723e")
-			if Vector2(float(x) - 122.0, (float(y) - 126.0) * 1.2).length() < 46.0: shade = Color("8a7448") if hash_value % 2 == 0 else Color("a38b57")  # dry grass around Dustvale
+			if Vector2(float(x) - dry_center.x, (float(y) - dry_center.y) * 1.2).length() < 46.0: shade = Color("8a7448") if hash_value % 2 == 0 else Color("a38b57")  # dry grass around Dustvale
 			var sway: float = sin(wind_phase + float(x) * 0.19 + float(y) * 0.13) * wind_strength * 2.0
 			c.draw_line(base, base + Vector2(-2 + sway, -6), shade, 1.4, true)
 			c.draw_line(base + Vector2(1, 0), base + Vector2(3 + sway, -8), shade.lightened(0.12), 1.4, true)

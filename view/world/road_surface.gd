@@ -14,7 +14,9 @@ func bake(state: Dictionary, extent: Rect2) -> ImageTexture:
 	mask = Image.create_empty(resolution.x, resolution.y, false, Image.FORMAT_L8)
 	if state.has("routes"):
 		var route := PackedVector2Array()
-		for x in range(36, 216, 2):
+		var east: int = 216
+		if state.get("settlements", {}).has("2"): east = int(state.entities[str(state.settlements["2"].warehouse)].cell[0]) + 36
+		for x in range(36, east, 2):
 			var bend := sin(float(x) * 0.27) * 5.2 + sin(float(x) * 0.61) * 2.6
 			route.append(Vector2(x * CELL, ROAD_Y + bend))
 		_track(route, 17.0)
@@ -22,9 +24,10 @@ func bake(state: Dictionary, extent: Rect2) -> ImageTexture:
 		# The south road from Alder Hollow's square down to Dustvale, and Dustvale's own street.
 		var south := PackedVector2Array()
 		var from_cell := Vector2(70, 50)
-		var to_cell := Vector2(122, 126)
-		for step in range(0, 41):
-			var t := float(step) / 40.0
+		var dust_store: Array = state.entities[str(state.settlements["3"].warehouse)].cell
+		var to_cell := Vector2(dust_store[0], dust_store[1] - 2)
+		for step in range(0, 121):
+			var t := float(step) / 120.0
 			var along := from_cell.lerp(to_cell, t)
 			south.append(Vector2(along.x + sin(t * 9.0) * 3.2 + sin(t * 23.0) * 1.2, along.y) * CELL)
 		_track(south, 16.0)

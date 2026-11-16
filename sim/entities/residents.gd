@@ -41,6 +41,8 @@ static func update(sim: RefCounted) -> void:
 		if Brawl.busy(s, npc): continue
 		if not npc.get("migration", {}).is_empty():
 			continue
+		if npc.occupation == "Trader" and load("res://sim/economy/traders.gd").away(s, npc):
+			continue   # on the road, or waiting at a foreign market
 		# Tiredness builds more slowly than hunger, so a normal day ends with people ready for bed.
 		if s.tick % 150 == 0 and npc.get("sleeping", {}).is_empty(): npc.fatigue = mini(100, npc.fatigue + 1)
 		if not npc.get("sleeping", {}).is_empty() and npc.goal != "sleep": Households.wake(s, npc)  # woken by something else

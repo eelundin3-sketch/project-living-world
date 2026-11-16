@@ -4,6 +4,9 @@ shader_type canvas_item;
 uniform vec2 world_origin;
 uniform float terrain_seed;
 uniform sampler2D road_mask : filter_linear, repeat_disable;
+uniform vec2 hollow_center = vec2(64.0, 47.0);
+uniform vec2 reedbank_center = vec2(180.0, 47.0);
+uniform vec2 dust_center = vec2(122.0, 128.0);
 varying vec2 land;
 
 void vertex() {
@@ -31,11 +34,11 @@ void fragment() {
 	vec2 warp = vec2(field(p * 0.023), field(p * 0.027 + 34.0)) * 15.0;
 	vec2 warped = p + warp;
 	float masses = field(warped * 0.037) * 0.69 + field(warped * 0.105) * 0.31;
-	float hollow = length((land - vec2(64.0, 47.0)) / vec2(35.0, 27.0));
-	float reedbank = length((land - vec2(180.0, 47.0)) / vec2(34.0, 26.0));
+	float hollow = length((land - hollow_center) / vec2(35.0, 27.0));
+	float reedbank = length((land - reedbank_center) / vec2(34.0, 26.0));
 	float village = 1.0 - smoothstep(0.52, 1.21, min(hollow, reedbank));
 	// Dustvale, in the south: dry, pink-brown ground with thin, patchy cover.
-	float dust = 1.0 - smoothstep(0.55, 1.35, length((land - vec2(122.0, 128.0)) / vec2(50.0, 40.0)));
+	float dust = 1.0 - smoothstep(0.55, 1.35, length((land - dust_center) / vec2(50.0, 40.0)));
 	float upland = 1.0 - smoothstep(0.35, 1.4, length((land - vec2(89.0, 0.0)) / vec2(48.0, 24.0)));
 	float broken_edge = (field(warped * 0.32) - 0.5) * 0.077;
 	float woodland = smoothstep(0.43, 0.545, masses + 0.045 + broken_edge - village * 0.37 - upland * 0.22 - dust * 0.62);

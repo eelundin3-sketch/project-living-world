@@ -30,7 +30,7 @@ func run() -> void:
 	var Inventory = load("res://sim/inventory/inventory_store.gd")
 	Inventory.produce(s, s.player, "hat:2", 1); Inventory.produce(s, s.player, "shirt:1", 1); Inventory.produce(s, s.player, "log", 4); Inventory.produce(s, s.player, "food", 3)
 	main.player_panels.show_mode("inventory")
-	main.player_panels.inventory_grid.selected = "item:hat:2"
+	main.player_panels.inventory_window.grid.hover = "item:hat:2"
 	sim.step(); main.refresh_view()
 	for i in range(3): await process_frame
 	await RenderingServer.frame_post_draw

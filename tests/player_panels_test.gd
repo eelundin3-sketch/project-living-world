@@ -13,6 +13,25 @@ func run() -> void:
 	var cell: Array=main.simulation.state.entities[str(main.simulation.state.player)].cell.duplicate()
 	Input.action_press("walk_right"); main._process(0.1); Input.action_release("walk_right")
 	check(main.simulation.state.entities[str(main.simulation.state.player)].cell==cell,"Modal inventory prevents accidental movement")
+	# Drag and drop: a worn piece dragged into the grid comes off; dragged back onto its square, it goes on.
+	var grid = main.player_panels.inventory_window.grid
+	var s: Dictionary = main.simulation.state
+	var Outfits = load("res://sim/entities/outfits.gd")
+	check(Outfits.worn(s, s.player).pack == "pack:0", "The player starts wearing a backpack")
+	var pack_square: Vector2 = grid._slot_rect(4).get_center()
+	var into_grid: Vector2 = grid._cell_rect(20).get_center()
+	var off_data := {"type": "lw_item", "item": "pack:0", "from": "slot", "slot": "pack"}
+	check(grid._can_drop_data(into_grid, off_data) and not grid._can_drop_data(pack_square, off_data), "A worn backpack can be dropped into the grid")
+	grid._drop_data(into_grid, off_data); main.simulation.step()
+	check(Outfits.worn(s, s.player).pack == "" and int(s.inventories[str(s.player)].items.get("pack:0", 0)) == 1, "Dragging the backpack off puts it in the inventory")
+	var on_data := {"type": "lw_item", "item": "pack:0", "from": "grid", "slot": ""}
+	check(grid._can_drop_data(pack_square, on_data) and not grid._can_drop_data(grid._slot_rect(0).get_center(), on_data), "The backpack only fits its own square")
+	grid._drop_data(pack_square, on_data); main.simulation.step()
+	check(Outfits.worn(s, s.player).pack == "pack:0", "Dragging it onto the backpack square puts it back on")
+	var bar = main.bottom_bar
+	check(bar.drop_zones[2]._can_drop_data(Vector2.ZERO, {"type": "lw_item", "item": "bandage", "from": "grid", "slot": ""}), "Items can be dropped onto a hotbar slot")
+	bar.drop_zones[2]._drop_data(Vector2.ZERO, {"type": "lw_item", "item": "bandage", "from": "grid", "slot": ""}); main.simulation.step()
+	check(s.hotbar.slots[2] == "bandage", "Dropping on the hotbar assigns the slot")
 	press(main,KEY_H)
 	var panels = main.player_panels
 	var window = panels.health_window

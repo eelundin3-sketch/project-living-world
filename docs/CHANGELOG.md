@@ -1,5 +1,62 @@
 # Changelog
 
+## Walking traders and market tents — 2026-11-16
+
+- The abstract wooden cart between the towns is gone. Trade is now carried by a
+  **trader**: a villager who takes up the trade only while it pays, i.e. while some
+  good's price differs enough between two markets. She borrows a stake from her
+  town, walks the actual road with her pack, buys where a good is cheap, sells it
+  where it is dear, and walks on to wherever the next bargain is. When no price is
+  worth the walk she goes home, repays the stake and takes up other work.
+- **Every seller has their own market tent.** Farmers, woodsmen, sawyers, bakers,
+  miners, blacksmiths and traders each keep a tent at their town's market, named
+  for them, in their own colours, stocked from the storehouse with what they make.
+  A tent is packed away (goods back to the storehouse) when its keeper changes trade.
+  Rye, ore and tools now have market prices.
+
+## Houses for households, a bigger map, wild forests — 2026-11-16
+
+- **13 house types** (plank shack, log cabin, lean-to cottage, adobe hut, cottage,
+  saltbox, clapboard house, stone cottage, farmhouse, family house, homestead,
+  two-room house, dogtrot), each with its own size, shape (plain or a notched back
+  corner), 1-3 beds, furniture fitted to the room, and timber/floor style.
+- **Households get their own houses.** At the start each town's people pair off
+  into families (2-3) or live alone, and every household gets a house sized for
+  it: one bed each. Most singles can only afford a one-room place; a few better-off
+  ones and some couples build bigger. Houses built later follow the same rules
+  (sized for the household that needs one most). Dustvale builds in adobe and stone.
+- **Irregular towns.** Houses are scattered around the square at random angles and
+  distances instead of in a row, always clear of the roads into town, of each other,
+  the fields and the market. Each town's lodge, office and workshops sit back from
+  the street by different amounts.
+- **A much bigger map.** The region is now about 580 x 420 cells. Reedbank is ~300
+  cells east along the road and Dustvale ~210 cells south, so travel takes a while.
+- **Wild forests.** About 5,200 more trees fill the dark-green forest floor across
+  the open country (the ground mask is shared between the shader and the game, see
+  `sim/world/terrain.gd`), on top of the woods around each town.
+
+## Backpack slot, underwear and drag-and-drop — 2026-11-16
+
+- The backpack is now a piece of gear like clothing: the player starts wearing
+  it, it has its own square in the inventory, and it can be taken off and put
+  back on. When worn it shows in every animation (falls, lying, getting up,
+  sleeping, treating wounds, kneeling at the inventory).
+- Without clothes you are in your underwear: bare arms and chest with no shirt,
+  bare legs under white boxers with no trousers, bare feet without boots.
+- Inventory drag and drop: drag an item onto its clothing or backpack square to
+  wear it, drag a worn piece into the grid to take it off, or drag an item onto a
+  hotbar slot to assign it. Valid targets light up green while dragging.
+
+## Inventory window and faster forced falls — 2026-11-16
+
+- The inventory is now a small desktop-style window at the left of the screen:
+  only the item grid and the clothing squares, a title bar to drag it anywhere,
+  close / minimise / snap-home buttons, and Esc to close. The world stays visible.
+  Hover an item for its name; double-click to wear or hold it; press 1-4 over an
+  item to put it on the hotbar.
+- Forced falls are quick: a shove drops you in 0.6 s, collapsing from a sprint
+  pitches you over in 0.5 s at running pace, a beating's knockout in 0.9 s.
+
 ## Title screen, sheriffs, backpack, beds, crouching, forests and sun shadows — 2026-11-16
 
 - **Title screen.** Launching the game opens a menu (Start Game, Options, Quit
