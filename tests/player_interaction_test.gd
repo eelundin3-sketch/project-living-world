@@ -19,7 +19,10 @@ func _initialize() -> void:
 	check(s.player_control.held_quantity==4 and Inventory.amount(s,s.player,"food")==4,"F picks the dropped goods up once")
 	command(sim,"hold_item",{"item":""})
 	check(s.player_control.held_quantity==0 and Inventory.amount(s,s.player,"food")==4,"Stowing preserves ownership")
+	# Trade needs someone without work cargo or a job; the sheriff walks rounds rather than hauling goods.
 	var npc: Dictionary=s.residents.values()[-1]
+	for candidate in s.residents.values():
+		if candidate.occupation=="Sheriff" and candidate.job==0: npc=candidate; break
 	s.entities[str(s.player)].cell=s.entities[str(npc.id)].cell.duplicate()
 	command(sim,"interact",{"target":npc.id})
 	check(s.player_control.ui_target==npc.id,"F opens person interaction")

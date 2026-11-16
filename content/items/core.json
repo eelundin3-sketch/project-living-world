@@ -20,6 +20,18 @@
     "antiseptic": {
       "id": "core:item/antiseptic",
       "name": "Antiseptic"
+    },
+    "rye": {
+      "id": "core:item/rye",
+      "name": "Rye grain"
+    },
+    "ore": {
+      "id": "core:item/ore",
+      "name": "Iron ore"
+    },
+    "tool": {
+      "id": "core:item/tool",
+      "name": "Iron tools"
     }
   }
 }

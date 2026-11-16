@@ -1,9 +1,11 @@
 extends RefCounted
+const Crops = preload("res://sim/farming/crops.gd")
 const World = preload("res://sim/world/world_db.gd")
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const Residents = preload("res://sim/entities/residents.gd")
 const Recipes = preload("res://sim/production/recipe_system.gd")
 const Market = preload("res://sim/economy/market.gd")
+const Dustvale = preload("res://sim/settlement/dustvale.gd")
 
 static func initialize(sim: RefCounted) -> void:
 	var s: Dictionary = sim.state
@@ -16,13 +18,22 @@ static func initialize(sim: RefCounted) -> void:
 	var farm := World.add_entity(sim, "farm", "Reedbank fields", [199, 60], 2)
 	Inventory.create(s, farm, 1500)
 	Inventory.produce(s, farm, "food", 700)
+	Crops.add_plot(s, "field", [193, 57, 12, 6], 2, farm, 0, 30000)
+	# Iron outcrops east of Reedbank give its miners and blacksmith a reason to exist.
+	for ore_cell in [[236, 54], [239, 57], [234, 59]]:
+		var ore := World.add_entity(sim, "ore", "Iron outcrop", ore_cell, 2)
+		Inventory.create(s, ore, 80)
+		Inventory.produce(s, ore, "ore", 40)
 	s.settlements["2"] = {"id": 2, "name": "Reedbank", "warehouse": store, "home": home, "housing": 12,
-		"population": 10, "policy": "Food exports", "demand": {}, "fidelity": "coarse", "faction": 2}
-	Residents.spawn(sim, 10, 2, [178, 48])
+		"population": 5, "policy": "Food exports", "demand": {}, "fidelity": "coarse", "faction": 2}
+	Residents.spawn(sim, 5, 2, [178, 48])
 	World.populate_forest(sim, 2, 140, [180, 46])
 	World.populate_dense_groves(sim, 2, 60, [180, 46])
 	Recipes.add_workshop(sim, 2, [197, 45], store)
+	Recipes.add_workshop(sim, 2, [213, 45], store, "bakery")
+	Recipes.add_workshop(sim, 2, [229, 45], store, "forge")
 	Market.add_market(s, 2)
+	Dustvale.install(sim)
 	var merchant := World.add_entity(sim, "caravan", "Moss Road carrier", [64, 46], 1)
 	Inventory.create(s, merchant, 80)
 	s.accounts[str(merchant)] = 5000

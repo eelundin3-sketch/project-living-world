@@ -8,15 +8,24 @@ static func item(c: Node2D, p: Vector2, kind: String) -> void:
 		"plank": Props.plank(c, p + Vector2(-13, 0), p + Vector2(13, -1))
 		_: Props.supply(c, p, kind)
 
+## The three goods a workshop's storage rack labels, by trade.
+static func stock_kinds(entity: Dictionary) -> Array:
+	match entity.get("kind", ""):
+		"bakery": return ["rye", "food", "plank"]
+		"forge": return ["ore", "tool", "log"]
+	return ["log", "plank", "food"]
+
 static func slot(entity: Dictionary, kind: String) -> Vector2:
 	var slot_index := 1 if entity.fixtures.size() > 1 else 0
 	var data: Array = entity.fixtures[slot_index].rect
 	if entity.fixtures[slot_index].kind == "stall":
 		var index: int = maxi(0, entity.sale_items.find(kind))
 		return Vector2(data[0], data[1]) * 24 + Vector2(3 + index * 26, 3)
+	if entity.fixtures[slot_index].kind in ["oven", "forge"]:
+		return Vector2(data[0], data[1]) * 24 - Vector2(12, 12) + (Vector2(70, 34) if kind in ["food", "tool"] else Vector2(14, 20))
 	if entity.fixtures[slot_index].kind == "saw":
 		return Vector2(data[0],data[1])*24-Vector2(12,12)+(Vector2(82,35) if kind=="plank" else Vector2(15,12))
-	var index: int = maxi(0,["log","plank","food"].find(kind))
+	var index: int = maxi(0,stock_kinds(entity).find(kind))
 	return Vector2(data[0],data[1])*24 + Vector2(3+index*30,15)
 static func paint(c: Node2D, entity: Dictionary, stock: Dictionary, phase: float, active: bool, fixture_index: int = 0) -> void:
 	var fixture: Dictionary = entity.fixtures[fixture_index]
@@ -32,6 +41,12 @@ static func paint(c: Node2D, entity: Dictionary, stock: Dictionary, phase: float
 			for i in range(4):
 				var t: float = fmod(phase*0.15+i*0.23,1.0)
 				c.draw_line(p+Vector2(58+t*18,20+t*15),p+Vector2(61+t*18,22+t*15),Color("dcb77a"),1.5)
+	elif fixture.kind == "weapon_rack":
+		Furniture.weapon_rack(c, p, int(stock.get("shotgun", 0)), int(stock.get("shell", 0)))
+	elif fixture.kind == "oven":
+		Furniture.oven(c, p, phase, active, int(stock.get("rye", 0)), int(stock.get("food", 0)))
+	elif fixture.kind == "forge":
+		Furniture.forge(c, p, phase, active)
 	elif fixture.kind == "stall":
 		draw_stall(c, entity, p, stock)
 	elif entity.kind == "construction":
@@ -51,7 +66,7 @@ static func paint(c: Node2D, entity: Dictionary, stock: Dictionary, phase: float
 	else:
 		Furniture.slab(c,Rect2(p,Vector2(96,48)),Color("775735"))
 		for index in range(3):
-			var kind: String = ["log","plank","food"][index]
+			var kind: String = stock_kinds(entity)[index]
 			var quantity: int = int(stock.get(kind,0))
 			for i in range(mini(6,ceili(quantity/5.0))):
 				item(c,slot(entity,kind)+Vector2(0,-i*4),kind)

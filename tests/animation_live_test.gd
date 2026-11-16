@@ -11,7 +11,11 @@ func run() -> void:
 	main.world_audio.wind.stop()
 	var observed: Dictionary = {}
 	var sounds: Dictionary = {}
-	for frame in range(6000):
+	# Five villagers fit the starting housing, so create a shortage to make the town build.
+	main.simulation.state.settlements["1"].housing = 3
+	main.simulation.state.inventories[str(main.simulation.state.warehouse)].items["plank"] = 0
+	load("res://sim/inventory/inventory_store.gd").produce(main.simulation.state, main.simulation.state.warehouse, "plank", 90)  # materials on hand so the builder starts soon
+	for frame in range(9000):
 		main.clock.advance(1.0 / 30.0, main.simulation)
 		main.get_node("WorldView").animate(1.0 / 30.0, false, 1)
 		var director = main.get_node("WorldView").motion
@@ -41,7 +45,7 @@ func run() -> void:
 	for step in range(33):
 		var heading := float(step) * TAU / 32.0
 		figure.set_pose({"heading": heading, "action": "idle"})
-		if not figure.forward.is_equal_approx(Vector2.from_angle(heading)) or absf(figure.across.dot(figure.forward)) > 0.001:
+		if not figure.forward.is_equal_approx(Vector2.from_angle(snappedf(heading, PI / 4.0))) or absf(figure.across.dot(figure.forward)) > 0.001:
 			failures += 1
 			printerr("FAIL: drawn body does not follow heading")
 	_verify_blends(figure)

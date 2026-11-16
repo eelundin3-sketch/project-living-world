@@ -74,7 +74,7 @@ func _initialize() -> void:
 	var town_gap: int = regional.entities[str(regional.settlements["2"].warehouse)].cell[0] - regional.entities[str(regional.settlements["1"].warehouse)].cell[0]
 	check(camera.get_viewport_rect().size.x / camera.zoom.x > town_gap * 24.0, "Regional zoom can frame both villages")
 	camera.adjust_zoom(0.5)
-	check(is_equal_approx(camera.zoom.x, 0.18), "Zoom stops at the regional limit")
+	check(is_equal_approx(camera.zoom.x, 0.06), "Zoom stops at the regional limit")
 	camera.zoom = walk_zoom
 	main_scene.player_panels.show_mode("")
 	var director = main_scene.get_node("WorldView").motion

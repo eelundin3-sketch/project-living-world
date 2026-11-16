@@ -4,9 +4,11 @@ const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const Recipes = preload("res://sim/production/recipe_system.gd")
 const Market = preload("res://sim/economy/market.gd")
 const Health = preload("res://sim/player/body_health.gd")
+const Crops = preload("res://sim/farming/crops.gd")
+const Looting = preload("res://sim/player/looting.gd")
 static func initialize(s: Dictionary) -> void:
 	if s.has("player_control") or not s.has("player"): return
-	s.player_control={"held_item":"","held_quantity":0,"work":{},"notice":"WASD move · I inventory · F interact · H health","ui_target":0,"ui_nonce":0,"next_move":0,"running_tick":0}
+	s.player_control={"held_item":"","held_quantity":0,"work":{},"notice":"WASD move · I inventory · F interact · H health","ui_target":0,"ui_nonce":0,"next_move":0,"running_tick":0,"pending":{},"ui_kind":"trade"}
 	# Personal trade uses actual resident goods and a transfer from the town treasury.
 	for npc in s.get("residents",{}).values():
 		if s.get("accounts",{}).has(str(npc.id)): continue
@@ -18,6 +20,10 @@ static func initialize(s: Dictionary) -> void:
 static func distance(a: Array,b: Array) -> int: return absi(a[0]-b[0])+absi(a[1]-b[1])
 static func near(s: Dictionary,e: Dictionary) -> bool:
 	var p: Array=s.entities[str(s.player)].cell
+	if e.has("rock_rect"):
+		# A big rock: anywhere in the ring of cells around it counts as beside it.
+		var r: Array=e.rock_rect
+		return p[0]>=r[0]-1 and p[0]<=r[0]+r[2] and p[1]>=r[1]-1 and p[1]<=r[1]+r[3]
 	if e.kind == "market_stall":
 		var stance := World.Fixtures.interaction_cell(s, e.id)
 		return p[1] >= stance[1] and distance(p, stance) <= 1
@@ -27,8 +33,8 @@ static func target(s: Dictionary, preferred: int = 0) -> int:
 	var found: int=0
 	var score: int=10000
 	for e in s.entities.values():
-		if e.kind=="stash" and Inventory.used(s.inventories[str(e.id)])==0: continue
-		if e.id==s.player or e.kind not in ["sawmill","warehouse","market","market_stall","construction","stash","resident","tree","farm"] or not near(s,e): continue
+		if e.get("kind","")=="stash" and Inventory.used(s.inventories.get(str(e.id),{"items":{},"capacity":1,"reserved":{}}))==0: continue
+		if e.id==s.player or e.get("kind","") not in ["sawmill","bakery","forge","office","warehouse","market","market_stall","construction","stash","resident","tree","farm","ore","chest"] or not near(s,e): continue
 		var candidate: int=distance(s.entities[str(s.player)].cell,World.Fixtures.interaction_cell(s,e.id))*10
 		candidate+=0 if e.kind in ["sawmill","warehouse","market","market_stall","stash"] else (3 if e.kind=="resident" else 5)
 		if candidate<score: score=candidate; found=e.id
@@ -61,6 +67,7 @@ static func interact(sim: RefCounted, preferred: int = 0) -> void:
 	if e.get("kind", "") == "market_stall":
 		pc.ui_target = id
 		pc.ui_nonce += 1
+		pc.ui_kind = "trade"
 		pc.notice = "Trading at the " + e.name.to_lower()
 		return
 	if pc.held_quantity>0:
@@ -79,15 +86,45 @@ static func interact(sim: RefCounted, preferred: int = 0) -> void:
 		return
 	if e.is_empty(): pc.notice="Move next to an object or person, then press F."; return
 	if e.kind in ["resident","warehouse","market"]:
-		pc.ui_target=id; pc.ui_nonce+=1; pc.notice="Interacting with "+e.name
+		pc.ui_target=id; pc.ui_nonce+=1; pc.ui_kind="trade"; pc.notice="Interacting with "+e.name
 	elif e.kind=="stash": take(s,id,first_item(s,id))
+	elif e.kind=="office":
+		# The weapon rack: take a shotgun and shells, or return them.
+		if Inventory.amount(s,s.player,"shotgun")>0:
+			var shells: int=Inventory.amount(s,s.player,"shell")
+			Inventory.transfer(s,s.player,id,"shotgun",1)
+			if shells>0: Inventory.transfer(s,s.player,id,"shell",shells)
+			if s.has("shotgun"): s.shotgun.equipped=false; s.shotgun.reloading=false; s.shotgun.loaded=0
+			pc.notice="You return the shotgun and shells to the rack."
+		elif Inventory.amount(s,id,"shotgun")>0:
+			Inventory.transfer(s,id,s.player,"shotgun",1)
+			Inventory.transfer(s,id,s.player,"shell",mini(10,Inventory.amount(s,id,"shell")))
+			pc.notice="You take a shotgun and shells. X readies it, R reloads."
+		else: pc.notice="The rack is empty."
+	elif e.kind=="chest":
+		Looting.open(s,id)
+	elif e.kind=="ore":
+		if Inventory.amount(s,id,"ore")==0: pc.notice="The rock has been mined out."; return
+		pc.work={"kind":"mine","target":id,"item":"ore","progress":0,"ticks":40,"cell":s.entities[str(s.player)].cell.duplicate()}
+		pc.notice="Mining iron ore. F stops; moving cancels."
 	elif e.kind in ["tree","farm"]:
-		var item: String="log" if e.kind=="tree" else "food"
+		var item: String="log" if e.kind=="tree" else ("food" if Inventory.amount(s,id,"food")>0 else "rye")
 		for job in s.jobs.values():
 			if job.target==id and job.owner!=0: pc.notice="A villager is already working here."; return
+		if e.kind=="farm" and Inventory.amount(s,id,item)==0:
+			var field: Dictionary=Crops.plot_for_farm(s,id)
+			if not field.is_empty() and Crops.stage(field)==5: Crops.harvest(s,field)
+			elif not field.is_empty(): pc.notice="The rye is still growing: %s." % Crops.stage_name(field); return
+		if e.kind=="tree" and Inventory.amount(s,id,item)==0: pc.notice="Only a stump is left here."; return
 		if Inventory.amount(s,id,item)==0: pc.notice="Nothing left to gather."; return
-		pc.work={"kind":"chop" if item=="log" else "harvest","target":id,"item":item,"progress":0,"ticks":20,"cell":s.entities[str(s.player)].cell.duplicate()}
-		pc.notice="Working. F stops; moving cancels."
+		# A standing tree is chopped down first; once it lies on the ground its wood can be gathered.
+		var kind: String="harvest"
+		var ticks: int=20
+		if e.kind=="tree":
+			kind="gather" if e.get("felled",false) else "chop"
+			ticks=12 if kind=="gather" else 34
+		pc.work={"kind":kind,"target":id,"item":item,"progress":0,"ticks":ticks,"cell":s.entities[str(s.player)].cell.duplicate()}
+		pc.notice="Chopping the tree down. F stops; moving cancels." if kind=="chop" else "Working. F stops; moving cancels."
 	elif e.kind=="sawmill":
 		var ws: Dictionary=s.workshops[str(id)]
 		var recipe: Dictionary=ws.get("batch_recipe",s.recipes[ws.recipe])
@@ -159,13 +196,18 @@ static func update(sim: RefCounted) -> void:
 			stop(s); pc.notice="Batch complete. F collects the output."
 	else:
 		work.progress+=1
-		if work.progress>=work.ticks:
+		if work.progress>=work.ticks and work.kind=="chop":
+			# The tree comes down; the logs stay with the fallen trunk until they are gathered.
+			var tree: Dictionary=s.entities[str(work.target)]
+			tree.felled=true; tree.felled_tick=s.tick
+			if sim.random_int("player:work_accident",0,11)==0:
+				var hurt: String=["right_hand","left_hand","right_forearm","left_forearm"][sim.random_int("player:work_accident",0,3)]
+				Health.injure(s,hurt,18,"cut")
+			pc.work={}; pc.notice="Timber! The tree falls. Press F at it to gather the wood."
+		elif work.progress>=work.ticks:
 			var quantity: int=mini(5,mini(Inventory.amount(s,work.target,work.item),Inventory.available(s,s.player)))
 			var result := Inventory.transfer(s,work.target,s.player,work.item,quantity)
 			if result.ok: pc.held_item=work.item; pc.held_quantity=quantity
-			if work.kind=="chop" and result.ok and sim.random_int("player:work_accident",0,11)==0:
-				var part: String=["right_hand","left_hand","right_forearm","left_forearm"][sim.random_int("player:work_accident",0,3)]
-				Health.injure(s,part,18,"cut")
 			pc.work={}; pc.notice="Gathered supplies." if result.ok else "Could not gather: "+result.error_code
 
 static func prompt(s: Dictionary,preferred: int = 0) -> String:
@@ -188,6 +230,6 @@ static func validate(s: Dictionary) -> String:
 		if not pc.get(field) is int or pc[field]<0: return "Invalid player control value"
 	var work: Dictionary=pc.work
 	if not work.is_empty():
-		if work.get("kind","") not in ["chop","harvest","saw"] or not work.get("target") is int or not s.entities.has(str(work.target)): return "Invalid player work target"
+		if work.get("kind","") not in ["chop","gather","harvest","mine","saw"] or not work.get("target") is int or not s.entities.has(str(work.target)): return "Invalid player work target"
 		if not work.get("progress") is int or not work.get("ticks") is int or work.progress<0 or work.ticks<1 or not work.get("cell") is Array or work.cell.size()!=2: return "Invalid player work progress"
 	return ""

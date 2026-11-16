@@ -31,6 +31,7 @@ func _ready() -> void:
 	style.content_margin_top = 7
 	style.content_margin_bottom = 7
 	panel.add_theme_stylebox_override("panel", style)
+	panel.visible = false  # the old title/stats/speed panel was removed; the clock and speed live in the bottom bar
 	root.add_child(panel)
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 3)
@@ -58,15 +59,27 @@ func _ready() -> void:
 	stamina_bar.max_value = 100
 	stamina_bar.show_percentage = false
 	stamina_bar.tooltip_text = "Stamina · hold Shift while walking to run"
+	stamina_bar.visible = false  # the stamina bar lives above the bottom hotbar now
 	controls.add_child(stamina_bar)
+	# The interaction prompt and short messages stay, as a line above the hotbar.
 	notice = Label.new()
-	notice.add_theme_font_size_override("font_size", 11)
-	notice.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	notice.custom_minimum_size.y = 18
-	column.add_child(notice)
+	notice.add_theme_font_size_override("font_size", 14)
+	notice.add_theme_color_override("font_color", Color("f4ecd6"))
+	notice.add_theme_color_override("font_outline_color", Color(0.08, 0.06, 0.04, 0.95))
+	notice.add_theme_constant_override("outline_size", 5)
+	notice.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	notice.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	notice.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	notice.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	notice.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	notice.offset_top = -152
+	notice.offset_bottom = -130
+	notice.offset_left = -360
+	notice.offset_right = 360
+	root.add_child(notice)
 
 	observer_panel = PanelContainer.new()
-	observer_panel.position = Vector2(12, 130)
+	observer_panel.position = Vector2(84, 130)
 	observer_panel.custom_minimum_size = Vector2(300, 0)
 	observer_panel.visible = false
 	observer_panel.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -127,4 +140,4 @@ func toggle_details() -> void:
 func toggle_large_text() -> void:
 	large_text = not large_text
 	stats.add_theme_font_size_override("font_size", 16 if large_text else 12)
-	notice.add_theme_font_size_override("font_size", 14 if large_text else 11)
+	notice.add_theme_font_size_override("font_size", 18 if large_text else 14)

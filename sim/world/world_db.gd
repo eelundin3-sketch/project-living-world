@@ -1,6 +1,8 @@
 extends RefCounted
 const Fixtures = preload("res://sim/world/fixtures.gd")
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
+const Names = preload("res://sim/entities/names.gd")
+const Crops = preload("res://sim/farming/crops.gd")
 const CHUNK_SIDE: int = 64
 const WIDTH: int = 128
 const HEIGHT: int = 96
@@ -19,6 +21,8 @@ static func in_reserved_plot(plots: Array[Rect2i], cell: Array) -> bool:
 	for plot in plots:
 		if plot.has_point(point): return true
 	return false
+
+const WORKSHOP_KINDS: Array[String] = ["sawmill", "bakery", "forge"]
 
 static func cell_key(cell: Array) -> String:
 	return "%d,%d" % [cell[0], cell[1]]
@@ -52,7 +56,7 @@ static func apply_mutation(state: Dictionary, cell: Array, blocked: bool) -> voi
 static func add_entity(sim: RefCounted, kind: String, name_value: String, cell: Array, settlement: int = 0) -> int:
 	var id: int = sim.new_id()
 	sim.state.entities[str(id)] = {"id": id, "kind": kind, "name": name_value, "cell": cell.duplicate(), "settlement": settlement}
-	if kind in ["home", "warehouse", "sawmill", "market", "construction"]:
+	if kind in ["home", "warehouse", "sawmill", "bakery", "forge", "office", "market", "construction"]:
 		sim.state.entities[str(id)].building_scale = 2
 	if kind == "home": sim.state.entities[str(id)].layout_shape = "stepped_joined"
 	var coord := chunk_coord(cell[0], cell[1])
@@ -60,7 +64,7 @@ static func add_entity(sim: RefCounted, kind: String, name_value: String, cell: 
 	if not sim.state.world.chunks.has(key):
 		sim.state.world.chunks[key] = {"seed": sim.state.seed, "version": 1, "entities": [], "mutations": {}}
 	sim.state.world.chunks[key].entities.append(id)
-	if kind in ["home", "warehouse", "sawmill", "market"]:
+	if kind in ["home", "warehouse", "sawmill", "bakery", "forge", "office", "market"]:
 		install_building(sim.state, id)
 	elif kind in ["construction", "market_stall"]:
 		Fixtures.install(sim.state, sim.state.entities[str(id)])
@@ -72,13 +76,14 @@ static func seed_world(sim: RefCounted) -> void:
 	s.world = {"blocked": {}, "chunks": {}, "nav_revision": 0, "building_walls": {}, "architecture_version": 3, "house_layout_version": 2, "building_scale_version": 2, "fixture_version": 2, "fixture_cells": {}, "meters_per_cell": METERS_PER_CELL}
 	s.inventories = {}
 	s.accounting = {"initial": {}, "created": {}, "consumed": {}}
-	s.player = add_entity(sim, "player", "Traveller", [62, 49])
+	s.player = add_entity(sim, "player", Names.generate(sim), [62, 49])
 	Inventory.create(s, s.player, 40, {"food": 4})
 	s.warehouse = add_entity(sim, "warehouse", "Alder Hollow storehouse", [64, 46], 1)
 	Inventory.create(s, s.warehouse, 3000, {"food": 160})
 	s.home = add_entity(sim, "home", "Common lodge", [46, 42], 1)
 	s.farm = add_entity(sim, "farm", "Communal vegetable beds", [81, 57], 1)
 	Inventory.create(s, s.farm, 1000, {"food": 300})
+	Crops.add_plot(s, "field", [75, 54, 12, 6], 1, s.farm, 0, 23000)
 	populate_forest(sim, 1, 280, [64, 46], false)
 	populate_dense_groves(sim, 1, 100, [64, 46], false)
 	s.world.forest_version = 3
@@ -219,7 +224,7 @@ static func upgrade_layouts(s: Dictionary) -> void:
 	s.world.building_walls = {}
 	s.world.fixture_cells = {}
 	for entity in s.entities.values():
-		if entity.get("kind", "") in ["home", "warehouse", "sawmill", "market"]:
+		if entity.get("kind", "") in ["home", "warehouse", "sawmill", "bakery", "forge", "office", "market"]:
 			# Earlier icons sat too close together for full-sized rooms.
 			if s.has("settlements") and s.settlements.has(str(entity.settlement)):
 				var store: Array = s.entities[str(s.settlements[str(entity.settlement)].warehouse)].cell
@@ -276,7 +281,11 @@ static func populate_forest(sim: RefCounted, town: int, desired: int, center: Ar
 					close = true
 		if close:
 			continue
-		var id := add_entity(sim, "tree", "Alder %03d" % (count + 1) if town == 1 else "Reedbank willow %03d" % (count + 1), cell, town)
+		var id := add_entity(sim, "tree", "Alder %03d" % (count + 1) if town == 1 else ("Reedbank willow %03d" % (count + 1) if town == 2 else "Scrub oak %03d" % (count + 1)), cell, town)
+		if town == 3:
+			# Dustvale's dry country: mostly dead trunks, some still in autumn leaf.
+			if count % 3 == 0: s.entities[str(id)].autumn = true
+			else: s.entities[str(id)].dead = true
 		Inventory.create(s, id, 80, {} if account_growth else {"log": 60})
 		if account_growth:
 			Inventory.produce(s, id, "log", 60)

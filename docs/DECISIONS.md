@@ -360,3 +360,39 @@ stall and its category list. The underlying town market still owns regional
 price history and order matching. Current saves keep all records. A one-time
 stall and fixture upgrade adds the layout to supported older saves. Old saved
 populations remain intact when the new-game default changes.
+
+
+## 2026-11-16 — Rye, households, trades, weapons, needs, placement
+
+- **Rye is integer growth ticks.** A plot stores `grown` out of 43,200 ticks; the six
+  stages are derived thresholds and the art is a continuous function of the same
+  value, so saves and replays stay exact and the crop never "pops" between sprites.
+- **Grain is not food.** Farms produce `rye`; only the baker (or a household oven, at
+  a worse ratio) produces `food`. This keeps the baker meaningful and food
+  conservation exact. Farms keep any legacy `food` stock and gatherers still haul it.
+- **Trades are derived, not enforced.** `Professions.demand` computes head-count per
+  trade from nearby trees, ore, fields, population, danger and the workshops that
+  exist. Farmers and a sheriff appear through the food and safety terms, so a tiny
+  hamlet with no fields would not get a farmer. Gathering trades only take jobs on
+  their own resource kind.
+- **Pantry = the home's inventory.** Avoids a second ledger; the invariants and
+  conservation checks cover household food automatically.
+- **Garden clearing relocates trees** with `move_record` instead of deleting them so
+  logs remain accounted for.
+- **Placement is lazy-loaded.** `placement.gd` and `world_db.gd` depend on each other
+  through `fixtures.gd`; `placement.gd` loads World/Navigation at call time to avoid a
+  preload cycle.
+- **Shotgun pellets are simulated** (7 per shot, 2 cells per tick, 9 damage each) in
+  `sim/player/shotgun.gd`; the view only draws `state.shotgun`. Damage is non-lethal
+  to residents like the existing combat (health floors at zero).
+- **Player needs run slower than residents'** (about one meal and two drinks a day)
+  so a human player is not starving within minutes.
+- **Research basis.** The indicator design follows Project Zomboid's moodles as
+  described by community guides (icons that appear only when relevant, four severity
+  levels, thirst/hunger/tired/pain/stress/unhappy families). Exact in-game
+  percentages were not verified. Market dressing follows general period references
+  (paved square, central well, awnings, goods around stalls); no precise frontier
+  stall-spacing source was found.
+- **Not done:** extra craftsmen (carpenter etc.) exist as a named trade with no
+  production chain; objects facing "up" reuse the "down" art; the Windows/Linux
+  exports were not rebuilt.

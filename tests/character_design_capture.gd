@@ -12,7 +12,7 @@ func run() -> void:
 	background.size = Vector2(1280, 720)
 	root.add_child(background)
 	var headings: Array[float] = [PI / 2.0, PI / 4.0, 0.0, -PI / 4.0, -PI / 2.0, -3.0 * PI / 4.0, PI, 3.0 * PI / 4.0]
-	var names := ["Front", "Front three-quarter", "Profile", "Back three-quarter", "Back", "Back three-quarter", "Profile", "Front three-quarter"]
+	var names := ["Down", "Down + right", "Right", "Up + right", "Up", "Up + left", "Left", "Down + left"]
 	for i in range(headings.size()):
 		_add_figure(Vector2(78 + i * 160, 306), headings[i], "idle", names[i])
 	var actions := ["walk", "run", "aim", "chop", "carry", "punch", "down"]

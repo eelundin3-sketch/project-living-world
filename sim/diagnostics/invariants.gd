@@ -51,7 +51,7 @@ static func validate(s: Dictionary) -> Array[String]:
 			if job.lease_until <= s.tick:
 				errors.append("Expired live lease")
 	for npc in s.get("residents", {}).values():
-		if npc.hunger < 0 or npc.hunger > 100 or npc.fatigue < 0 or npc.fatigue > 100:
+		if npc.hunger < 0 or npc.hunger > 100 or npc.fatigue < 0 or npc.fatigue > 100 or npc.get("thirst", 0) < 0 or npc.get("thirst", 0) > 100:
 			errors.append("Invalid needs")
 		if npc.job != 0 and not s.jobs.has(str(npc.job)):
 			errors.append("Dangling NPC job")

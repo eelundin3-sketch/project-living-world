@@ -12,6 +12,8 @@ func run() -> void:
 	root.add_child(main)
 	await process_frame
 	main.set_process(false)
+	# The checks below need the whole house in view, so test at the wider 1x framing.
+	main.get_node("ObserverCamera").zoom = Vector2.ONE
 	var world = main.get_node("WorldView")
 	world.snap_visuals()
 	check(world.y_sort_enabled, "Actors and scenery share y-sort ordering")

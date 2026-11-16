@@ -13,7 +13,7 @@ func run() -> void:
 	root.add_child(main)
 	await process_frame
 	main.set_process(false)
-	check(main.simulation.state.settlements["1"].population == 10 and main.simulation.state.residents.size() == 20, "Alder Hollow starts with ten residents and Reedbank remains populated")
+	check(main.simulation.state.settlements["1"].population == 5 and main.simulation.state.residents.size() == 15, "Every town starts with five residents")
 	check(main.get_node("DebugHUD").heading.text.contains("ALDER"), "HUD displays world")
 	check(main.get_node("WorldView").simulation == main.simulation, "View projects authoritative sim")
 	var before: String = main.simulation.state_hash()
@@ -23,8 +23,8 @@ func run() -> void:
 	main.handle_action("speed3")
 	check(main.clock.speed == 3, "Three-times speed control")
 	var hud = main.get_node("DebugHUD")
-	check(hud.pause_button.visible and hud.stamina_bar.visible and hud.observer_panel.visible == false, "Compact play HUD keeps controls visible and tools closed")
-	check(hud.stats.text.contains("10 local residents") and hud.stats.text.contains("3×"), "Compact HUD shows essential status and current speed")
+	check(hud.pause_button.visible and main.bottom_bar.visible and hud.observer_panel.visible == false, "Compact play HUD keeps controls visible and tools closed")
+	check(hud.stats.text.contains("5 local residents") and hud.stats.text.contains("3×"), "HUD data still reports the local population and the current speed")
 	var speed_labels: Array[String] = []
 	for control in hud.pause_button.get_parent().get_children():
 		if control is Button: speed_labels.append(control.text)
@@ -40,9 +40,9 @@ func run() -> void:
 	check(main.simulation.state_hash() == saved_hash, "Save/load UI restores authoritative state")
 	var camera = main.get_node("ObserverCamera")
 	camera.adjust_zoom(100)
-	check(is_equal_approx(camera.zoom.x, 2.5), "Zoom upper bound")
+	check(is_equal_approx(camera.zoom.x, 5.0), "Zoom upper bound")
 	camera.adjust_zoom(0.001)
-	check(is_equal_approx(camera.zoom.x, 0.18), "Regional zoom lower bound")
+	check(is_equal_approx(camera.zoom.x, 0.06), "Regional zoom lower bound")
 	main.clock.speed = 1
 	var old_cell: Array = main.simulation.state.entities[str(main.simulation.state.player)].cell.duplicate()
 	Input.action_press("walk_right")

@@ -1,7 +1,7 @@
 extends Camera2D
 ## Presentation-only zoom. The application chooses follow or observer movement.
-const MIN_ZOOM: float = 0.18
-const MAX_ZOOM: float = 2.5
+const MIN_ZOOM: float = 0.06
+const MAX_ZOOM: float = 5.0
 const ZOOM_FACTOR: float = 1.15
 
 func adjust_zoom(factor: float) -> void:

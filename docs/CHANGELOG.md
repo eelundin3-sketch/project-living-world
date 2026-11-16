@@ -1,5 +1,159 @@
 # Changelog
 
+## Rye, households, trades, shotgun, needs and names — 2026-11-16
+
+- **Farming.** Fields and household gardens grow rye through six visible stages
+  (newly sown, early growth, intermediate growth, ripening, fully grown, ready to
+  harvest). Height, thickness, colour and the bearded ear change continuously with
+  the crop's growth; the ready stage droops and shows a sheaf. A crop takes three
+  game days. See `docs/screenshots/rye-growth.png`.
+- **Trades.** Demand is derived from what is around a settlement, not fixed: farmers
+  follow fields and the food need, a sheriff follows population and road danger,
+  woodsmen and plank makers follow trees and the sawmill, a baker follows rye and a
+  bakery, miners and a blacksmith follow ore and a forge. Reedbank has iron outcrops,
+  a bakery and a forge; Alder Hollow has no ore, so it gets no miners.
+- **Households.** Households share a pantry (the home's inventory) and a garden beside
+  the house, sized by household and free space (6-28 cells; trees are moved, not
+  destroyed). Residents tend it each morning and evening alongside their trade, eat
+  from the pantry first and bake rye at home (3 rye -> 2 loaves; the village baker
+  gets 4 loaves from 3). Adults pair off, move into a home with room, and have
+  children while there is housing and food; children grow up after eight days.
+- **Bread chain.** Farm crew harvests rye -> warehouse -> baker -> provisions stall.
+- **Shotgun.** Pump shotgun with ready/stow (X), shell-by-shell reload (R), fire
+  (aim with right mouse, then click), recoil and muzzle flash, a pellet spread and
+  surface effects: small blood flecks on a hit, dust on ground, chips on walls and
+  timber, bark on trees, sparks on stone. Stowed, it hangs on the back. Sheriffs
+  carry one on a sling and take the ranged defender slot in a raid.
+- **Sheriff's office** (each settlement) holds a wall weapon rack stocked with
+  shotguns and shells; press F at it to take or return them.
+- **Movement.** W+A, W+D, S+A and S+D move diagonally; a diagonal never cuts a
+  blocked corner.
+- **Markets.** The plaza now has cobbled paving, a well, a notice board, bunting,
+  hitching rail and parked cart, with barrels, crates, grain sacks or timber stacks
+  at each stall. Drink at the well with Q.
+- **Placement.** Furniture has four orientations (0 up, 1 right, 2 down, 3 left; a
+  bed's orientation is its head). New homes auto-place beds with the head flush to a
+  wall and as many sides as possible along walls. T rotates the nearest item, G moves
+  it to its best wall spot; `place_furniture` places one at an exact cell.
+- **Characters.** Cartoon-inked figures with heavier outlines and lighter tan hats.
+  Each character faces one of eight directions (up, down, left, right and the four
+  diagonals); the drawn heading snaps to the nearest 45 degrees. See
+  `docs/screenshots/character-design.png`.
+- **Bottom bar.** A four-slot hotbar (keys 1-4) sits bottom centre with the stamina
+  bar above it and the inventory (I) and health (H) buttons beside it. Assign items
+  from the inventory screen (buttons 1-4 on each row); using a slot readies the item
+  (the shotgun is raised, anything else is held) and using it again puts it away.
+  Bottom right shows the day and hour with slower / x1.0 / pause / faster controls
+  (speeds 1, 2, 3 and 5; `,` and `.` also change speed). Speed keys moved off 1-3.
+- **World look.** Darker, denser forest, reddish earth around the settlements and
+  pinker trunks, following the supplied top-down references (`world-overview.png`).
+- **Walking and running.** Fixed the "teleport" while moving: diagonal steps are 1.41
+  cells long but the drawn figure followed at straight-line speed, fell behind and was
+  snapped forward. It now keeps a constant pace and only catches up on gaps beyond one
+  cell, and diagonal walking takes one tick longer per step. The sprint is rebuilt with
+  a real run cycle (two-bone legs with a high heel recovery and forward knee drive, flight
+  phases, forward lean, arms swinging opposite the legs with bent elbows) and it eases in
+  over about 0.3 s when sprinting starts and out over about 0.5 s after Shift is released,
+  ending in a braking stance (lean back, wide feet, arms out). See
+  `docs/screenshots/animation-run-cycle.png` (`tests/run_sheet_capture.gd`).
+- **Scale.** Characters are drawn at half size and the default zoom is 2x (maximum 5x),
+  so people are in proportion to doors, furniture and trees; name tags, health bars and
+  effect heights were rescaled to match.
+- **Map view (M).** M, or the map button beside the hotbar, leaves the character and frames
+  every settlement with town names and a "You" marker; WASD pans, the wheel zooms (down to
+  0.06x), M returns to the character at the previous zoom. Zoomed out, trees become simple
+  canopies and per-object nodes are dropped, so the map stays smooth.
+- **HUD.** The top-left info panel (title, counts, speed buttons) was removed. The "F: interact"
+  prompt and short messages now appear as a line above the hotbar; the observer tools are still
+  on F3. Characters are 25% bigger than in the previous change.
+- **Performance tab (F4).** A tab in the top-right corner shows fps; click it or press F4 for
+  frame-time average/percentiles and a frame graph, draw calls, objects, nodes, memory,
+  simulation tick cost and rate, and entity/sorted-object counts. Record writes one CSV row per
+  second to `perf_log.csv` in the save folder.
+- **Minimize.** The inventory, health and trading windows have a Minimize button: the window hides,
+  play continues, and a tab at the bottom left (or its hotkey) restores it.
+- **Building.** Each tile now takes 1.6 s (was 1.0 s) and is animated as a sequence: lift the board
+  into place with both hands, three hammer blows (cock back, strike, rebound) with the other hand
+  steadying the nail, then lower the tools and check the work. Hammer height follows the part being
+  built (floor low, wall chest, roof overhead) and the sound is timed to each blow. See
+  `docs/screenshots/animation-building.png`.
+- **Fist fights.** A punch now makes a sound, leaves blood on the ground (pools and flung drops that
+  darken as they dry and fade over about 2.5 game days) and hurts a little (6 damage; a beating never
+  drops anyone below 20 health). Punched villagers get angry (a red "!!" over their head), stop what
+  they are doing and come after you, throwing punches and shoves; they give up if you get away, they
+  cool off, or you are on the ground. Five punches in quick succession knock someone out: they fall,
+  lie still for about 40 seconds (with "z z"), then get up. A shove drops them to the ground for a couple
+  of seconds before they climb back up. The same applies to you: their punches injure you (sometimes
+  cutting you), a shove puts you on the ground, and too many blows knock you out; you cannot act until you
+  are back on your feet.
+- **Falling.** New fall, lying and get-up animations with arms flung out, and six lying styles chosen
+  by how the blow lands: on the back, face-down, on the side, sprawled, curled up and slumped; the
+  head points the way they were pushed. See `docs/screenshots/animation-falls.png`
+  (`tests/fall_sheet_capture.gd`). New sounds: punch, shove and a body thud (`scripts/generate_audio.py`).
+- **Engaged fights.** A punched villager runs at you, holds a fighting stance between blows and
+  keeps swinging until they cool off, you get away, or someone is down; a sheriff nearby joins in to
+  break up the fight.
+- **Felling trees.** Chopping (F) now fells the tree: it topples with an animation (leaning either
+  way) and lies on the ground with its wood. Press F again at the fallen tree to gather the logs, and
+  when the last log is taken only the stump remains (a stump sprouts a new tree after a week).
+  Woodsmen work the same way: the first chop fells the tree, then they haul the wood.
+- **Sleeping.** Tiredness builds more slowly, and at night villagers go to their own bed in their
+  home (the lodge has six beds, other houses three; extra people share) and lie on it until morning,
+  in the pose that matches the bed's orientation; a daytime nap happens only when exhausted. Being
+  punched or hungry wakes them.
+- **Dustvale.** A third town to the south, in dry pink-brown country with thin cover, few trees (dead
+  trunks and a few in autumn leaf), dry grass and a road up to Alder Hollow. It has a lodge with beds
+  and a garden, a storehouse, market stalls with a plaza, a bakery, a sheriff's office with a weapon
+  rack, a rye field, and ten residents with trades. See `docs/screenshots/dustvale-town.png`
+  and `map-three-towns.png`. It trades only with itself for now (the caravan still runs Alder Hollow
+  to Reedbank).
+- **Click-to-interact menu.** Left-click a person or thing to open a menu of what you can do to it
+  (F stays the fast way). Greyed rows say why something is unavailable. If you are not close enough,
+  the character walks over and then does it (moving by hand cancels). Options by target: a villager
+  (talk/trade, punch, shove, look at); someone knocked out or asleep (loot, help up, wake up); a
+  tree (chop down, or gather wood once fallen); a farm (harvest); the iron rock (mine); dropped items
+  (pick up everything or one kind); a stall or storehouse (trade); the sheriff's rack (take/return the
+  shotgun); workshops (use/collect); and yourself (eat, drink, inventory, wounds). Looting takes their
+  goods and coins. See `docs/screenshots/context-menu-rock.png` and `context-menu-person.png`.
+- **Iron rock.** Dustvale has a large iron-bearing rock to the east (600 ore) that blocks its ground.
+  Mine it with the menu or F (a pickaxe animation, 5 ore per swing); Dustvale also has a forge and a
+  miner who hauls ore. See `docs/screenshots/iron-rock.png`.
+- **Click-to-walk.** Double right-click a square and the character finds the shortest route and walks
+  there (a pulsing ring marks the goal; a blocked square goes to the nearest free one; moving by hand
+  cancels).
+- **Five villagers per town.** Every town (Alder Hollow, Reedbank, Dustvale) starts with 5 residents; a
+  town of three or more now gets a sheriff.
+- **Chests and looting.** Every chest in a house or workshop is a real container: click it (or press F)
+  to see what is inside and take things. Searching someone who is knocked out or asleep opens the same
+  window and shows what they carry and what they are **wearing**: take any piece, or "Take & wear" to
+  dress yourself in it, plus their coins. Stripped people are drawn in pale underclothes, bare feet, or
+  without a hat, vest or shirt. Press C (or click yourself > Clothing) to change your own clothes. A
+  robbed person remembers: they come round furious and go after you. Clothes are ordinary inventory items
+  ("shirt:2"), so the conservation checks cover them. See `docs/screenshots/loot-window-person.png`,
+  `loot-window-chest.png` and `outfits.png`.
+- **Hotbar selection.** Exactly one slot is always selected (slot 1 to begin with). Pressing a slot
+  selects it and puts its item in hand (a shotgun is raised); pressing the same slot again keeps it
+  selected, and only choosing another slot changes the selection. A weapon you pick up (rack, chest,
+  loot, ground) goes straight into the first free slot, and leaves it when you put the weapon away.
+- **Slung shotgun.** A stowed shotgun is now large (about as tall as the character), slung over the
+  right shoulder with the barrel up past the shoulder and the stock by the opposite hip, and keeps the
+  same on-screen size whichever way the character faces. See `docs/screenshots/shotgun-slung-all-facings.png`.
+- **Character art.** Much more detailed figures: thinner, softer outlines with shaded limbs, a larger
+  head with ears, brows, eyes (white, iris, pupil, glint), nose, mouth, blush and swept fringe; hair
+  colours and eye colours vary by person; a shirt collar, shoulder seams, sleeve cuffs and hands with
+  thumbs; knee patches, trouser cuffs and laced boots with soles. See `docs/screenshots/character-design.png`.
+- **Health window.** It now shows your own character, wearing your current clothes, standing front-on,
+  instead of the generic silhouette. Wound tints, bandage wraps and bleeding marks are drawn over the
+  body; hover a part to find it, click to select, right-click to treat. Zones are measured from the
+  character's joints. See `docs/screenshots/player-health.png`.
+- **Names.** Every person (residents, children, the player, raiders) gets a unique
+  American/British first and last name, unique across the whole map and saves, shown
+  on a name tag beneath them.
+- **Needs and indicators.** Hunger, thirst, tiredness, pain, bleeding, stress, mood,
+  wet and cold. Circular indicators in the top-left corner appear only while a
+  condition applies; the ring shows severity 1-4 and hovering names the condition and
+  gives a hint. E eats, Q drinks (at a well barrel).
+
 ## Current village, artwork, and handoff — 2026-11-16
 
 - Alder Hollow now starts with ten residents. Reedbank remains a separate town.

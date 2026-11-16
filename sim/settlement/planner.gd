@@ -3,7 +3,10 @@ const World = preload("res://sim/world/world_db.gd")
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const Work = preload("res://sim/production/recipe_system.gd")
 const Nav = preload("res://sim/movement/navigation.gd")
-const WORK_PER_TILE: int = 10
+const Households = preload("res://sim/entities/households.gd")
+const Chests = preload("res://sim/entities/chests.gd")
+const Brawl = preload("res://sim/player/brawl.gd")
+const WORK_PER_TILE: int = 16
 
 static func initialize(sim: RefCounted) -> void:
 	var s: Dictionary = sim.state
@@ -117,17 +120,20 @@ static func update(sim: RefCounted) -> void:
 			site.worker = 0
 			site.build_phase = "fetch"
 			site.tile_work = 0
-			for npc in s.residents.values():
-				if npc.settlement == site.settlement and npc.occupation == "Gatherer" and npc.get("migration", {}).is_empty() and npc.job == 0:
-					npc.occupation = "Builder"
-					site.worker = npc.id
-					break
+			# Builders come from whoever has no fixed workshop: idle gatherers first, then woodsmen.
+			for wanted in ["Builder", "Gatherer", "Woodsman"]:
+				for npc in s.residents.values():
+					if site.worker == 0 and npc.settlement == site.settlement and npc.occupation == wanted and npc.get("migration", {}).is_empty() and npc.job == 0 and npc.health > 0:
+						npc.prior_trade = "Gatherer" if wanted == "Builder" else wanted
+						npc.occupation = "Builder"
+						site.worker = npc.id
+				if site.worker != 0: break
 		if site.worker == 0:
 			site.status = "Waiting for available builder"
 			continue
 		var npc: Dictionary = s.residents[str(site.worker)]
 		if npc.health <= 0 or s.get("local_combat", {}).get("fighters", {}).has(str(npc.id)): continue
-		if not npc.goal.is_empty() or npc.hunger >= 60 or npc.fatigue >= 75:
+		if not npc.goal.is_empty() or npc.hunger >= 60 or npc.fatigue >= 75 or Brawl.busy(s, npc):
 			site.status = "Builder attending to needs"
 			continue
 		if npc.get("work_pause_until", 0) > s.tick:
@@ -298,6 +304,9 @@ static func _finish(sim: RefCounted, site: Dictionary, npc: Dictionary) -> void:
 	World.install_building(s, site.id)
 	s.settlements[str(site.settlement)].housing += int(def.get("housing", 0))
 	if def.has("capacity"): s.inventories[str(site.id)].capacity = def.capacity
-	npc.occupation = "Gatherer"
+	npc.occupation = npc.get("prior_trade", "Gatherer")
 	s.completed_buildings += 1
+	if def.kind == "home" and s.has("households"):
+		Households.on_home_built(sim, site.id)
+		Chests.ensure(sim, entity)
 	sim.record("Finished %s one tile at a time; used %d planks" % [def.kind, site.cost])

@@ -4,7 +4,13 @@ const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const Jobs = preload("res://sim/jobs/job_board.gd")
 const Nav = preload("res://sim/movement/navigation.gd")
 const LocalCombat = preload("res://sim/factions/local_combat.gd")
-const NAMES: Array[String] = ["Ada", "Bram", "Cora", "Darin", "Edda", "Finn", "Galen", "Hana", "Ivo", "Juna", "Kira", "Leif", "Mara", "Neri", "Orin", "Pia", "Quin", "Runa", "Soren", "Tavi"]
+const Names = preload("res://sim/entities/names.gd")
+const Needs = preload("res://sim/entities/needs.gd")
+const Households = preload("res://sim/entities/households.gd")
+const Professions = preload("res://sim/settlement/professions.gd")
+const Crops = preload("res://sim/farming/crops.gd")
+const Sheriff = preload("res://sim/settlement/sheriff.gd")
+const Brawl = preload("res://sim/player/brawl.gd")
 
 static func spawn(sim: RefCounted, count: int, settlement: int = 1, origin: Array = [60, 49]) -> void:
 	var s: Dictionary = sim.state
@@ -12,11 +18,19 @@ static func spawn(sim: RefCounted, count: int, settlement: int = 1, origin: Arra
 		s.residents = {}
 	var columns: int = 20 if count > 40 else 5
 	for index in range(count):
-		var id := World.add_entity(sim, "resident", NAMES[index % NAMES.size()] + (" II" if settlement == 2 else ""), [origin[0] + index % columns, origin[1] + index / columns], settlement)
-		s.residents[str(id)] = {"id": id, "settlement": settlement, "hunger": sim.random_int("needs", 5, 35), "fatigue": sim.random_int("needs", 0, 25),
-			"health": 100, "job": 0, "path": [], "nav_revision": 0, "goal": "", "status": "Available", "retry_at": 0,
-			"fidelity": "detailed", "occupation": "Gatherer", "memories": [], "relations": {}, "skill": 0}
-		Inventory.create(s, id, 10)
+		add_resident(sim, settlement, [origin[0] + index % columns, origin[1] + index / columns])
+
+## Creates one resident (an adult, or a child born into a household) with its inventory.
+static func add_resident(sim: RefCounted, settlement: int, cell: Array, child: bool = false) -> int:
+	var s: Dictionary = sim.state
+	var id := World.add_entity(sim, "resident", Names.generate(sim), cell, settlement)
+	s.residents[str(id)] = {"id": id, "settlement": settlement, "hunger": sim.random_int("needs", 5, 35) if not child else 8, "thirst": sim.random_int("needs", 5, 30) if not child else 8, "mood": 75, "fatigue": sim.random_int("needs", 0, 8) if not child else 5,
+		"health": 100, "job": 0, "path": [], "nav_revision": 0, "goal": "", "status": "Available", "retry_at": 0,
+		"fidelity": "detailed", "occupation": "Child" if child else "Gatherer", "memories": [], "relations": {}, "skill": 0,
+		"age_days": 1 if child else 30 + id % 15, "partner": 0, "household": ""}
+	Inventory.create(s, id, 10)
+	if s.has("accounts"): s.accounts[str(id)] = 0
+	return id
 
 static func update(sim: RefCounted) -> void:
 	var s: Dictionary = sim.state
@@ -24,11 +38,16 @@ static func update(sim: RefCounted) -> void:
 		var npc: Dictionary = s.residents[key]
 		if s.tick < int(npc.get("impact_until", 0)): continue
 		if LocalCombat.busy(s, npc.id) or npc.health <= 0: continue
+		if Brawl.busy(s, npc): continue
 		if not npc.get("migration", {}).is_empty():
 			continue
+		# Tiredness builds more slowly than hunger, so a normal day ends with people ready for bed.
+		if s.tick % 150 == 0 and npc.get("sleeping", {}).is_empty(): npc.fatigue = mini(100, npc.fatigue + 1)
+		if not npc.get("sleeping", {}).is_empty() and npc.goal != "sleep": Households.wake(s, npc)  # woken by something else
 		if s.tick % 100 == 0:
 			npc.hunger = mini(100, npc.hunger + 1)
-			npc.fatigue = mini(100, npc.fatigue + 1)
+			npc.thirst = mini(100, int(npc.get("thirst", 0)) + (2 if s.tick % 200 == 0 else 1))
+			npc.mood = Needs.mood_value(npc.hunger, npc.thirst, npc.fatigue, 0, 0, 6 if npc.goal == "rest" else 0)
 		var cadence: int = 2 if npc.fidelity == "detailed" else (10 if npc.fidelity == "coarse" else 100)
 		if (npc.fidelity == "detailed" and s.tick % 10 == npc.id % 10) or (npc.fidelity != "detailed" and s.tick % cadence == 0):
 			_decide(sim, npc)
@@ -56,26 +75,59 @@ static func _decide(sim: RefCounted, npc: Dictionary) -> void:
 	var s: Dictionary = sim.state
 	if npc.retry_at > s.tick:
 		return
-	if npc.hunger >= 60 or npc.fatigue >= 75:
+	# At night anyone with some tiredness goes to bed; by day only the exhausted lie down.
+	var sleepy: bool = (Needs.is_night(s) and npc.fatigue >= 20) or npc.fatigue >= 75
+	if npc.hunger >= 60 or npc.get("thirst", 0) >= 60 or sleepy:
 		if npc.job != 0:
 			Jobs.release(s, npc.job, "INTERRUPTED_FOR_NEEDS")
 		if npc.goal.is_empty():
-			set_goal(s, npc, "eat" if npc.hunger >= 60 else "rest")
+			set_goal(s, npc, "eat" if npc.hunger >= 60 else ("drink" if npc.get("thirst", 0) >= 60 else "sleep"))
 		return
 	if npc.get("work_pause_until", 0) > s.tick:
 		return
 	if npc.job != 0 or not npc.goal.is_empty():
 		return
+	# Household chores run alongside the main trade: tending the garden in the morning and evening.
+	if s.has("households") and not npc.get("work_cargo", false) and not npc.get("production_delivery", false) and Inventory.used(s.inventories[str(npc.id)]) == 0 and Households.in_garden_hours(s):
+		var window: int = s.tick / 14400 * 2 + (1 if Households.minute_of_day(s) >= 720 else 0)
+		if npc.get("garden_window", -1) != window and not Households.garden_task(s, npc).is_empty():
+			set_goal(s, npc, "garden")
+			if npc.goal == "garden": npc.garden_window = window
+			return
 	if npc.occupation == "Builder" or npc.get("work_cargo", false) or npc.get("production_delivery", false):
 		return
 	if Inventory.used(s.inventories[str(npc.id)]) > 0:
 		set_goal(s, npc, "deposit")
-	elif npc.occupation == "Gatherer":
+	elif Professions.GATHERERS.has(npc.occupation):
 		Jobs.assign(s, npc.id)
+	elif npc.occupation == "Sheriff" and s.has("settlements"):
+		Sheriff.next_patrol(s, npc)
 
 static func set_goal(s: Dictionary, npc: Dictionary, goal: String) -> void:
-	var target: int = _destination(s, npc, "home" if goal == "rest" else "warehouse")
-	var route := Nav.request_path(s, s.entities[str(npc.id)].cell, World.Fixtures.interaction_cell(s, target))
+	var destination_cell: Array = []
+	if goal == "sleep":
+		# Sleep in the bed assigned in the resident's home; with no bed, rest at the door as before.
+		var bed: Dictionary = Households.bed_info(s, npc)
+		if bed.is_empty(): goal = "rest"
+		else:
+			npc.bed_target = bed
+			destination_cell = bed.approach
+	var target: int = _destination(s, npc, "home" if goal in ["rest", "sleep"] else "warehouse")
+	if goal == "eat":
+		# Households eat from their own pantry first; the storehouse is the fallback.
+		var household: Dictionary = Households.household_of(s, npc)
+		if not household.is_empty() and s.inventories.has(str(household.home)) and (Inventory.amount(s, household.home, "food") >= 1 or Inventory.amount(s, household.home, "rye") >= 3):
+			target = household.home
+		npc.eat_target = target
+	if goal == "patrol":
+		var points: Array = Sheriff.patrol_points(s, npc)
+		destination_cell = points[clampi(int(npc.get("patrol_index", 0)), 0, points.size() - 1)]
+	if goal == "garden":
+		var plot: Dictionary = Households.garden_task(s, npc)
+		if plot.is_empty(): return
+		npc.garden_plot = plot.id
+		destination_cell = Households.garden_stance(plot)
+	var route := Nav.request_path(s, s.entities[str(npc.id)].cell, destination_cell if not destination_cell.is_empty() else World.Fixtures.interaction_cell(s, target))
 	if not route.ok:
 		npc.status = goal + ": " + route.error_code
 		npc.retry_at = s.tick + 100
@@ -83,11 +135,11 @@ static func set_goal(s: Dictionary, npc: Dictionary, goal: String) -> void:
 	npc.path = route.path
 	npc.nav_revision = s.world.nav_revision
 	npc.goal = goal
-	npc.status = {"eat": "Going to eat", "rest": "Going home to rest", "deposit": "Returning carried goods"}[goal]
+	npc.status = {"eat": "Going to eat", "rest": "Going home to rest", "deposit": "Returning carried goods", "drink": "Going to drink", "garden": "Going to the garden", "patrol": "Patrolling the square", "sleep": "Going to bed"}.get(goal, "Walking")
 
 static func _need_action(sim: RefCounted, npc: Dictionary) -> void:
 	var s: Dictionary = sim.state
-	if npc.nav_revision != s.world.nav_revision:
+	if npc.nav_revision != s.world.nav_revision and npc.get("sleeping", {}).is_empty():
 		var goal: String = npc.goal
 		npc.goal = ""
 		set_goal(s, npc, goal)
@@ -96,16 +148,51 @@ static func _need_action(sim: RefCounted, npc: Dictionary) -> void:
 		s.entities[str(npc.id)].cell = npc.path.pop_front()
 		return
 	match npc.goal:
+		"patrol":
+			npc.goal = ""
+			npc.status = "On patrol, watching the square"
+			npc.work_pause_until = s.tick + 250
+		"garden":
+			var plot: Dictionary = s.crops.get(str(npc.get("garden_plot", 0)), {})
+			if not plot.is_empty():
+				var result: String = Crops.tend(s, plot)
+				npc.status = {"sowed": "Sowed rye in the garden", "harvested": "Harvested the garden", "tended": "Weeded and watered the garden", "stalled": "Garden pantry is full"}.get(result, "Gardening")
+			npc.goal = ""
+			npc.work_pause_until = s.tick + 20
 		"eat":
-			var store: int = _destination(s, npc, "warehouse")
+			var store: int = int(npc.get("eat_target", _destination(s, npc, "warehouse")))
+			if not s.inventories.has(str(store)): store = _destination(s, npc, "warehouse")
+			var at_home: bool = s.entities[str(store)].kind == "home"
+			if at_home and Inventory.amount(s, store, "food") < 1 and Inventory.amount(s, store, "rye") >= 3:
+				# Home baking: slower and wasteful compared with the village baker (3 rye makes 2 loaves, not 4).
+				Inventory.consume(s, store, "rye", 3)
+				Inventory.produce(s, store, "food", 2)
 			var food_source: int = npc.id if Inventory.amount(s, npc.id, "food") > 0 else store
 			if Inventory.consume(s, food_source, "food", 1):
 				npc.hunger = maxi(0, npc.hunger - 45)
-				npc.status = "Ate from communal stores"
+				npc.status = "Ate at home from the household pantry" if at_home else "Ate from communal stores"
 			else:
 				npc.status = "Hungry: store has no food"
 				npc.retry_at = s.tick + 100
 			npc.goal = ""
+		"drink":
+			npc.thirst = maxi(0, int(npc.get("thirst", 0)) - 60)
+			npc.status = "Drank from the well barrel"
+			npc.goal = ""
+		"sleep":
+			if npc.get("sleeping", {}).is_empty():
+				var bed: Dictionary = npc.get("bed_target", {})
+				if bed.is_empty():
+					npc.goal = ""
+					return
+				s.entities[str(npc.id)].cell = bed.lie.duplicate()
+				npc.sleeping = {"lie": bed.lie, "approach": bed.approach, "rot": bed.rot, "night": Needs.is_night(s), "since": s.tick}
+				npc.status = "Sleeping in bed"
+			if s.tick % 10 == 0: npc.fatigue = maxi(0, npc.fatigue - 1)
+			var minute: int = (s.tick / 10) % 1440
+			var morning: bool = minute >= 360 and minute < 1230
+			if (npc.sleeping.night and morning) or (not npc.sleeping.night and npc.fatigue <= 15) or npc.hunger >= 90 or npc.get("thirst", 0) >= 90:
+				Households.wake(s, npc)
 		"rest":
 			npc.fatigue = maxi(0, npc.fatigue - 1)
 			npc.status = "Resting at home"

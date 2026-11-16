@@ -8,7 +8,7 @@ var cooldowns: Dictionary = {}
 var elapsed: float = 0.0
 
 func _ready() -> void:
-	for name in ["step_grass", "step_wood", "chop", "saw", "pickup", "drop", "build", "harvest", "fall", "wind"]:
+	for name in ["step_grass", "step_wood", "chop", "saw", "pickup", "drop", "build", "harvest", "fall", "punch", "shove", "thud", "wind"]:
 		sounds[name] = load("res://content/audio/" + name + ".wav")
 	for index in range(12):
 		var voice := AudioStreamPlayer2D.new()
@@ -71,8 +71,8 @@ func present(cues: Array[Dictionary], s: Dictionary, listener: Vector2, paused: 
 			if not voice.playing:
 				voice.stream = sounds[kind]
 				voice.position = cue.position
-				voice.volume_db = (-29 if int(cue.get("actor", 0)) == int(s.player) else -38) if kind.begins_with("step") else -19
-				voice.pitch_scale = 0.96 + float(absi(int(cue.position.x + cue.position.y)) % 9) * 0.01
+				voice.volume_db = (-29 if int(cue.get("actor", 0)) == int(s.player) else -38) if kind.begins_with("step") else {"punch": -10.0, "shove": -14.0, "thud": -12.0}.get(kind, -19.0)
+				voice.pitch_scale = (0.9 if kind == "thud" else 0.96) + float(absi(int(cue.position.x + cue.position.y)) % 9) * 0.01
 				voice.play()
 				cooldowns[key] = elapsed
 				emitted += 1

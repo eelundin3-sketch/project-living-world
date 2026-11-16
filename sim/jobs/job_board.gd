@@ -2,6 +2,7 @@ extends RefCounted
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const World = preload("res://sim/world/world_db.gd")
 const Nav = preload("res://sim/movement/navigation.gd")
+const Professions = preload("res://sim/settlement/professions.gd")
 
 static func initialize(state: Dictionary) -> void:
 	state.jobs = {}
@@ -18,9 +19,9 @@ static func refresh(sim: RefCounted) -> void:
 	for job in s.jobs.values():
 		targets[str(job.target)] = true
 	for entity in s.entities.values():
-		if entity.kind not in ["tree", "farm"] or targets.has(str(entity.id)):
+		if entity.kind not in ["tree", "farm", "ore"] or targets.has(str(entity.id)):
 			continue
-		var item: String = "log" if entity.kind == "tree" else "food"
+		var item: String = "log" if entity.kind == "tree" else ("ore" if entity.kind == "ore" else "food" if Inventory.amount(s, entity.id, "food") >= 1 else "rye")
 		if Inventory.amount(s, entity.id, item) < 1:
 			continue
 		var destination: int = s.warehouse
@@ -92,6 +93,7 @@ static func assign(state: Dictionary, npc_id: int) -> bool:
 	var candidates: Array = []
 	for job in state.jobs.values():
 		if job.owner == 0 and job.retry_at <= state.tick and job.settlement == npc.settlement and Inventory.amount(state, job.destination, job.item) < (800 if job.item == "log" else 200):
+			if not Professions.gathers(npc, state.entities[str(job.target)].kind): continue
 			var target: Array = state.entities[str(job.target)].cell
 			var distance: int = absi(cell[0] - target[0]) + absi(cell[1] - target[1])
 			var threshold: int = 200 if state.get("settlements", {}).get(str(npc.settlement), {}).get("policy", "") == "Food first" else 100
@@ -133,6 +135,10 @@ static func advance(sim: RefCounted, npc_id: int) -> void:
 			job.progress += 2
 			if job.progress < 20:
 				return
+			var tree: Dictionary = state_entity(s, job.target)
+			if tree.get("kind", "") == "tree" and not tree.get("felled", false):
+				tree.felled = true  # chopped down: it falls and its wood is hauled from the trunk
+				tree.felled_tick = s.tick
 			job.state = "PICKING_UP"
 			job.progress = 0
 			npc.status = "Picking up " + job.item
@@ -211,3 +217,6 @@ static func source_stance(s: Dictionary, job: Dictionary) -> Array:
 		if World.walkable(s, stance):
 			return stance
 	return cell
+
+static func state_entity(s: Dictionary, id: int) -> Dictionary:
+	return s.entities.get(str(id), {})

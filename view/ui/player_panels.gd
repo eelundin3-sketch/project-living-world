@@ -3,6 +3,7 @@ const Health = preload("res://sim/player/body_health.gd")
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const Market = preload("res://sim/economy/market.gd")
 const BodyDiagram = preload("res://view/ui/body_diagram.gd")
+const Outfits = preload("res://sim/entities/outfits.gd")
 var simulation: RefCounted
 var mode: String = ""
 var selected_part: String = "head"
@@ -29,6 +30,11 @@ var treatment_menu: PopupMenu
 var treatment_part: String
 var treatment_button: Button
 var wound_labels: Dictionary = {}
+## Minimized: the window is hidden, play continues, and a small tab bottom-left restores it.
+var minimized: bool = false
+var loot_signature: String = ""
+var dock_layer: CanvasLayer
+var dock_button: Button
 const TREATMENTS: Array[String] = ["bandage", "disinfect", "remove"]
 var rows: Dictionary = {}
 var collect_buttons: Array[Button] = []
@@ -52,7 +58,13 @@ func _ready() -> void:
 	var column:=VBoxContainer.new(); column.add_theme_constant_override("separation",10); panel.add_child(column)
 	var header:=HBoxContainer.new(); column.add_child(header)
 	title=Label.new(); title.size_flags_horizontal=Control.SIZE_EXPAND_FILL; title.add_theme_font_size_override("font_size",24); header.add_child(title)
+	var minimize:=Button.new(); minimize.text="– Minimize"; minimize.tooltip_text="Hide this window and keep playing; click the tab at the bottom left to bring it back"; minimize.pressed.connect(minimize_window); header.add_child(minimize)
 	var close:=Button.new(); close.text="Close · Esc"; close.pressed.connect(func() -> void: show_mode("")); header.add_child(close)
+	dock_layer = CanvasLayer.new(); dock_layer.layer = 9; add_child(dock_layer)
+	dock_button = Button.new(); dock_button.visible = false; dock_button.focus_mode = Control.FOCUS_NONE
+	dock_button.set_anchors_preset(Control.PRESET_BOTTOM_LEFT); dock_button.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	dock_button.offset_left = 14; dock_button.offset_top = -52; dock_button.offset_right = 190; dock_button.offset_bottom = -16
+	dock_button.pressed.connect(restore_window); dock_layer.add_child(dock_button)
 	body = HBoxContainer.new()
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body.add_theme_constant_override("separation", 13)
@@ -148,10 +160,25 @@ func _open_treatment(part: String, from_button: bool = false) -> void:
 func scrolls_health_list_at(point: Vector2) -> bool:
 	return mode == "health" and visible and scroll.get_v_scroll_bar().visible and scroll.get_global_rect().has_point(point)
 
+func minimize_window() -> void:
+	if mode.is_empty(): return
+	minimized = true
+	visible = false
+	treatment_menu.hide()
+	dock_button.text = "▲  " + {"inventory": "Inventory", "health": "Health", "loot": "Searching", "wardrobe": "Clothes"}.get(mode, "Trading")
+	dock_button.visible = true
+
+func restore_window() -> void:
+	minimized = false
+	dock_button.visible = false
+	visible = not mode.is_empty()
+
 func show_mode(value: String) -> void:
 	treatment_menu.hide()
 	var opening_health := value == "health" and mode != "health"
 	mode = value
+	minimized = false
+	dock_button.visible = false
 	visible = not mode.is_empty()
 	if simulation == null: return
 	if opening_health and simulation.state.has("player_health"):
@@ -162,7 +189,10 @@ func show_mode(value: String) -> void:
 					selected_part = part
 					break
 	refresh()
-func toggle(value: String) -> void: show_mode("" if mode==value else value)
+func toggle(value: String) -> void:
+	# While minimized, the same key brings the window back instead of closing it.
+	if minimized and mode == value: restore_window()
+	else: show_mode("" if mode==value else value)
 func select_part(part: String) -> void:
 	if not Health.PARTS.has(part): return
 	selected_part = part
@@ -214,12 +244,18 @@ func rebuild() -> void:
 			labels.add_child(wound)
 			rows[part] = button
 			wound_labels[part] = wound
+	elif mode in ["loot", "wardrobe"]:
+		loot_signature = ""   # rows are built from the live contents in _refresh_loot
 	else:
-		for item in ["log","plank","food","bandage","antiseptic"]:
+		for item in ["log","plank","food","rye","bandage","antiseptic","shell","shotgun","tool","ore"]:
 			var row:=HBoxContainer.new(); list.add_child(row)
 			var label:=Label.new(); label.custom_minimum_size=Vector2(270,45); row.add_child(label); rows[item]=label
 			if mode=="inventory":
 				add_button(row,"Hold",func() -> void: simulation.submit("hold_item",{"item":item}))
+				for slot in range(4):
+					var hotbar_button := add_button(row,str(slot + 1),func() -> void: simulation.submit("hotbar_assign",{"slot":slot,"item":item}))
+					hotbar_button.tooltip_text = "Put %s on hotbar slot %d" % [item,slot + 1]
+					hotbar_button.custom_minimum_size = Vector2(28,24)
 			else:
 				add_button(row,"Buy 1",func() -> void: simulation.submit("person_trade",{"target":target,"item":item,"buy":true}))
 				add_button(row,"Sell 1",func() -> void: simulation.submit("person_trade",{"target":target,"item":item,"buy":false}))
@@ -230,9 +266,10 @@ func refresh() -> void:
 	var s: Dictionary=simulation.state
 	var pc: Dictionary=s.player_control
 	if pc.ui_nonce!=last_nonce:
-		last_nonce=pc.ui_nonce; target=pc.ui_target; mode="trade"; visible=true
+		last_nonce=pc.ui_nonce; target=pc.ui_target; mode=str(pc.get("ui_kind","trade")); loot_signature=""; minimized=false; dock_button.visible=false; visible=true
 	if mode.is_empty(): return
 	if cached_mode!=mode: rebuild()
+	dock_button.visible = minimized
 	var is_health := mode == "health"
 	diagram.visible = is_health
 	meter_column.visible = is_health
@@ -240,6 +277,8 @@ func refresh() -> void:
 	treatment_bar.visible = is_health
 	if is_health:
 		_refresh_health(s)
+	elif mode in ["loot", "wardrobe"]:
+		_refresh_loot(s, pc)
 	elif mode=="inventory":
 		title.text="YOUR INVENTORY · I"
 		var inv: Dictionary=s.inventories[str(s.player)]
@@ -289,6 +328,8 @@ func _refresh_health(s: Dictionary) -> void:
 	]
 	diagram.parts = health.parts
 	diagram.selected = selected_part
+	diagram.player_id = s.player
+	diagram.outfit = Outfits.worn(s, s.player)
 	diagram.queue_redraw()
 	empty_wounds.visible = injuries.is_empty() and not healthy_toggle.button_pressed
 	for part in Health.PARTS:
@@ -324,3 +365,74 @@ func _refresh_health(s: Dictionary) -> void:
 	notice.text = health.notice
 	if not health.treatment.is_empty():
 		notice.text += "  %.1f seconds remaining." % (maxi(0, health.treatment.finish - s.tick) / 10.0)
+
+## The search / chest / wardrobe window: live rows for what is worn and what is carried, each with
+## the buttons that act on it. Rebuilt only when the contents change.
+func _refresh_loot(s: Dictionary, pc: Dictionary) -> void:
+	var e: Dictionary = s.entities.get(str(target), {})
+	if e.is_empty(): show_mode(""); return
+	var wardrobe: bool = mode == "wardrobe"
+	var chest: bool = e.kind == "chest"
+	var items: Dictionary = s.inventories.get(str(target), {}).get("items", {}).duplicate()
+	var outfit: Dictionary = Outfits.worn(s, target)
+	var coins: int = int(s.get("accounts", {}).get(str(target), 0)) if not wardrobe and not chest else 0
+	var pack: Dictionary = s.inventories[str(s.player)].items.duplicate()
+	var signature := str([mode, target, items, outfit, coins, pack if wardrobe else {}])
+	title.text = "YOUR CLOTHES" if wardrobe else (("OPEN · " + e.name.to_upper()) if chest else ("SEARCHING · " + e.name.to_upper()))
+	var npc: Dictionary = s.get("residents", {}).get(str(target), {})
+	summary.text = ("%s is %s.\n" % [e.name, "out cold" if not npc.is_empty() and not npc.get("knock", {}).is_empty() else "asleep"] if not npc.is_empty() and not wardrobe else "") + "Your pack: %d / %d" % [Inventory.used(s.inventories[str(s.player)]), s.inventories[str(s.player)].capacity]
+	detail.text = "Take what you want. They will not forget it." if not chest and not wardrobe else ("Wear a piece to change how you look; spares stay in your pack." if wardrobe else "Take what you need; chests refill only when you put things in.")
+	notice.text = pc.notice
+	if signature == loot_signature: return
+	loot_signature = signature
+	for child in list.get_children(): list.remove_child(child); child.queue_free()
+	if wardrobe or not chest:
+		_loot_header("You are wearing" if wardrobe else "Wearing")
+		for slot in Outfits.SLOTS:
+			var item: String = str(outfit.get(slot, ""))
+			var buttons: Array = []
+			if not item.is_empty():
+				if wardrobe: buttons.append(["Take off", func() -> void: simulation.submit("take_off", {"slot": slot})])
+				else:
+					buttons.append(["Take", func() -> void: simulation.submit("loot_strip", {"target": target, "slot": slot, "wear": false})])
+					buttons.append(["Take & wear", func() -> void: simulation.submit("loot_strip", {"target": target, "slot": slot, "wear": true})])
+			_loot_row("%s:  %s" % [Outfits.SLOT_NAMES[slot], Outfits.label(item) if not item.is_empty() else "nothing"], buttons, item.is_empty())
+	var shown: Dictionary = pack if wardrobe else items
+	_loot_header("In your pack" if wardrobe else ("Inside" if chest else "Carrying"))
+	var any := false
+	for item in shown:
+		if int(shown[item]) <= 0: continue
+		if wardrobe and not Outfits.is_clothing(item): continue
+		any = true
+		var buttons: Array = []
+		if wardrobe: buttons.append(["Wear", func() -> void: simulation.submit("wear_item", {"item": item})])
+		else:
+			buttons.append(["Take", func() -> void: simulation.submit("loot_take", {"target": target, "item": item})])
+			if Outfits.is_clothing(item): buttons.append(["Take & wear", func() -> void: _take_and_wear(item)])
+		_loot_row("%s  × %d" % [Outfits.label(item), int(shown[item])], buttons)
+	if not any: _loot_row("nothing" if not wardrobe else "no spare clothes", [], true)
+	if coins > 0: _loot_row("Coins:  %d" % coins, [["Take", func() -> void: simulation.submit("loot_coins", {"target": target})]])
+	if not wardrobe:
+		var all_row := HBoxContainer.new(); list.add_child(all_row)
+		add_button(all_row, "Take everything", func() -> void: simulation.submit("loot_all", {"target": target}))
+
+func _take_and_wear(item: String) -> void:
+	simulation.submit("loot_take", {"target": target, "item": item})
+	simulation.submit("wear_item", {"item": item})
+
+func _loot_header(text: String) -> void:
+	var label := Label.new()
+	label.text = text.to_upper()
+	label.add_theme_font_size_override("font_size", 13)
+	label.add_theme_color_override("font_color", Color("c9bd9e"))
+	list.add_child(label)
+
+func _loot_row(text: String, buttons: Array, dim: bool = false) -> void:
+	var row := HBoxContainer.new()
+	list.add_child(row)
+	var label := Label.new()
+	label.text = text
+	label.custom_minimum_size = Vector2(300, 30)
+	if dim: label.add_theme_color_override("font_color", Color("807a68"))
+	row.add_child(label)
+	for entry in buttons: add_button(row, entry[0], entry[1])

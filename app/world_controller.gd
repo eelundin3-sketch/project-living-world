@@ -8,6 +8,11 @@ const Health = preload("res://sim/player/body_health.gd")
 const PlayerActions = preload("res://sim/player/player_actions.gd")
 const Audio = preload("res://view/audio/world_audio.gd")
 const ActionPointer = preload("res://view/ui/action_pointer.gd")
+const Moodles = preload("res://view/ui/moodles.gd")
+const BottomBar = preload("res://view/ui/bottom_bar.gd")
+const PerfOverlay = preload("res://view/ui/perf_overlay.gd")
+const ContextMenu = preload("res://view/ui/context_menu.gd")
+const ContextActions = preload("res://sim/player/context_actions.gd")
 const CELL: float = 24.0
 var player_panels: CanvasLayer
 var world_audio: Node2D
@@ -18,11 +23,21 @@ var last_input_tick: int = -1
 var last_draw_tick: int = -1
 var tick_ms: float = 0.0
 var selected_id: int = 0
+var last_selected_id: int = -1
+var map_mode: bool = false
+var map_return_zoom: Vector2 = Vector2(2, 2)
+var map_return_follow: bool = true
 var pending_binding: String = ""
 var save_path: String = "user://living_world.save"
 var aiming: bool = false
 var pointer_held: bool = false
 var action_pointer: Control
+var moodles: Control
+var bottom_bar: Control
+var perf: Control
+var context_menu: Control
+var last_right_press: int = -10000
+var last_right_position: Vector2 = Vector2.ZERO
 
 func _ready() -> void:
 	Settings.setup()
@@ -35,6 +50,33 @@ func _ready() -> void:
 	add_child(pointer_layer)
 	action_pointer = ActionPointer.new()
 	pointer_layer.add_child(action_pointer)
+	var moodle_layer := CanvasLayer.new()
+	moodle_layer.layer = 5
+	add_child(moodle_layer)
+	moodles = Moodles.new()
+	moodles.simulation = simulation
+	moodle_layer.add_child(moodles)
+	var bar_layer := CanvasLayer.new()
+	bar_layer.layer = 6
+	add_child(bar_layer)
+	bottom_bar = BottomBar.new()
+	bottom_bar.simulation = simulation
+	bottom_bar.clock = clock
+	bottom_bar.action.connect(handle_action)
+	bottom_bar.slot_pressed.connect(func(index: int) -> void: simulation.submit("hotbar_use", {"slot": index}))
+	bar_layer.add_child(bottom_bar)
+	var menu_layer := CanvasLayer.new()
+	menu_layer.layer = 12
+	add_child(menu_layer)
+	context_menu = ContextMenu.new()
+	context_menu.chosen.connect(_on_context_chosen)
+	menu_layer.add_child(context_menu)
+	var perf_layer := CanvasLayer.new()
+	perf_layer.layer = 8
+	add_child(perf_layer)
+	perf = PerfOverlay.new()
+	perf.main = self
+	perf_layer.add_child(perf)
 	$WorldView.simulation = simulation
 	world_audio = Audio.new()
 	add_child(world_audio)
@@ -46,6 +88,7 @@ func _ready() -> void:
 	refresh_view()
 
 func _process(delta: float) -> void:
+	if perf != null: perf.sample(delta)
 	var direction := Vector2(
 		Input.get_action_strength("walk_right") - Input.get_action_strength("walk_left"),
 		Input.get_action_strength("walk_down") - Input.get_action_strength("walk_up"))
@@ -55,7 +98,8 @@ func _process(delta: float) -> void:
 		# tick so the two-tick walking cadence has no extra idle tick.
 		if direction != Vector2.ZERO and simulation.state.tick >= last_input_tick and simulation.state.tick + 1 >= simulation.state.player_control.next_move and not clock.paused:
 			var sprint: bool=Input.is_key_pressed(KEY_SHIFT)
-			var cell_direction: Array = [int(signf(direction.x)), 0] if direction.x != 0 else [0, int(signf(direction.y))]
+			# W+A, W+D, S+A and S+D combine both axes into one diagonal step.
+			var cell_direction: Array = [int(signf(direction.x)), int(signf(direction.y))]
 			simulation.submit("move_player", {"direction": cell_direction,"run":sprint})
 			last_input_tick = simulation.state.tick+1
 	else:
@@ -83,15 +127,21 @@ func refresh_view() -> void:
 	last_draw_tick = simulation.state.tick
 	$WorldView.selected_id = selected_id
 	$WorldView.queue_redraw()
-	if $WorldView.background != null:
+	# The static background repaints on a timer and when the selection changes, not every tick.
+	if $WorldView.background != null and selected_id != last_selected_id:
+		last_selected_id = selected_id
 		$WorldView.background.queue_redraw()
 	$DebugHUD.refresh(simulation, clock, selected_id, tick_ms)
 	player_panels.refresh()
-	$DebugHUD.notice.text = PlayerActions.prompt(simulation.state, selected_id)
+	if moodles != null: moodles.refresh()
+	if bottom_bar != null:
+		bottom_bar.blocked = player_panels.visible
+		bottom_bar.refresh()
+	if not map_mode: $DebugHUD.notice.text = PlayerActions.prompt(simulation.state, selected_id)
 
 func handle_action(kind: String) -> void:
 	if kind.begins_with("buy:") or kind.begins_with("sell:"):
-		var town: int = 1 if simulation.state.entities[str(simulation.state.player)].cell[0] < 122 else 2
+		var town: int = nearest_town()
 		simulation.submit("trade", {"town": town, "item": kind.split(":")[1], "buy": kind.begins_with("buy:"), "quantity": 1})
 	elif kind.begins_with("bind:"):
 		pending_binding = kind.split(":")[1]
@@ -114,7 +164,10 @@ func handle_action(kind: String) -> void:
 		"motion":
 			$WorldView.motion.reduced_motion = not $WorldView.motion.reduced_motion
 			$DebugHUD.motion_button.text = "Motion: low" if $WorldView.motion.reduced_motion else "Motion: full"
+		"map": toggle_map()
 		"pause": clock.paused = not clock.paused
+		"slower": clock.speed = BottomBar.SPEEDS[maxi(0, BottomBar.SPEEDS.find(clock.speed) - 1)]
+		"faster": clock.speed = BottomBar.SPEEDS[mini(BottomBar.SPEEDS.size() - 1, BottomBar.SPEEDS.find(clock.speed) + 1)]
 		"speed1": clock.speed = 1
 		"speed2": clock.speed = 2
 		"speed3": clock.speed = 3
@@ -167,6 +220,18 @@ func _input(event: InputEvent) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT:
+		if event.pressed:
+			# Two quick right-clicks on the same spot: walk there by the shortest route.
+			var now := Time.get_ticks_msec()
+			if now - last_right_press < 380 and event.position.distance_to(last_right_position) < 30.0 and not player_panels.visible and not map_mode and follow_player:
+				var spot := get_global_mouse_position()
+				simulation.submit("walk_to", {"cell": [roundi(spot.x / CELL), roundi(spot.y / CELL)]})
+				context_menu.close()
+				aiming = false
+				last_right_press = -10000
+				return
+			last_right_press = now
+			last_right_position = event.position
 		aiming = event.pressed
 		return
 	if event is InputEventKey and event.pressed and event.keycode == KEY_F8:
@@ -182,34 +247,117 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		pointer_held = true
 		if aiming and not player_panels.visible and not clock.paused:
-			_submit_strike("punch")
+			if simulation.state.get("shotgun", {}).get("equipped", false): _submit_shot()
+			else: _submit_strike("punch")
 		elif not player_panels.visible:
 			selected_id = $WorldView.pick(get_global_mouse_position())
 			refresh_view()
+			_open_context_menu(selected_id, event.position)
 	if event is InputEventMouseButton:
 		$WorldView.queue_redraw()
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.physical_keycode:
 			KEY_I: handle_action("inventory")
 			KEY_H: handle_action("health")
+			KEY_E: simulation.submit("eat")
+			KEY_X: simulation.submit("shotgun_toggle")
+			KEY_M: toggle_map()
+			KEY_C: simulation.submit("context_action", {"target": simulation.state.player, "action": "wardrobe"})
+			KEY_T: simulation.submit("rotate_furniture")
+			KEY_G: simulation.submit("rearrange_furniture")
+			KEY_R: simulation.submit("shotgun_reload")
+			KEY_Q: simulation.submit("drink")
 			KEY_F: handle_action("interact")
 			KEY_ESCAPE: player_panels.show_mode("")
 			KEY_SPACE:
 				if not player_panels.visible and not clock.paused: _submit_strike("shove")
 			KEY_P: handle_action("pause")
-			KEY_1: handle_action("speed1")
-			KEY_2: handle_action("speed2")
-			KEY_3: handle_action("speed3")
+			KEY_1: simulation.submit("hotbar_use", {"slot": 0})
+			KEY_2: simulation.submit("hotbar_use", {"slot": 1})
+			KEY_3: simulation.submit("hotbar_use", {"slot": 2})
+			KEY_4: simulation.submit("hotbar_use", {"slot": 3})
+			KEY_COMMA: handle_action("slower")
+			KEY_PERIOD: handle_action("faster")
 			KEY_F5: handle_action("save")
 			KEY_F9: handle_action("load")
 			KEY_TAB: handle_action("follow")
-			KEY_F2: simulation.submit("spawn_test")
 			KEY_F3: handle_action("observer")
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
 		aiming = false
 		pointer_held = false
+
+## Map view: leaves the character and frames every settlement. Move with WASD, zoom with
+## the wheel; press M again to return to the character at the previous zoom.
+## The settlement whose storehouse is closest to the player (for trading at its stalls).
+func nearest_town() -> int:
+	var cell: Array = simulation.state.entities[str(simulation.state.player)].cell
+	var best: int = 1
+	var best_distance: float = INF
+	for town in simulation.state.get("settlements", {}).values():
+		var store: Array = simulation.state.entities[str(town.warehouse)].cell
+		var distance: float = Vector2(store[0] - cell[0], store[1] - cell[1]).length()
+		if distance < best_distance:
+			best_distance = distance
+			best = int(town.id)
+	return best
+
+## Clicking a person or thing opens a menu of what can be done to it; F stays the quick way.
+func _open_context_menu(id: int, at: Vector2) -> void:
+	if id == 0 or map_mode:
+		context_menu.close()
+		return
+	var s: Dictionary = simulation.state
+	var options: Array = ContextActions.options(s, id)
+	if options.is_empty():
+		context_menu.close()
+		return
+	var entity: Dictionary = s.entities[str(id)]
+	context_menu.open(id, entity.name, ContextActions.subtitle(s, id), options, at)
+	pointer_held = false
+
+func _on_context_chosen(target: int, action: String) -> void:
+	if action in ["inventory", "health"]:
+		handle_action(action)
+		return
+	simulation.submit("context_action", {"target": target, "action": action})
+
+func toggle_map() -> void:
+	var camera: Camera2D = $ObserverCamera
+	map_mode = not map_mode
+	context_menu.close()
+	if map_mode:
+		map_return_zoom = camera.zoom
+		map_return_follow = follow_player
+		follow_player = false
+		var low := Vector2(INF, INF)
+		var high := Vector2(-INF, -INF)
+		for town in simulation.state.get("settlements", {}).values():
+			var store: Array = simulation.state.entities[str(town.warehouse)].cell
+			low = Vector2(minf(low.x, store[0]), minf(low.y, store[1]))
+			high = Vector2(maxf(high.x, store[0]), maxf(high.y, store[1]))
+		if low.x == INF:
+			low = Vector2(40, 30); high = Vector2(90, 70)
+		# Frame every settlement with a generous margin so the roads and forest around them show.
+		var span := (high - low + Vector2(120, 70)) * CELL
+		var fit: float = minf(get_viewport().get_visible_rect().size.x / span.x, get_viewport().get_visible_rect().size.y / span.y)
+		camera.position = (low + high) * 0.5 * CELL
+		camera.zoom = Vector2.ONE * clampf(fit, camera.MIN_ZOOM, camera.MAX_ZOOM)
+		$DebugHUD.notice.text = "Map: WASD to move, wheel to zoom, M to return."
+	else:
+		follow_player = map_return_follow
+		camera.zoom = map_return_zoom
+	refresh_view()
+
+func _submit_shot() -> void:
+	var actor: Dictionary = $WorldView.motion.actors.get(str(simulation.state.player), {})
+	var cell: Array = simulation.state.entities[str(simulation.state.player)].cell
+	var origin: Vector2 = actor.get("position", Vector2(cell[0], cell[1]) * CELL)
+	var direction: Vector2 = get_global_mouse_position() - origin
+	if direction.length_squared() < 16.0: direction = Vector2.from_angle(float(actor.get("heading", PI / 2.0)))
+	direction = direction.normalized()
+	simulation.submit("shotgun_fire", {"direction": [roundi(direction.x * 1000.0), roundi(direction.y * 1000.0)]})
 
 func _submit_strike(kind: String) -> void:
 	var actor: Dictionary = $WorldView.motion.actors.get(str(simulation.state.player), {})

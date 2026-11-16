@@ -1,12 +1,16 @@
 # Project Living World
 
-A single-player frontier sandbox. Start in Alder Hollow with ten residents, follow
+A single-player frontier sandbox. Start in Alder Hollow with five residents, follow
 goods from the forest to the sawmill and market, and watch villagers build homes
 as the settlement grows. Reedbank is a separate settlement on the same map.
 
 ![Alder Hollow with working market stalls, workshops, and walkable interiors](docs/screenshots/market-stalls.png)
 
-[Regional map](docs/screenshots/world-landscape.png) · [Character movement](docs/screenshots/character-motion.gif) · [Construction](docs/screenshots/construction-progress.png)
+| Forest harvesting | Sawmill production |
+|---|---|
+| [![A villager chopping a tree](docs/screenshots/forest-harvest.png)](docs/screenshots/forest-harvest.png) | [![A sawyer working beside the stock rack](docs/screenshots/workshop-production.png)](docs/screenshots/workshop-production.png) |
+
+[View the full screenshot gallery](docs/SCREENSHOTS.md) · [Watch the character animations](docs/screenshots/character-motion.gif)
 
 ## Start the game
 
@@ -25,11 +29,18 @@ GODOT_BIN=/private/tmp/living-world-engine/Godot.app/Contents/MacOS/Godot
 
 | Control | Action |
 |---|---|
-| **WASD**, **Shift** | Walk or sprint. Sprint drains stamina. |
+| **WASD**, **Shift** | Walk (including diagonals with two keys) or sprint. Sprint drains stamina. |
 | **Wheel** or **pinch**, **Tab** | Zoom. Tab toggles camera follow so you can pan around the region. |
 | **I**, **F**, **H** | Open inventory, interact, or inspect body health. Right-click a body part for treatment. |
 | **Right mouse**, **Left mouse**, **Space** | Face the cursor, hold left mouse to ready, right mouse plus left click to punch, or Space to shove. |
-| **P**, **1 / 2 / 3** | Pause or set simulation speed. |
+| **1 / 2 / 3 / 4** | Use hotbar slot 1-4 (assign items in the inventory, **I**). Use it again to put the item away. |
+| **P**, **,** / **.** | Pause, slower or faster time; the bottom-right clock has the same controls. |
+| **E**, **Q** | Eat food from your inventory, or drink at a well barrel. |
+| **F4** | Performance tab (top right): fps, frame-time percentiles and graph, render counters, simulation and world figures; Record writes `perf_log.csv` to the save folder. |
+| **Right-click twice** | Walk to that square. **Left-click** a person or object for an action menu; **C** opens your clothing. |
+| **M** | Map view: frame every town, pan with WASD, zoom with the wheel, M again to return. |
+| **X**, **R** | Ready or stow the shotgun; reload it. Aim with right mouse and click to fire. Take one from the sheriff's office rack with **F**. |
+| **T**, **G** | Rotate the nearest furniture item, or move it to its best spot against a wall (inside a building). |
 | **F5 / F9**, **Esc** | Save or load in the running game, or close the open panel. |
 | **F3 / F8** | Open observer tools or toggle the extra HUD details. |
 

@@ -34,7 +34,9 @@ func _initialize() -> void:
 	for index in range(20):
 		sim.submit("move_player", {"direction": [-1, 0]})
 		sim.step()
-	check(s.entities[str(s.player)].cell[0] == World.building_rect(house).position.x + 1, "Player stops at solid wall")
+	var stopped: Array = s.entities[str(s.player)].cell
+	# Beds and other furniture now stand along the walls, so the player may stop at a bed instead of the wall.
+	check(not World.walkable(s, [stopped[0] - 1, stopped[1]]) and World.inside_building(s, stopped) == s.home, "Player stops at a solid wall or furniture and stays inside")
 	var path := OS.get_temp_dir().path_join("lw-building.save")
 	check(Save.save_state(sim, path).ok, "Interior save succeeds")
 	var loaded := Sim.new()
