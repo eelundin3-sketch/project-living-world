@@ -13,7 +13,7 @@ func _initialize() -> void:
 	var sim := Sim.new()
 	sim.start_game()
 	var trees: Array = sim.state.entities.values().filter(func(e: Dictionary) -> bool: return e.kind == "tree")
-	check(trees.size() == 580, "580 trees including dense groves across both settlements")
+	check(trees.size() > 5000, "Forests around the towns and across the open country (got %d)" % trees.size())
 	var positions: Dictionary = {}
 	for tree in trees:
 		check(not positions.has(str(tree.cell)), "Unique tree cells")

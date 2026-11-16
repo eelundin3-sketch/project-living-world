@@ -45,6 +45,8 @@ func run() -> void:
 	worker.scale = Vector2.ONE * 1.5
 	var x := 83.0
 	var gait := 0.0
+	var sprint := 0.0
+	var speed := 0.0
 	for index in range(135):
 		var time := index / FPS
 		var feet := "idle"
@@ -52,10 +54,12 @@ func run() -> void:
 			feet = "walk"
 		elif time >= 1.25 and time < 2.50:
 			feet = "run"
-		var meters_per_second := 10.0 if feet == "run" else (5.0 if feet == "walk" else 0.0)
+		sprint = move_toward(sprint, 1.0 if feet == "run" else 0.0, 3.5 / FPS)
+		speed = move_toward(speed, 10.0 if feet == "run" else (5.0 if feet == "walk" else 0.0), 20.0 / FPS)
+		var meters_per_second := speed
 		x += meters_per_second * Director.CELL / FPS
-		gait += meters_per_second / FPS / (Director.RUN_CYCLE_METERS if feet == "run" else Director.WALK_CYCLE_METERS)
-		runner.set_pose({"position": Vector2(x, 130), "heading": 0.0, "moving": feet != "idle",
+		gait += meters_per_second / FPS / lerpf(Director.WALK_CYCLE_METERS, Director.RUN_CYCLE_METERS, sprint)
+		runner.set_pose({"position": Vector2(x, 130), "heading": 0.0, "moving": speed > 0.01, "run_blend": sprint,
 			"action": feet, "gait_phase": fposmod(gait, 1.0), "move_direction": Vector2.RIGHT}, 1.0 / FPS)
 		var job := "idle"
 		var phase := 0.0

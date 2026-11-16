@@ -1,9 +1,11 @@
 extends RefCounted
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const Jobs = preload("res://sim/jobs/job_board.gd")
+const Professions = preload("res://sim/settlement/professions.gd")
 
 static func initialize(s: Dictionary) -> void:
 	s.factions = {"1": {"id": 1, "name": "Alder Council", "treasury": s.warehouse}, "2": {"id": 2, "name": "Reedbank Compact", "treasury": s.settlements["2"].warehouse}}
+	if s.settlements.has("3"): s.factions["3"] = {"id": 3, "name": "Dustvale Compact", "treasury": s.settlements["3"].warehouse}
 	s.treaty = {"open_trade": true, "since": s.tick}
 	s.households = {}
 	for town in s.settlements.values():
@@ -46,7 +48,7 @@ static func migrate(sim: RefCounted, npc_id: int, destination: int) -> bool:
 	if not s.residents.has(str(npc_id)) or not s.settlements.has(str(destination)):
 		return false
 	var npc: Dictionary = s.residents[str(npc_id)]
-	if npc.get("migration", {}).size() > 0 or npc.settlement == destination or npc.occupation != "Gatherer":
+	if npc.get("migration", {}).size() > 0 or npc.settlement == destination or npc.occupation in Professions.WORKSHOP_TRADES or npc.occupation in ["Builder", "Sheriff", "Child"]:
 		return false
 	if npc.job != 0:
 		Jobs.release(s, npc.job, "MIGRATING")

@@ -1,5 +1,100 @@
 # Validation record
 
+## Upright standing profile — 2026-11-16
+
+The standing pose in `view/actors/drawn_character.gd` aligns the hip, knee and
+ankle in profile. Character art checks both sides, with and without the shotgun
+in hand. Player mobility, shotgun and live animation tests also passed.
+Reproduce the [turnaround](screenshots/character-design.png) by running
+`godot --path . --script res://tests/character_design_capture.gd`.
+
+## Walking foot roll — 2026-11-16
+
+The drawn character now rotates each boot around its heel or toe during the
+walking cycle and blends ankle pitch as the pose changes. Character art tests
+cover the heel-first, flat and toe-off phases and verify that rotating the boot
+preserves the support point in the stride preview. The live animation, player
+mobility and shotgun tests passed.
+
+Godot rendered the action sheets from five headings. The side view was reviewed
+and the [motion preview](screenshots/character-motion.gif) was regenerated with
+`tests/character_motion_capture.gd`.
+
+## Walking stride — 2026-11-16
+
+The walking pose in `view/actors/drawn_character.gd` keeps the foot tied to
+distance travelled during contact. The artistic change is a shorter forward
+reach and a longer push-off behind the hips. The character art test checks
+the rear knee and foot, the opposite foot's landing, heel lift and continuity
+at the step boundaries. Player mobility, live animation and shotgun controls
+also passed in Godot 4.6.
+
+Reviewed side and diagonal walk cycles with `tests/anim_sheet_capture.gd`
+using `LW_HEADING=0` and `LW_HEADING=45`. Regenerated the
+[motion preview](screenshots/character-motion.gif) with
+`tests/character_motion_capture.gd` and rebuilt both Mac apps.
+
+## Shotgun carry and aim — 2026-11-16
+
+Godot 4.6 headless import, shotgun controls, character art, player mobility,
+live animation and hotbar checks passed. The shotgun test drives the game's
+mouse handlers while moving, checks the carry and aim poses, and verifies that
+a left press while aiming consumes one shell. The art test checks the 25% length
+reduction and aim between the body's drawn directions.
+
+The graphical character detail and turnaround captures were refreshed. Run
+`godot --path . --script res://tests/character_detail_capture.gd` for the carry
+preview. Both macOS exports rebuilt and the release app passed a launch check.
+
+The separate `unarmed_test` pointer and ready-pose assertions also failed on
+an isolated copy of the unchanged branch. The weapon tests passed.
+
+## Neck and running follow-up — 2026-11-16
+
+`character_art_test`, `player_mobility_test`, `animation_live_test`, and
+`player_panels_test` passed for the revised art and movement. New checks verify a
+backward heel extension after toe-off, a knee behind the hip, raised heel recovery,
+continuous foot positions at lift-off/recovery/cycle wrap, and selectable neck health
+region. Side and diagonal sprint contact sheets and the revised detail sheet were
+visually reviewed. The motion, turnaround, gameplay and health captures were refreshed.
+
+Run this for the side sheet; use `LW_HEADING=45` for the diagonal:
+
+```sh
+LW_HEADING=0 LW_SHEET_DIR=/tmp/lw-running "$GODOT_BIN" --path . --script res://tests/run_sheet_capture.gd
+```
+
+## Drawn character redesign — 2026-11-16
+
+Godot 4.6 stable (`89cea1439`) headless editor import passed. These checks passed:
+`character_art_test`, `player_mobility_test`, `animation_live_test`, `loot_test`,
+`player_panels_test`, `shotgun_test`, `animation_test`, `player_health_test`,
+`depth_order_test`, and `smoke_test`.
+
+The new character-art check covers 24 actions at 12 phases in eight directions:
+finite joints, valid cloth triangulation, connected silhouettes, grounded resting
+feet, relaxed hand clearance and selectable health regions. The graphical action
+sheets rendered 20 actions at eight phases in eight directions (40 sheets), with
+no Godot drawing or script errors. The detail sheet, turnaround, actual village
+close-up and health screen were visually inspected. The 135-frame motion preview
+was regenerated with the sprint blend enabled. macOS release/debug builds were
+regenerated; the release app also passed a 90-frame headless launch check.
+Windows/Linux builds were not.
+
+**Existing failure:** `brawl_test.gd` fails its repeated-punch knockout assertion,
+then accesses a missing `knock` key at line 54. The identical failure was reproduced
+from an isolated `git archive HEAD` copy before the character changes. No combat
+simulation files were changed here. This broader suite is not fully green.
+
+Reproduce the focused check and visual demonstration:
+
+```sh
+"$GODOT_BIN" --headless --path . --script res://tests/character_art_test.gd
+"$GODOT_BIN" --path . --script res://tests/character_detail_capture.gd
+"$GODOT_BIN" --path . --script res://tests/character_design_capture.gd
+```
+
+
 Host: Apple M4, macOS. Engine: Godot `4.6.stable.official.89cea1439`.
 The original documents describe a proposed Windows reference machine; these are
 measurements on the actual development host, not claims about that reference.

@@ -35,6 +35,25 @@ identities and population. The compact HUD reports Alder Hollow's local count.
    Right-click an injury for treatment. Bandages and antiseptic come from
    inventory. Moving interrupts a treatment before it consumes supplies.
 
+## Trades, households and gardens
+
+- **Rye.** The fields and every household garden grow rye in three game days. Hold
+  the crop in view while it grows: it greens, lengthens, forms ears, turns gold and
+  finally droops when ready. A farm crew harvests ripe fields; you can also press
+  **F** at a ripe field. Grain goes to the storehouse, the baker turns it into food
+  for the provisions stall and storehouse.
+- **Trades.** Open a resident's inspector to see their occupation. Woodsmen only fell
+  trees, farmers only work fields, the baker and the plank maker work at their
+  buildings, builders raise homes, and the sheriff patrols the square.
+- **Home life.** Each home has a pantry and a garden beside it. Residents tend the
+  garden in the morning (06:00-07:30) and evening (17:30-19:30), then go back to
+  their trade. Hungry residents eat at home first. Adults pair off and have
+  children while there is room.
+- **You.** E eats, Q drinks at a well barrel, and F at the sheriff's office rack takes a
+  shotgun. X equips it and R reloads. Hold right mouse to raise the shotgun, then
+  press left mouse while aiming to fire. It stays in your hands as you walk.
+  The top-left circles show how you are doing.
+
 ## What is stored and where
 
 | Data | Location | Backup and recovery |
@@ -81,14 +100,17 @@ records used in the headless simulation.
 ## Visual examples and how to reproduce them
 
 Run the capture scripts with a graphical Godot window. Run tests headlessly.
-All example images live under [docs/screenshots](screenshots/).
+See the [screenshot gallery](SCREENSHOTS.md) for examples. All images live under [docs/screenshots](screenshots/).
 
 | Example | Capture |
 |---|---|
 | [Regional landscape](screenshots/world-landscape.png), [larger village](screenshots/village-design.png), [cutaway lodge](screenshots/room-design.png) | [village design](../tests/village_design_capture.gd) |
+| [Character detail](screenshots/character-detail.png), [gameplay close-up](screenshots/character-gameplay.png) | [detail and gameplay capture](../tests/character_detail_capture.gd) |
 | [Character turnaround](screenshots/character-design.png), [sprint and handling animation](screenshots/character-motion.gif) | [turnaround](../tests/character_design_capture.gd), [motion frames](../tests/character_motion_capture.gd) |
 | [Health menu](screenshots/player-health.png), [inventory](screenshots/player-inventory.png) | [player panels](../tests/player_panels_capture.gd) |
 | [Object detail](screenshots/prop-detail.png), [machine](screenshots/working-machine.png), [stock handling](screenshots/stockpile-handling.png) | [prop design](../tests/prop_design_capture.gd), [live fixtures](../tests/fixture_capture.gd) |
+| [Forest harvesting](screenshots/forest-harvest.png), [workshop production](screenshots/workshop-production.png), [stall trading](screenshots/market-trading.png) | [gameplay gallery](../tests/screenshots_capture.gd) |
+| [Rye growth](screenshots/rye-growth.png), [plaza](screenshots/market-plaza.png), [office](screenshots/sheriff-office.png), [shotgun](screenshots/shotgun-fire.png) | [rye sheet](../tests/rye_growth_capture.gd), [update capture](../tests/update_capture.gd), [needs](../tests/needs_capture.gd) |
 | [Tile under construction](screenshots/construction-progress.png), [market stalls](screenshots/market-stalls.png) | [construction](../tests/construction_capture.gd), [live market](../tests/market_capture.gd) |
 
 The screenshots are snapshots from different revisions. The latest written

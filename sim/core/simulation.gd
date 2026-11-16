@@ -4,6 +4,20 @@ const PlayerActions = preload("res://sim/player/player_actions.gd")
 const Canonical = preload("res://sim/core/canonical.gd")
 const Streams = preload("res://sim/core/random_streams.gd")
 const World = preload("res://sim/world/world_db.gd")
+const Names = preload("res://sim/entities/names.gd")
+const Needs = preload("res://sim/entities/needs.gd")
+const Crops = preload("res://sim/farming/crops.gd")
+const Households = preload("res://sim/entities/households.gd")
+const Professions = preload("res://sim/settlement/professions.gd")
+const Shotgun = preload("res://sim/player/shotgun.gd")
+const Sheriff = preload("res://sim/settlement/sheriff.gd")
+const Placement = preload("res://sim/world/placement.gd")
+const Hotbar = preload("res://sim/player/hotbar.gd")
+const Brawl = preload("res://sim/player/brawl.gd")
+const Housing = preload("res://sim/settlement/housing.gd")
+const ContextActions = preload("res://sim/player/context_actions.gd")
+const Looting = preload("res://sim/player/looting.gd")
+const Chests = preload("res://sim/entities/chests.gd")
 const Residents = preload("res://sim/entities/residents.gd")
 const Jobs = preload("res://sim/jobs/job_board.gd")
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
@@ -45,18 +59,29 @@ func enable_region() -> void:
 	Regional.initialize(self)
 	BodyHealth.initialize(state)
 	PlayerActions.initialize(state)
+	Needs.initialize(state)
+	Shotgun.initialize(state)
+	Hotbar.initialize(state)
+	Brawl.initialize(state)
 
 func enable_society() -> void:
 	Society.initialize(state)
 	Risk.initialize(state)
 
-func start_game(population: int = 10) -> void:
+func start_game(population: int = 5) -> void:
 	start_village(population)
 	enable_production()
 	enable_economy()
 	enable_region()
 	Market.install_stalls(self)
 	enable_society()
+	Sheriff.install(self)
+	Housing.settle(self)
+	Households.upgrade(self)
+	Chests.ensure_all(self)
+	World.lay_out_woodlands(self)
+	for town in state.settlements.values(): Professions.assign(state, town.id)
+	Market.ensure_tents(self)
 
 func new_id() -> int:
 	var result: int = state.next_id
@@ -87,11 +112,27 @@ func step() -> void:
 	if state.has("residents"):
 		Weather.update(self)
 		Unarmed.update(self)
+		Brawl.update(self)
+		ContextActions.update(self)
 		LocalCombat.update(self)
-		if state.tick % 2 == 0 and not state.get("player_path", []).is_empty():
+		var travelling: bool = not state.get("player_path", []).is_empty()
+		# Holding Shift while following a route runs it: a step every tick (three in four when fatigued).
+		var run_route: bool = travelling and _can_run_route()
+		var tired_route: bool = run_route and state.player_health.stamina <= BodyHealth.WINDED_AT
+		if run_route: state.player_control.crouching = false
+		var sneaking_route: bool = travelling and bool(state.get("player_control", {}).get("crouching", false))
+		var route_step: bool = (state.tick % 4 != 3 if tired_route else true) if run_route else (state.tick % 3 == 0 if sneaking_route else state.tick % 2 == 0)
+		if travelling and route_step:
 			var next: Array = state.player_path.pop_front()
 			if World.walkable(state, next):
+				var from_cell: Array = state.entities[str(state.player)].cell
+				state.player_control.last_dir = [signi(next[0] - from_cell[0]), signi(next[1] - from_cell[1])]
 				state.entities[str(state.player)].cell = next
+				if run_route:
+					state.player_control.running = true
+					state.player_control.running_tick = state.tick
+					state.player_health.stamina = maxi(0, state.player_health.stamina - 1)
+				if state.player_path.is_empty(): state.player_control.travel_run = false
 			else:
 				var destination: Array = state.get("player_travel_goal", [])
 				state.player_path = []
@@ -111,18 +152,34 @@ func step() -> void:
 			Recipes.update(self)
 		if state.has("construction"):
 			Planner.update(self)
+		if state.has("markets") and state.tick % 600 == 300: Market.ensure_tents(self)
 		if state.has("markets") and state.tick % 300 == 0:
 			for town_id in state.markets:
 				Market.clear_market(state, int(town_id))
 		BodyHealth.update(state)
 		PlayerActions.update(self)
+		Needs.update(state)
+		Hotbar.update(state)
+		Shotgun.update(self)
+		if state.has("households") and state.tick % 14400 == 7200: Households.daily(self)
+		Crops.update(state)
 		if state.tick % 14400 == 0:
 			for entity in state.entities.values():
-				if entity.kind == "farm":
-					Inventory.produce(state, entity.id, "food", mini(200, Inventory.available(state, entity.id)))
-				elif entity.kind == "tree":
-					Inventory.produce(state, entity.id, "log", mini(2, Inventory.available(state, entity.id)))
-			record("A new day: crops ripened and woodland grew.")
+				if entity.kind == "tree":
+					if entity.get("felled", false):
+						# A stump sprouts a new tree after a week; a fallen trunk waits to be gathered.
+						if Inventory.amount(state, entity.id, "log") == 0 and state.tick - int(entity.get("felled_tick", 0)) >= 7 * 14400:
+							entity.felled = false
+							Inventory.produce(state, entity.id, "log", mini(10, Inventory.available(state, entity.id)))
+					else:
+						Inventory.produce(state, entity.id, "log", mini(2, Inventory.available(state, entity.id)))
+			record("A new day: rye grew in the fields and woodland grew.")
+
+func _stamina_allows_run() -> bool:
+	return state.player_health.stamina > 0 and not state.player_health.get("exhausted", false)
+
+func _can_run_route() -> bool:
+	return state.has("player_control") and state.has("player_health") and state.player_control.get("travel_run", false) and _stamina_allows_run() and BodyHealth.move_delay(state) == 1 and not Brawl.player_down(state)
 
 func _drain(queue_name: String, is_command: bool) -> void:
 	state[queue_name].sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
@@ -135,11 +192,77 @@ func _drain(queue_name: String, is_command: bool) -> void:
 			apply_event(entry)
 
 func apply_command(entry: Dictionary) -> void:
+	# Someone lying on the ground cannot act until they are back on their feet.
+	if state.has("brawl") and entry.kind in ["move_player", "player_strike", "interact", "shotgun_fire", "hotbar_use", "eat", "drink", "treat_body", "context_action", "walk_to", "loot_take", "loot_all", "loot_coins", "loot_strip"] and Brawl.player_down(state):
+		return
 	if entry.kind == "player_strike":
 		Unarmed.begin(state, str(entry.payload.get("kind", "")), entry.payload.get("direction", []))
 		return
 	if entry.kind == "demo_encounter" and state.has("residents"):
 		LocalCombat.start_encounter(self)
+		return
+	if entry.kind in ["eat", "drink"] and state.has("player_needs"):
+		state.player_control.notice = Needs.eat(state) if entry.kind == "eat" else Needs.drink(state)
+		return
+	if entry.kind in ["hotbar_assign", "hotbar_use"] and state.has("hotbar"):
+		var message: String = Hotbar.assign(state, int(entry.payload.get("slot", -1)), str(entry.payload.get("item", ""))) if entry.kind == "hotbar_assign" else Hotbar.use(state, int(entry.payload.get("slot", -1)))
+		if not message.is_empty(): state.player_control.notice = message
+		return
+	if entry.kind in ["rotate_furniture", "rearrange_furniture", "place_furniture"] and state.has("player_control"):
+		var notice: String = _furniture_command(entry)
+		if not notice.is_empty(): state.player_control.notice = notice
+		return
+	if entry.kind in ["shotgun_toggle", "shotgun_reload", "shotgun_fire"] and state.has("shotgun"):
+		match entry.kind:
+			"shotgun_toggle": state.player_control.notice = Shotgun.toggle(state)
+			"shotgun_reload": state.player_control.notice = Shotgun.start_reload(state)
+			"shotgun_fire": Shotgun.fire(self, entry.payload.get("direction", []))
+		return
+	if entry.kind in ["loot_take", "loot_all", "loot_coins", "loot_strip", "wear_item", "take_off"] and state.has("player_control"):
+		var payload: Dictionary = entry.payload
+		match entry.kind:
+			"loot_take": Looting.take(state, int(payload.get("target", 0)), str(payload.get("item", "")))
+			"loot_all": Looting.take_all(state, int(payload.get("target", 0)))
+			"loot_coins": Looting.take_coins(state, int(payload.get("target", 0)))
+			"loot_strip": Looting.strip(state, int(payload.get("target", 0)), str(payload.get("slot", "")), bool(payload.get("wear", false)))
+			"wear_item": Looting.wear(state, str(payload.get("item", "")))
+			"take_off": Looting.take_off(state, str(payload.get("slot", "")))
+		return
+	if entry.kind == "walk_to" and state.has("player_control"):
+		# Double right-click on the ground: find a route and walk it (a blocked square goes to the nearest free neighbour).
+		var goal: Array = entry.payload.get("cell", [])
+		if goal.size() == 2:
+			var from: Array = state.entities[str(state.player)].cell
+			var target: Array = goal.duplicate()
+			if not World.walkable(state, target):
+				var best := 9999
+				for dy in range(-2, 3):
+					for dx in range(-2, 3):
+						var candidate: Array = [goal[0] + dx, goal[1] + dy]
+						if World.walkable(state, candidate) and absi(dx) + absi(dy) < best: best = absi(dx) + absi(dy); target = candidate
+			var route := Navigation.request_path(state, from, target)
+			state.player_control.pending = {}
+			if route.ok and not route.path.is_empty():
+				state.player_path = route.path
+				state.player_travel_goal = target.duplicate()
+				state.player_control.notice = "Walking there…"
+			else:
+				state.player_control.notice = "You cannot find a way there."
+		return
+	if entry.kind == "context_action" and state.has("player_control"):
+		ContextActions.request(self, int(entry.payload.get("target", 0)), str(entry.payload.get("action", "")))
+		return
+	if entry.kind=="rummage" and state.has("player_control"):
+		# Opening the inventory: kneel and go through the backpack (purely a pose; it ends on any move).
+		state.player_control.rummaging=bool(entry.payload.get("open",false)) and not Brawl.player_down(state)
+		return
+	if entry.kind=="crouch_toggle" and state.has("player_control"):
+		if Brawl.player_down(state): return
+		state.player_control.crouching=not bool(state.player_control.get("crouching",false))
+		state.player_control.notice="You crouch low and move quietly." if state.player_control.crouching else "You stand up."
+		return
+	if entry.kind=="travel_run" and state.has("player_control"):
+		state.player_control.travel_run=bool(entry.payload.get("run",false))
 		return
 	if entry.kind=="stop_travel": state.player_path=[]; state.player_travel_goal=[]; return
 	if entry.kind in ["interact","hold_item","take_item","person_trade","treat_body","debug_injury"] and state.has("player_control"):
@@ -158,17 +281,29 @@ func apply_command(entry: Dictionary) -> void:
 	if entry.kind == "move_player" and state.has("player"):
 		state.player_path = []
 		if state.has("player_control"):
+			state.player_control.pending = {}  # walking by hand cancels a click-to-act walk
+			state.player_control.rummaging = false
+		if state.has("player_control"):
 			if BodyHealth.incapacitated(state) or state.tick<state.player_control.next_move: return
 		var direction: Array = entry.payload.get("direction", [0, 0])
-		if direction.size() == 2 and abs(direction[0]) + abs(direction[1]) == 1:
+		# One step in any of the eight directions. A diagonal step may not cut a
+		# blocked corner, so both neighbouring orthogonal cells must be walkable.
+		if direction.size() == 2 and abs(direction[0]) <= 1 and abs(direction[1]) <= 1 and abs(direction[0]) + abs(direction[1]) >= 1:
 			var cell: Array = state.entities[str(state.player)].cell
 			var next: Array = [cell[0] + direction[0], cell[1] + direction[1]]
-			if World.walkable(state, next):
+			var diagonal: bool = direction[0] != 0 and direction[1] != 0
+			if World.walkable(state, next) and (not diagonal or (World.walkable(state, [cell[0] + direction[0], cell[1]]) and World.walkable(state, [cell[0], cell[1] + direction[1]]))):
 				if state.has("player_control"):
-					var requested_run: bool=bool(entry.payload.get("run",false)) and state.player_health.stamina>0 and BodyHealth.move_delay(state)==1
+					var requested_run: bool=bool(entry.payload.get("run",false)) and _stamina_allows_run() and BodyHealth.move_delay(state)==1
+					# Sprinting from a crouch stands you up; otherwise a crouch is a slow, quiet walk.
+					if requested_run: state.player_control.crouching=false
+					var sneaking: bool=bool(state.player_control.get("crouching",false))
+					# Fatigued (orange stamina) running drops every other stride, so the pace visibly flags.
+					var tired_run: bool=requested_run and state.player_health.stamina<=BodyHealth.WINDED_AT and state.tick%2==0
 					state.player_control.running=requested_run
 					state.player_control.running_tick=state.tick if requested_run else -1
-					state.player_control.next_move=state.tick+(1 if requested_run else maxi(2, BodyHealth.move_delay(state)))
+					state.player_control.last_dir=[direction[0],direction[1]]
+					state.player_control.next_move=state.tick+(2 if tired_run else (1 if requested_run else maxi(3 if sneaking else 2, BodyHealth.move_delay(state)+(1 if sneaking else 0))+(1 if diagonal else 0)))
 					if requested_run: state.player_health.stamina=maxi(0,state.player_health.stamina-1)
 				state.entities[str(state.player)].cell = next
 	elif entry.kind == "cancel_job" and state.has("jobs"):
@@ -208,7 +343,7 @@ func apply_command(entry: Dictionary) -> void:
 			var recipe: Dictionary = result.recipe
 			state.recipes[recipe.id] = recipe
 			for workshop in state.workshops.values():
-				if not workshop.active:
+				if not workshop.active and workshop.get("kind", "sawmill") == "sawmill":
 					workshop.recipe = recipe.id
 			record("Loaded recipe " + recipe.id + "; idle sawmills now use it")
 		else:
@@ -220,6 +355,27 @@ func apply_command(entry: Dictionary) -> void:
 		state.entities[str(id)] = {"id": id, "value": random_int("test", 0, 9999)}
 	else:
 		record("Rejected command: " + entry.kind)
+
+## Furniture commands act on a building by id, or the one the player is standing in.
+func _furniture_command(entry: Dictionary) -> String:
+	var cell: Array = state.entities[str(state.player)].cell
+	var id: int = int(entry.payload.get("building", World.inside_building(state, cell)))
+	if id == 0 or not state.entities.has(str(id)) or not state.entities[str(id)].has("furniture"):
+		return "Stand inside a building to arrange its furniture."
+	var building: Dictionary = state.entities[str(id)]
+	var index: int = int(entry.payload.get("index", Placement.nearest_index(building, cell)))
+	match entry.kind:
+		"place_furniture":
+			var kind: String = str(entry.payload.get("kind", ""))
+			var ok: bool = Placement.place(state, building, kind, entry.payload.get("cell", [0, 0]), int(entry.payload.get("rot", 2)))
+			return ("Placed a %s." % kind) if ok else "There is no room for that here."
+		"rotate_furniture":
+			var turned: int = Placement.rotate_item(state, building, index, int(entry.payload.get("steps", 1)))
+			if turned < 0: return "There is no room to turn that."
+			return "Turned the %s to face %s." % [building.furniture[index].kind, ["up", "right", "down", "left"][turned]]
+		"rearrange_furniture":
+			return ("Moved the %s against the wall." % building.furniture[index].kind) if Placement.rearrange(state, building, index) else "It already sits as well as it can."
+	return ""
 
 func apply_event(entry: Dictionary) -> void:
 	if entry.kind == "caravan_arrival" and state.has("caravans"):
@@ -244,6 +400,14 @@ func restore(snapshot_data: Dictionary) -> void:
 	state = snapshot_data.duplicate(true)
 	if state.has("world"): Weather.initialize(state)
 	if state.has("residents"): LocalCombat.initialize(state)
+	Names.upgrade(state)
+	Needs.upgrade(state)
+	Shotgun.initialize(state) if state.has("player_health") else null
+	Hotbar.initialize(state)
+	if state.has("hotbar") and int(state.hotbar.get("active", -1)) < 0: state.hotbar.active = 0
+	Brawl.initialize(state)
+	Crops.initialize(state) if state.has("world") else null
+	if state.has("households"): Chests.ensure_all(self)
 	World.upgrade_layouts(state)
 	World.upgrade_architecture(state)
 	World.upgrade_house_layouts(state)

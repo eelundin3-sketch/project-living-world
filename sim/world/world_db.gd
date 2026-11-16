@@ -1,6 +1,9 @@
 extends RefCounted
 const Fixtures = preload("res://sim/world/fixtures.gd")
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
+const Names = preload("res://sim/entities/names.gd")
+const Crops = preload("res://sim/farming/crops.gd")
+const Terrain = preload("res://sim/world/terrain.gd")
 const CHUNK_SIDE: int = 64
 const WIDTH: int = 128
 const HEIGHT: int = 96
@@ -19,6 +22,8 @@ static func in_reserved_plot(plots: Array[Rect2i], cell: Array) -> bool:
 	for plot in plots:
 		if plot.has_point(point): return true
 	return false
+
+const WORKSHOP_KINDS: Array[String] = ["sawmill", "bakery", "forge"]
 
 static func cell_key(cell: Array) -> String:
 	return "%d,%d" % [cell[0], cell[1]]
@@ -49,18 +54,24 @@ static func apply_mutation(state: Dictionary, cell: Array, blocked: bool) -> voi
 		state.world.chunks[key] = {"seed": state.seed, "version": 1, "entities": [], "mutations": {}}
 	state.world.chunks[key].mutations[cell_key(cell)] = blocked
 
-static func add_entity(sim: RefCounted, kind: String, name_value: String, cell: Array, settlement: int = 0) -> int:
+static func add_entity(sim: RefCounted, kind: String, name_value: String, cell: Array, settlement: int = 0, extra: Dictionary = {}) -> int:
 	var id: int = sim.new_id()
+	if settlement > 0 and (kind in ["sawmill", "bakery", "forge", "office"] or (kind == "home" and "lodge" in name_value.to_lower())):
+		# Each town's lodge, office and workshops sit back from the road by their own amount, so a
+		# street is not one straight row. Only backwards: the road in front always stays clear.
+		cell = [cell[0], cell[1] - sim.random_int("town_layout:%d" % settlement, 0, 5)]
 	sim.state.entities[str(id)] = {"id": id, "kind": kind, "name": name_value, "cell": cell.duplicate(), "settlement": settlement}
-	if kind in ["home", "warehouse", "sawmill", "market", "construction"]:
+	if kind in ["home", "warehouse", "sawmill", "bakery", "forge", "office", "market", "construction"]:
 		sim.state.entities[str(id)].building_scale = 2
 	if kind == "home": sim.state.entities[str(id)].layout_shape = "stepped_joined"
+	# House types (see housing.gd) carry their own size, shape, beds and style.
+	for field in extra: sim.state.entities[str(id)][field] = extra[field]
 	var coord := chunk_coord(cell[0], cell[1])
 	var key := "%d,%d" % [coord.x, coord.y]
 	if not sim.state.world.chunks.has(key):
 		sim.state.world.chunks[key] = {"seed": sim.state.seed, "version": 1, "entities": [], "mutations": {}}
 	sim.state.world.chunks[key].entities.append(id)
-	if kind in ["home", "warehouse", "sawmill", "market"]:
+	if kind in ["home", "warehouse", "sawmill", "bakery", "forge", "office", "market"]:
 		install_building(sim.state, id)
 	elif kind in ["construction", "market_stall"]:
 		Fixtures.install(sim.state, sim.state.entities[str(id)])
@@ -72,13 +83,14 @@ static func seed_world(sim: RefCounted) -> void:
 	s.world = {"blocked": {}, "chunks": {}, "nav_revision": 0, "building_walls": {}, "architecture_version": 3, "house_layout_version": 2, "building_scale_version": 2, "fixture_version": 2, "fixture_cells": {}, "meters_per_cell": METERS_PER_CELL}
 	s.inventories = {}
 	s.accounting = {"initial": {}, "created": {}, "consumed": {}}
-	s.player = add_entity(sim, "player", "Traveller", [62, 49])
+	s.player = add_entity(sim, "player", Names.generate(sim), [62, 49])
 	Inventory.create(s, s.player, 40, {"food": 4})
 	s.warehouse = add_entity(sim, "warehouse", "Alder Hollow storehouse", [64, 46], 1)
 	Inventory.create(s, s.warehouse, 3000, {"food": 160})
 	s.home = add_entity(sim, "home", "Common lodge", [46, 42], 1)
 	s.farm = add_entity(sim, "farm", "Communal vegetable beds", [81, 57], 1)
 	Inventory.create(s, s.farm, 1000, {"food": 300})
+	Crops.add_plot(s, "field", [75, 54, 12, 6], 1, s.farm, 0, 23000)
 	populate_forest(sim, 1, 280, [64, 46], false)
 	populate_dense_groves(sim, 1, 100, [64, 46], false)
 	s.world.forest_version = 3
@@ -105,7 +117,22 @@ static func footprint(cell: Array, kind: String, scale_version: int = 2) -> Rect
 	return Rect2i(cell[0] - width / 2, cell[1] - height + 1, width, height)
 
 static func plot_rect(entity: Dictionary, kind: String) -> Rect2i:
+	if kind == "home" and entity.has("house_size"):
+		var size: Array = entity.house_size
+		return Rect2i(int(entity.cell[0]) - int(size[0]) / 2, int(entity.cell[1]) - int(size[1]) + 1, int(size[0]), int(size[1]))
 	return footprint(entity.cell, kind, entity.get("building_scale", 1))
+
+## The cut-out back corner of a notched house: cells with x >= .x (right notch) or x < .x (left
+## notch) and y < .y are outside the house.
+static func shape_notch(rect: Rect2i, shape: String) -> Vector2i:
+	var depth: int = maxi(2, rect.size.y / 4)
+	if shape == "notch_left": return Vector2i(rect.position.x + rect.size.x * 2 / 5, rect.position.y + depth)
+	return Vector2i(rect.position.x + rect.size.x * 3 / 5, rect.position.y + depth)
+
+## Interior partition walls: typed houses have one only if their type says so.
+static func partitions_for(entity: Dictionary, rect: Rect2i) -> Array:
+	if entity.has("house_size") and not entity.get("house_partition", false): return []
+	return partition_cells(rect)
 
 static func house_notch(rect: Rect2i) -> Vector2i:
 	return rect.position + (Vector2i(10, 3) if rect.size.x >= 17 else Vector2i(7, 2))
@@ -128,12 +155,22 @@ static func building_contains(entity: Dictionary, cell: Array, kind: String = ""
 	var rect := plot_rect(entity, actual_kind)
 	var notch := house_notch(rect)
 	if not rect.has_point(Vector2i(cell[0], cell[1])): return false
-	return not (actual_kind == "home" and entity.get("layout_shape", "") in ["stepped", "stepped_joined"] and cell[0] >= notch.x and cell[1] < notch.y)
+	var shape: String = entity.get("layout_shape", "")
+	if actual_kind == "home" and shape in ["notch_right", "notch_left"]:
+		var cut := shape_notch(rect, shape)
+		if cell[1] < cut.y and ((shape == "notch_right" and cell[0] >= cut.x) or (shape == "notch_left" and cell[0] < cut.x)): return false
+		return true
+	return not (actual_kind == "home" and shape in ["stepped", "stepped_joined"] and cell[0] >= notch.x and cell[1] < notch.y)
 
 static func exterior_wall(entity: Dictionary, cell: Array, kind: String) -> bool:
 	if not building_contains(entity, cell, kind): return false
 	if kind == "home" and entity.get("layout_shape", "") == "stepped_joined":
 		var corner := house_notch(plot_rect(entity, kind)) + Vector2i.LEFT
+		if Vector2i(cell[0], cell[1]) == corner: return true
+	if kind == "home" and entity.get("layout_shape", "") in ["notch_right", "notch_left"]:
+		# Close the inside corner of the notch so the wall line has no diagonal gap.
+		var cut := shape_notch(plot_rect(entity, kind), entity.layout_shape)
+		var corner := cut + Vector2i.LEFT if entity.layout_shape == "notch_right" else cut
 		if Vector2i(cell[0], cell[1]) == corner: return true
 	for offset in [[0, -1], [0, 1], [-1, 0], [1, 0]]:
 		if not building_contains(entity, [cell[0] + offset[0], cell[1] + offset[1]], kind): return true
@@ -153,7 +190,7 @@ static func construction_stages(entity: Dictionary, kind: String) -> Array[Dicti
 			else:
 				floor_tiles.append(cell)
 				roof_tiles.append(cell.duplicate())
-	wall_tiles.append_array(partition_cells(rect))
+	wall_tiles.append_array(partitions_for(entity, rect))
 	var walls := {"id": "walls", "label": "Building walls", "tiles": wall_tiles}
 	var floor_stage := {"id": "floor", "label": "Laying floor", "tiles": floor_tiles}
 	var door := {"id": "door", "label": "Fitting doorway", "tiles": [entity.cell.duplicate()]}
@@ -189,7 +226,7 @@ static func install_building(s: Dictionary, id: int) -> void:
 			if exterior_wall(entity, [x, y], entity.kind):
 				if [x, y] != entity.door:
 					s.world.building_walls[cell_key([x, y])] = id
-	entity.interior_walls = partition_cells(rect)
+	entity.interior_walls = partitions_for(entity, rect)
 	for cell in entity.interior_walls:
 		s.world.building_walls[cell_key(cell)] = id
 	Fixtures.install(s, entity)
@@ -219,7 +256,7 @@ static func upgrade_layouts(s: Dictionary) -> void:
 	s.world.building_walls = {}
 	s.world.fixture_cells = {}
 	for entity in s.entities.values():
-		if entity.get("kind", "") in ["home", "warehouse", "sawmill", "market"]:
+		if entity.get("kind", "") in ["home", "warehouse", "sawmill", "bakery", "forge", "office", "market"]:
 			# Earlier icons sat too close together for full-sized rooms.
 			if s.has("settlements") and s.settlements.has(str(entity.settlement)):
 				var store: Array = s.entities[str(s.settlements[str(entity.settlement)].warehouse)].cell
@@ -237,6 +274,20 @@ static func upgrade_layouts(s: Dictionary) -> void:
 					break
 				move_record(s, entity, [entity.cell[0], entity.cell[1] + 9])
 			install_building(s, entity.id)
+
+## Removes an entity whose inventory has already been emptied (its goods moved elsewhere first,
+## so conservation holds): its chunk entry, fixture cells and inventory record go with it.
+static func remove_entity(s: Dictionary, id: int) -> void:
+	var entity: Dictionary = s.entities.get(str(id), {})
+	if entity.is_empty(): return
+	var coord := chunk_coord(entity.cell[0], entity.cell[1])
+	var key := "%d,%d" % [coord.x, coord.y]
+	if s.world.chunks.has(key): s.world.chunks[key].entities.erase(id)
+	for cell_key_value in s.world.get("fixture_cells", {}).keys():
+		if s.world.fixture_cells[cell_key_value] == id: s.world.fixture_cells.erase(cell_key_value)
+	s.inventories.erase(str(id))
+	s.entities.erase(str(id))
+	s.world.nav_revision += 1
 
 static func move_record(s: Dictionary, entity: Dictionary, destination: Array) -> void:
 	var old := chunk_coord(entity.cell[0], entity.cell[1])
@@ -276,7 +327,11 @@ static func populate_forest(sim: RefCounted, town: int, desired: int, center: Ar
 					close = true
 		if close:
 			continue
-		var id := add_entity(sim, "tree", "Alder %03d" % (count + 1) if town == 1 else "Reedbank willow %03d" % (count + 1), cell, town)
+		var id := add_entity(sim, "tree", "Alder %03d" % (count + 1) if town == 1 else ("Reedbank willow %03d" % (count + 1) if town == 2 else "Scrub oak %03d" % (count + 1)), cell, town)
+		if town == 3:
+			# Dustvale's dry country: mostly dead trunks, some still in autumn leaf.
+			if count % 3 == 0: s.entities[str(id)].autumn = true
+			else: s.entities[str(id)].dead = true
 		Inventory.create(s, id, 80, {} if account_growth else {"log": 60})
 		if account_growth:
 			Inventory.produce(s, id, "log", 60)
@@ -316,16 +371,203 @@ static func populate_dense_groves(sim: RefCounted, town: int, desired: int, cent
 		occupied[key] = true
 		added += 1
 
+## Real woodland around the towns. Trees keep their distance from every house, door, workshop,
+## square, field, plot and road (any tree that grew too close is moved out into the forest), and
+## new trees fill coherent stands shaped by smooth noise, thicker the further from town they are.
+## Deterministic: candidate cells are scored with seeded phases and taken best-first.
+const WOODLAND_TARGETS := {1: 640, 2: 430}
+## Trees across the open country, on the dark-green forest floor between the towns.
+const WILD_TREES := 5200
+static func lay_out_woodlands(sim: RefCounted, grow_new: bool = true) -> void:
+	var s: Dictionary = sim.state
+	if not s.get("settlements", {}).has("2"): return
+	var keep_out := _woodland_keep_out(s)
+	var occupied: Dictionary = {}
+	var trees: Array = []
+	for entity in s.entities.values():
+		if entity.has("cell"): occupied[cell_key(entity.cell)] = true
+		if entity.get("kind", "") == "tree": trees.append(entity)
+	trees.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.id < b.id)
+	for town in [1, 2]:
+		var store: Array = s.entities[str(s.settlements[str(town)].warehouse)].cell
+		var candidates := _woodland_candidates(sim, s, town, store, keep_out, occupied)
+		var next := 0
+		# Move trees that stand too close to buildings, doors and roads out into the woods.
+		for tree in trees:
+			if tree.settlement != town or not keep_out.has(cell_key(tree.cell)): continue
+			while next < candidates.size() and _crowded(occupied, candidates[next]): next += 1
+			if next >= candidates.size(): break
+			occupied.erase(cell_key(tree.cell))
+			move_record(s, tree, candidates[next])
+			occupied[cell_key(candidates[next])] = true
+			next += 1
+		var count := 0
+		for tree in trees:
+			if tree.settlement == town: count += 1
+		while grow_new and count < int(WOODLAND_TARGETS[town]) and next < candidates.size():
+			var cell: Array = candidates[next]
+			next += 1
+			if _crowded(occupied, cell): continue
+			var id := add_entity(sim, "tree", "Alder %03d" % (count + 1) if town == 1 else "Reedbank willow %03d" % (count + 1), cell, town)
+			Inventory.create(s, id, 80)
+			Inventory.produce(s, id, "log", 60)
+			occupied[cell_key(cell)] = true
+			count += 1
+	# Dustvale's few dry-country trees also keep clear of its buildings.
+	if s.settlements.has("3"):
+		var store3: Array = s.entities[str(s.settlements["3"].warehouse)].cell
+		var spots := _woodland_candidates(sim, s, 3, store3, keep_out, occupied)
+		var index := 0
+		for tree in trees:
+			if tree.settlement != 3 or not keep_out.has(cell_key(tree.cell)): continue
+			while index < spots.size() and _crowded(occupied, spots[index]): index += 1
+			if index >= spots.size(): break
+			occupied.erase(cell_key(tree.cell))
+			move_record(s, tree, spots[index])
+			occupied[cell_key(spots[index])] = true
+			index += 1
+	if grow_new: _plant_wild_forests(sim, keep_out, occupied)
+	s.world.forest_version = 4
+
+## Fills the forest floor the ground shader draws (see terrain.gd) with trees, deepest woods first.
+static func _plant_wild_forests(sim: RefCounted, keep_out: Dictionary, occupied: Dictionary) -> void:
+	var s: Dictionary = sim.state
+	var limits: Array = s.world.get("bounds", [0, 0, WIDTH, HEIGHT])
+	var seed_value: int = int(s.seed) % 9973
+	var centres: Dictionary = Terrain.town_centres(s)
+	var towns: Array = []
+	for key in s.settlements:
+		towns.append([int(key), s.entities[str(s.settlements[key].warehouse)].cell])
+	var spots: Array = []
+	for y in range(int(limits[1]) + 3, int(limits[3]) - 3, 3):
+		for x in range(int(limits[0]) + 3, int(limits[2]) - 3, 3):
+			var cx: int = x + sim.random_int("wild", -1, 1)
+			var cy: int = y + sim.random_int("wild", -1, 1)
+			var key := "%d,%d" % [cx, cy]
+			if keep_out.has(key) or occupied.has(key): continue
+			var wood: float = Terrain.woodland(Vector2(cx, cy), seed_value, centres)
+			if wood < 0.6: continue
+			spots.append([wood + float(sim.random_int("wild", 0, 99)) * 0.001, cx, cy])
+	spots.sort_custom(func(a: Array, b: Array) -> bool: return a[0] > b[0] or (a[0] == b[0] and (a[2] < b[2] or (a[2] == b[2] and a[1] < b[1]))))
+	var planted := 0
+	for entry in spots:
+		if planted >= WILD_TREES: break
+		var cell: Array = [entry[1], entry[2]]
+		if _crowded(occupied, cell) or not walkable(s, cell): continue
+		# The nearest town's woodsmen count it as theirs.
+		var town: int = 1
+		var best: float = INF
+		for item in towns:
+			var d: float = Vector2(cell[0] - item[1][0], cell[1] - item[1][1]).length()
+			if d < best:
+				best = d
+				town = item[0]
+		var id := add_entity(sim, "tree", "Woodland tree", cell, town)
+		if town == 3:
+			if planted % 3 == 0: s.entities[str(id)].autumn = true
+			else: s.entities[str(id)].dead = true
+		Inventory.create(s, id, 80)
+		Inventory.produce(s, id, "log", 60)
+		occupied[cell_key(cell)] = true
+		planted += 1
+
+static func _crowded(occupied: Dictionary, cell: Array) -> bool:
+	for dy in range(-1, 2):
+		for dx in range(-1, 2):
+			if occupied.has(cell_key([cell[0] + dx, cell[1] + dy])): return true
+	return false
+
+## The roads between and into the towns, as rectangles (with a verge) that nothing may block:
+## the east-west road through Alder Hollow to Reedbank, and the south road down to Dustvale.
+static func road_corridors(s: Dictionary) -> Array[Rect2i]:
+	var corridors: Array[Rect2i] = []
+	var east: int = 226
+	if s.get("settlements", {}).has("2"): east = int(s.entities[str(s.settlements["2"].warehouse)].cell[0]) + 46
+	corridors.append(Rect2i(28, 44, east - 28, 9))
+	if s.get("settlements", {}).has("3"):
+		var store3: Array = s.entities[str(s.settlements["3"].warehouse)].cell
+		var start := Vector2(70, 50)
+		var finish := Vector2(store3[0], store3[1] - 2)
+		for step in range(0, 41):
+			var t := float(step) / 40.0
+			var along := start.lerp(finish, t)
+			var cx: int = roundi(along.x + sin(t * 9.0) * 3.2 + sin(t * 23.0) * 1.2)
+			corridors.append(Rect2i(cx - 5, roundi(along.y) - 2, 11, int(ceil((finish.y - start.y) / 40.0)) + 4))
+		corridors.append(Rect2i(int(store3[0]) - 44, int(store3[1]) - 1, 82, 6))
+	return corridors
+
+## Every cell where no tree may stand, as a set of cell keys.
+static func _woodland_keep_out(s: Dictionary) -> Dictionary:
+	var areas: Array[Rect2i] = []
+	for entity in s.entities.values():
+		if entity.has("footprint"):
+			areas.append(building_rect(entity).grow(5))
+			var door: Array = entity.get("door", entity.cell)
+			areas.append(Rect2i(door[0] - 3, door[1] - 1, 7, 10))   # the yard in front of the door
+		elif entity.get("kind", "") in ["market_stall", "chest", "ore", "farm", "warehouse", "market", "office", "home", "sawmill", "bakery", "forge"]:
+			areas.append(Rect2i(entity.cell[0] - 4, entity.cell[1] - 4, 9, 9))
+		if entity.has("rock_rect"):
+			var r: Array = entity.rock_rect
+			areas.append(Rect2i(r[0], r[1], r[2], r[3]).grow(3))
+	for site_key in s.get("construction", {}):
+		var site_entity: Dictionary = s.entities.get(str(site_key), {})
+		var def: Dictionary = s.get("building_defs", {}).get(s.construction[site_key].get("definition", ""), {})
+		if not site_entity.is_empty(): areas.append(plot_rect(site_entity, def.get("kind", "home")).grow(5))
+	for plot in s.get("crops", {}).values():
+		var rect: Array = plot.rect
+		areas.append(Rect2i(rect[0], rect[1], rect[2], rect[3]).grow(3))
+	for town in s.get("settlements", {}).values():
+		var store: Array = s.entities[str(town.warehouse)].cell
+		for plot in reserved_home_plots(store): areas.append(plot.grow(4))
+		areas.append(Rect2i(store[0] - 16, store[1] - 6, 33, 24))   # the market square and its stalls
+	var blocked: Dictionary = {}
+	for area in areas:
+		for y in range(area.position.y, area.end.y):
+			for x in range(area.position.x, area.end.x):
+				blocked["%d,%d" % [x, y]] = true
+	# The roads and their verges.
+	for corridor in road_corridors(s):
+		for y in range(corridor.position.y, corridor.end.y):
+			for x in range(corridor.position.x, corridor.end.x):
+				blocked["%d,%d" % [x, y]] = true
+	return blocked
+
+## Free cells around a town, best woodland spots first.
+static func _woodland_candidates(sim: RefCounted, s: Dictionary, town: int, store: Array, keep_out: Dictionary, occupied: Dictionary) -> Array:
+	var phases: Array[float] = []
+	for index in range(5): phases.append(float(sim.random_int("woods:%d" % town, 0, 6283)) / 1000.0)
+	var scored: Array = []
+	var span := Vector2i(74, 54) if town != 3 else Vector2i(40, 22)
+	for y in range(store[1] - span.y, store[1] + span.y + 1):
+		for x in range(store[0] - span.x, store[0] + span.x + 1):
+			var key := "%d,%d" % [x, y]
+			if keep_out.has(key) or occupied.has(key) or not walkable(s, [x, y]): continue   # buildings are inside keep_out already
+			var fx := float(x)
+			var fy := float(y)
+			var noise: float = sin(fx * 0.105 + phases[0]) + sin(fy * 0.13 + phases[1]) + 0.8 * sin((fx + fy) * 0.071 + phases[2]) + 0.6 * sin((fx - fy) * 0.19 + phases[3]) + 0.35 * sin(fx * 0.37 + fy * 0.29 + phases[4])
+			var distance: float = Vector2((fx - store[0]) / 34.0, (fy - store[1]) / 27.0).length()
+			var score: float = noise * 0.5 + smoothstep(0.9, 1.7, distance) * 1.4
+			if score < 0.35: continue
+			scored.append([score, x, y])
+	scored.sort_custom(func(a: Array, b: Array) -> bool: return a[0] > b[0] or (a[0] == b[0] and (a[2] < b[2] or (a[2] == b[2] and a[1] < b[1]))))
+	var cells: Array = []
+	for entry in scored: cells.append([entry[1], entry[2]])
+	return cells
+
 static func upgrade_forests(sim: RefCounted) -> void:
 	var s: Dictionary = sim.state
-	if not s.has("world") or s.world.get("forest_version", 0) >= 3:
+	if not s.has("world") or s.world.get("forest_version", 0) >= 4:
 		return
-	if s.world.get("forest_version", 0) < 2:
-		populate_forest(sim, 1, 280, [64, 46])
-		if s.get("settlements", {}).has("2"): populate_forest(sim, 2, 140, [180, 46])
-	populate_dense_groves(sim, 1, 100, [64, 46])
-	if s.get("settlements", {}).has("2"): populate_dense_groves(sim, 2, 60, [180, 46])
-	s.world.forest_version = 3
+	if s.world.get("forest_version", 0) < 3:
+		if s.world.get("forest_version", 0) < 2:
+			populate_forest(sim, 1, 280, [64, 46])
+			if s.get("settlements", {}).has("2"): populate_forest(sim, 2, 140, [180, 46])
+		populate_dense_groves(sim, 1, 100, [64, 46])
+		if s.get("settlements", {}).has("2"): populate_dense_groves(sim, 2, 60, [180, 46])
+		s.world.forest_version = 3
+	# Version 4 (full game only): trees kept away from buildings. Old saves keep their timber
+	# (moved, not created); new games are also filled out into real woods.
+	lay_out_woodlands(sim, false)
 
 static func upgrade_architecture(s: Dictionary) -> void:
 	if not s.has("world") or s.world.get("architecture_version", 0) >= 3:
@@ -362,7 +604,7 @@ static func upgrade_house_layouts(s: Dictionary) -> void:
 	if not s.has("world") or s.world.get("house_layout_version", 0) >= 2: return
 	# In-progress sites keep their original recorded stages and finish unchanged.
 	for entity in s.entities.values():
-		if entity.get("kind", "") != "home": continue
+		if entity.get("kind", "") != "home" or entity.has("house_type"): continue
 		for key in s.world.building_walls.keys():
 			if s.world.building_walls[key] == entity.id: s.world.building_walls.erase(key)
 		entity.layout_shape = "stepped_joined"

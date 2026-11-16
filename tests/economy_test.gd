@@ -15,7 +15,7 @@ func _initialize() -> void:
 	sim.enable_economy()
 	var s: Dictionary = sim.state
 	# Three 385-tile homes require over a thousand round trips from the pile.
-	for tick in range(80000):
+	for tick in range(140000):  # tiles take 1.6x longer than when this budget was set
 		sim.step()
 		if s.completed_buildings >= 3: break
 	check(s.completed_buildings >= 3 and s.settlements["1"].housing >= 20, "Demand builds homes with delivered planks")

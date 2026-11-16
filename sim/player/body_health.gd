@@ -13,10 +13,25 @@ static func initialize(s: Dictionary) -> void:
 		if Inventory.available(s,town.warehouse)<42: s.inventories[str(town.warehouse)].capacity+=42-Inventory.available(s,town.warehouse)
 		Inventory.produce(s,town.warehouse,"bandage",30)
 		Inventory.produce(s,town.warehouse,"antiseptic",12)
+## Stamina: at or below WINDED_AT (the orange part of the bar) the body is fatigued and breathing hard;
+## the winded state lasts until stamina climbs back to RECOVER_AT (halfway).
+const WINDED_AT := 20
+const RECOVER_AT := 50
+## Vital parts weigh more in the health bar, so a beating to the head and body shows quickly.
+const WEIGHTS := {"head": 3.0, "neck": 2.0, "upper_torso": 2.0, "lower_torso": 1.5}
 static func overall(s: Dictionary) -> int:
-	var damage: int = 0
-	for part in s.player_health.parts.values(): damage+=part.damage
-	return clampi(100-roundi(float(damage)/PARTS.size()),0,100)
+	var damage: float = 0.0
+	for part in PARTS: damage+=float(s.player_health.parts[part].damage)*float(WEIGHTS.get(part,1.0))
+	return clampi(100-roundi(damage/4.0),0,100)
+## Someone who comes round after being knocked out is battered but not at death's door.
+static func revive(s: Dictionary, floor_value: int = 25) -> void:
+	if not s.has("player_health"): return
+	var guard := 0
+	while overall(s)<floor_value and guard<60:
+		for part in s.player_health.parts.values(): part.damage=maxi(0,part.damage-3)
+		guard+=1
+static func is_winded(s: Dictionary) -> bool:
+	return s.has("player_health") and bool(s.player_health.get("winded",false))
 static func pain(s: Dictionary) -> int:
 	var pain_value: int = 0
 	for part in s.player_health.parts.values(): pain_value+=part.damage/3+part.infection/4
@@ -54,11 +69,15 @@ static func treatment_problem(s: Dictionary, part: String, action: String) -> St
 static func begin(s: Dictionary, part: String, action: String) -> bool:
 	if not PARTS.has(part) or action not in ["bandage", "disinfect", "remove"]: return false
 	var health: Dictionary = s.player_health
+	var knock: Dictionary = s.get("player_control", {}).get("knock", {})
+	if not knock.is_empty() and s.tick < int(knock.get("rise_until", 0)):
+		health.notice = "You are unconscious and cannot treat your wounds."
+		return false
 	var problem := treatment_problem(s, part, action)
 	if not problem.is_empty():
 		health.notice = problem
 		return false
-	health.treatment={"part":part,"action":action,"finish":s.tick+(10 if action=="remove" else 30),"cell":s.entities[str(s.player)].cell.duplicate()}
+	health.treatment={"part":part,"action":action,"start":s.tick,"finish":s.tick+(12 if action=="remove" else (36 if action=="bandage" else 24)),"cell":s.entities[str(s.player)].cell.duplicate()}
 	health.notice="Treating %s. Stay still; moving cancels treatment." % part.replace("_"," ")
 	return true
 static func update(s: Dictionary) -> void:
@@ -88,6 +107,10 @@ static func update(s: Dictionary) -> void:
 		if s.player_health.stamina_clock>=3:
 			s.player_health.stamina_clock=0
 			s.player_health.stamina=mini(s.player_health.stamina_max,s.player_health.stamina+1)
+	if health.stamina<=WINDED_AT: health.winded=true
+	elif health.stamina>=RECOVER_AT:
+		health.winded=false
+		health.exhausted=false
 	if s.tick%100!=0: return
 	for part in health.parts.values():
 		if part.bandage=="clean" and s.tick>=part.bandage_until: part.bandage="dirty"

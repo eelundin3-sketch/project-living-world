@@ -12,13 +12,13 @@ func run() -> void:
 	background.size = Vector2(1280, 720)
 	root.add_child(background)
 	var headings: Array[float] = [PI / 2.0, PI / 4.0, 0.0, -PI / 4.0, -PI / 2.0, -3.0 * PI / 4.0, PI, 3.0 * PI / 4.0]
-	var names := ["Front", "Front three-quarter", "Profile", "Back three-quarter", "Back", "Back three-quarter", "Profile", "Front three-quarter"]
+	var names := ["Down", "Down + right", "Right", "Up + right", "Up", "Up + left", "Left", "Down + left"]
 	for i in range(headings.size()):
 		_add_figure(Vector2(78 + i * 160, 306), headings[i], "idle", names[i])
 	var actions := ["walk", "run", "aim", "chop", "carry", "punch", "down"]
 	for i in range(actions.size()):
 		var anchor := Vector2(95 + i * 181, 625)
-		if actions[i] == "down": anchor += Vector2(-14, -27)
+		if actions[i] == "down": anchor += Vector2(-63, -27)
 		_add_figure(anchor, 0.0 if i % 2 == 0 else 0.6, actions[i], actions[i].capitalize())
 	await RenderingServer.frame_post_draw
 	await RenderingServer.frame_post_draw
@@ -35,7 +35,7 @@ func _add_figure(anchor: Vector2, angle: float, action: String, caption: String)
 	figure.set_pose({
 		"position": anchor, "heading": angle, "action": action,
 		"moving": action in ["walk", "run", "carry"], "gait_phase": 0.17,
-		"phase": 0.43, "cargo_item": "log" if action == "carry" else "",
+		"phase": 0.43, "run_blend": 1.0 if action == "run" else 0.0, "cargo_item": "log" if action == "carry" else "",
 		"cargo_quantity": 3 if action == "carry" else 0,
 	})
 	var label := Label.new()

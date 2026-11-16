@@ -4,6 +4,9 @@ shader_type canvas_item;
 uniform vec2 world_origin;
 uniform float terrain_seed;
 uniform sampler2D road_mask : filter_linear, repeat_disable;
+uniform vec2 hollow_center = vec2(64.0, 47.0);
+uniform vec2 reedbank_center = vec2(180.0, 47.0);
+uniform vec2 dust_center = vec2(122.0, 128.0);
 varying vec2 land;
 
 void vertex() {
@@ -31,17 +34,22 @@ void fragment() {
 	vec2 warp = vec2(field(p * 0.023), field(p * 0.027 + 34.0)) * 15.0;
 	vec2 warped = p + warp;
 	float masses = field(warped * 0.037) * 0.69 + field(warped * 0.105) * 0.31;
-	float hollow = length((land - vec2(64.0, 47.0)) / vec2(35.0, 27.0));
-	float reedbank = length((land - vec2(180.0, 47.0)) / vec2(34.0, 26.0));
+	float hollow = length((land - hollow_center) / vec2(35.0, 27.0));
+	float reedbank = length((land - reedbank_center) / vec2(34.0, 26.0));
 	float village = 1.0 - smoothstep(0.52, 1.21, min(hollow, reedbank));
+	// Dustvale, in the south: dry, pink-brown ground with thin, patchy cover.
+	float dust = 1.0 - smoothstep(0.55, 1.35, length((land - dust_center) / vec2(50.0, 40.0)));
 	float upland = 1.0 - smoothstep(0.35, 1.4, length((land - vec2(89.0, 0.0)) / vec2(48.0, 24.0)));
 	float broken_edge = (field(warped * 0.32) - 0.5) * 0.077;
-	float woodland = smoothstep(0.43, 0.545, masses + 0.045 + broken_edge - village * 0.37 - upland * 0.22);
+	float woodland = smoothstep(0.43, 0.545, masses + 0.045 + broken_edge - village * 0.37 - upland * 0.22 - dust * 0.62);
 
 	float ground_grain = field(vec2(p.x * 1.9, p.y * 3.7));
 	float earth_bands = field(warped * vec2(0.27, 0.48));
-	vec3 loam = mix(vec3(0.56, 0.40, 0.22), vec3(0.80, 0.65, 0.39), earth_bands * 0.68 + ground_grain * 0.32);
-	loam = mix(loam, vec3(0.77, 0.64, 0.41), village * 0.42);
+	vec3 loam = mix(vec3(0.50, 0.33, 0.19), vec3(0.78, 0.62, 0.36), earth_bands * 0.68 + ground_grain * 0.32);
+	// Packed reddish earth around the settlements, as in the top-down references.
+	loam = mix(loam, vec3(0.50, 0.30, 0.18), village * 0.55);
+	// Pink dust over the dry ground, with lighter, paler streaks.
+	loam = mix(loam, mix(vec3(0.58, 0.43, 0.40), vec3(0.74, 0.60, 0.55), earth_bands * 0.7 + ground_grain * 0.3), dust * 0.88);
 
 	// Small undergrowth patches give the forest texture at overview zoom.
 	vec2 leaf = p * 0.76 + vec2(field(p * 0.62 + 8.0), field(p * 0.71 + 29.0)) * 0.83;
@@ -50,7 +58,8 @@ void fragment() {
 	vec2 leaf_offset = (fract(leaf) - leaf_center) * vec2(1.0, 1.28);
 	float undergrowth = 1.0 - smoothstep(0.06, 0.61, length(leaf_offset));
 	float green = field(warped * 0.42) * 0.65 + undergrowth * 0.24 + ground_grain * 0.11;
-	vec3 fern = mix(vec3(0.035, 0.13, 0.093), vec3(0.17, 0.31, 0.21), green);
+	vec3 fern = mix(vec3(0.02, 0.085, 0.06), vec3(0.11, 0.24, 0.16), green);
+	fern = mix(fern, vec3(0.34, 0.33, 0.17), dust * 0.75);  // scrub looks olive and dry here
 	vec3 color = mix(loam, fern, woodland);
 	float grid_distance = min(fract(land.x + 0.5), fract(land.y + 0.5));
 	float grid = (1.0 - smoothstep(0.0, 0.04, grid_distance)) * (1.0 - smoothstep(0.05, 0.12, fwidth(land.x)));
@@ -60,6 +69,7 @@ void fragment() {
 	vec3 sand = mix(vec3(0.60, 0.48, 0.29), vec3(0.82, 0.73, 0.54), ground_grain * 0.40 + earth_bands * 0.60);
 	float grit = smoothstep(0.69, 0.94, field(p * 10.0));
 	sand *= 1.0 - grit * 0.20;
+	sand = mix(sand, vec3(0.80, 0.66, 0.60), dust * 0.55);
 	color = mix(color, sand, blend * 0.96);
 	COLOR = vec4(color * (1.0 - grid * 0.065 * (1.0 - blend)), 1.0);
 }

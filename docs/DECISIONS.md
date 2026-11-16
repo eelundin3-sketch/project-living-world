@@ -360,3 +360,69 @@ stall and its category list. The underlying town market still owns regional
 price history and order matching. Current saves keep all records. A one-time
 stall and fixture upgrade adds the layout to supported older saves. Old saved
 populations remain intact when the new-game default changes.
+
+
+## 2026-11-16 — Rye, households, trades, weapons, needs, placement
+
+- **Rye is integer growth ticks.** A plot stores `grown` out of 43,200 ticks; the six
+  stages are derived thresholds and the art is a continuous function of the same
+  value, so saves and replays stay exact and the crop never "pops" between sprites.
+- **Grain is not food.** Farms produce `rye`; only the baker (or a household oven, at
+  a worse ratio) produces `food`. This keeps the baker meaningful and food
+  conservation exact. Farms keep any legacy `food` stock and gatherers still haul it.
+- **Trades are derived, not enforced.** `Professions.demand` computes head-count per
+  trade from nearby trees, ore, fields, population, danger and the workshops that
+  exist. Farmers and a sheriff appear through the food and safety terms, so a tiny
+  hamlet with no fields would not get a farmer. Gathering trades only take jobs on
+  their own resource kind.
+- **Pantry = the home's inventory.** Avoids a second ledger; the invariants and
+  conservation checks cover household food automatically.
+- **Garden clearing relocates trees** with `move_record` instead of deleting them so
+  logs remain accounted for.
+- **Placement is lazy-loaded.** `placement.gd` and `world_db.gd` depend on each other
+  through `fixtures.gd`; `placement.gd` loads World/Navigation at call time to avoid a
+  preload cycle.
+- **Shotgun pellets are simulated** (7 per shot, 2 cells per tick, 9 damage each) in
+  `sim/player/shotgun.gd`; the view only draws `state.shotgun`. Damage is non-lethal
+  to residents like the existing combat (health floors at zero).
+- **Player needs run slower than residents'** (about one meal and two drinks a day)
+  so a human player is not starving within minutes.
+- **Research basis.** The indicator design follows Project Zomboid's moodles as
+  described by community guides (icons that appear only when relevant, four severity
+  levels, thirst/hunger/tired/pain/stress/unhappy families). Exact in-game
+  percentages were not verified. Market dressing follows general period references
+  (paved square, central well, awnings, goods around stalls); no precise frontier
+  stall-spacing source was found.
+- **Not done:** extra craftsmen (carpenter etc.) exist as a named trade with no
+  production chain; objects facing "up" reuse the "down" art; the Windows/Linux
+  exports were not rebuilt.
+
+
+## 2026-11-16 — Character proportions and drawn contours
+
+The existing 2D vector puppet remains the presentation model. This redesign uses
+29 px hip height, 49 px chest height and 60.5 px head height, with the existing world
+scale and foot anchor. The longer leg proportion and open resting arm pose make
+clothing and limbs readable without widening the character's collision footprint.
+The eight facing directions and existing pose blending remain in place.
+
+Cloth is drawn from two convex, rounded bone panels; their geometric union supplies
+one exterior ink outline. This avoids self-intersecting sleeve polygons when an
+arm folds back on itself or is foreshortened. Shading is flat and restrained rather
+than circular specular highlights. All artwork is original code-native vector art;
+no external assets, plugins or simulation/save contracts were added.
+
+The health diagram already derives its regions from the figure's joints. Tests
+now verify that the revised proportions fit the panel and its hands and feet
+remain individually selectable. World movement, inventory and collision stay in
+the authoritative simulation.
+
+
+### Character follow-up: neck and sprint recovery — 2026-11-16
+
+The head now sits 2.5 canvas pixels lower and the exposed neck is shortened; the
+health diagram's neck selection follows the new position. During sprint swing,
+the heel first travels 8 pixels farther behind toe-off, then folds up and recovers
+forward. Two cubic curves preserve the planted-foot horizontal velocity at
+lift-off and landing. The previous extra 10% reach at landing was removed so the
+cycle wraps continuously. Walking speed, stamina and simulation movement are unchanged.

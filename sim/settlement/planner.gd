@@ -3,7 +3,11 @@ const World = preload("res://sim/world/world_db.gd")
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const Work = preload("res://sim/production/recipe_system.gd")
 const Nav = preload("res://sim/movement/navigation.gd")
-const WORK_PER_TILE: int = 10
+const Households = preload("res://sim/entities/households.gd")
+const Chests = preload("res://sim/entities/chests.gd")
+const Brawl = preload("res://sim/player/brawl.gd")
+const Housing = preload("res://sim/settlement/housing.gd")
+const WORK_PER_TILE: int = 16
 
 static func initialize(sim: RefCounted) -> void:
 	var s: Dictionary = sim.state
@@ -38,14 +42,30 @@ static func plan(sim: RefCounted, settlement_id: int, definition: String) -> int
 		return 0
 	var town: Dictionary = s.settlements[str(settlement_id)]
 	var location: Array = []
+	var house: Dictionary = {}
+	if s.building_defs[definition].kind == "home" and s.has("households"):
+		# Build for whoever needs it most: the biggest household still in the lodge or overcrowded.
+		var people := 2
+		var best := -1
+		for household in s.households.values():
+			if household.settlement != settlement_id: continue
+			var squeezed: bool = household.home == town.home or Households.members_of(s, household.home) > Households.capacity(s, household.home)
+			if squeezed and household.members.size() > best:
+				best = household.members.size()
+				people = household.members.size()
+		house = Housing.choose(sim, people, settlement_id)
+		location = Housing.find_plot(sim, settlement_id, house)
+		if location.is_empty():
+			sim.record(town.name + ": no buildable construction site")
+			return 0
 	# Street-facing plots preserve the common square and the workshop yard.
 	var store_cell: Array = s.entities[str(town.warehouse)].cell
-	for offset in World.VILLAGE_HOME_PLOTS + [Vector2i(18, 19), Vector2i(-18, 34), Vector2i(18, 34)]:
+	for offset in ([] if not house.is_empty() else World.VILLAGE_HOME_PLOTS + [Vector2i(18, 19), Vector2i(-18, 34), Vector2i(18, 34)]):
 		var plot: Array = [store_cell[0] + offset.x, store_cell[1] + offset.y]
 		if suitable(s, plot, s.building_defs[definition].kind):
 			location = plot
 			break
-	if location.is_empty():
+	if location.is_empty() and house.is_empty():
 		# Find the nearest usable courtyard before sending a builder far out
 		# along one of the original six search rays.
 		location = _infill_plot(s, store_cell, s.building_defs[definition].kind)
@@ -53,10 +73,10 @@ static func plan(sim: RefCounted, settlement_id: int, definition: String) -> int
 		sim.record(town.name + ": no buildable construction site")
 		return 0
 	var def: Dictionary = s.building_defs[definition]
-	var id := World.add_entity(sim, "construction", "Planned " + def.kind, location, settlement_id)
+	var id := World.add_entity(sim, "construction", "Planned " + (String(house.name).to_lower() if not house.is_empty() else def.kind), location, settlement_id, Housing.house_fields(house) if not house.is_empty() else {})
 	Inventory.create(s, id, def.planks)
 	s.entities[str(id)].walls_first = true
-	if def.kind == "home": s.entities[str(id)].layout_shape = "stepped_joined"
+	if def.kind == "home" and house.is_empty(): s.entities[str(id)].layout_shape = "stepped_joined"
 	var stages := World.construction_stages(s.entities[str(id)], def.kind)
 	var total_units: int = 0
 	var built_tiles: Dictionary = {}
@@ -117,17 +137,20 @@ static func update(sim: RefCounted) -> void:
 			site.worker = 0
 			site.build_phase = "fetch"
 			site.tile_work = 0
-			for npc in s.residents.values():
-				if npc.settlement == site.settlement and npc.occupation == "Gatherer" and npc.get("migration", {}).is_empty() and npc.job == 0:
-					npc.occupation = "Builder"
-					site.worker = npc.id
-					break
+			# Builders come from whoever has no fixed workshop: idle gatherers first, then woodsmen.
+			for wanted in ["Builder", "Gatherer", "Woodsman"]:
+				for npc in s.residents.values():
+					if site.worker == 0 and npc.settlement == site.settlement and npc.occupation == wanted and npc.get("migration", {}).is_empty() and npc.job == 0 and npc.health > 0:
+						npc.prior_trade = "Gatherer" if wanted == "Builder" else wanted
+						npc.occupation = "Builder"
+						site.worker = npc.id
+				if site.worker != 0: break
 		if site.worker == 0:
 			site.status = "Waiting for available builder"
 			continue
 		var npc: Dictionary = s.residents[str(site.worker)]
 		if npc.health <= 0 or s.get("local_combat", {}).get("fighters", {}).has(str(npc.id)): continue
-		if not npc.goal.is_empty() or npc.hunger >= 60 or npc.fatigue >= 75:
+		if not npc.goal.is_empty() or npc.hunger >= 60 or npc.fatigue >= 75 or Brawl.busy(s, npc):
 			site.status = "Builder attending to needs"
 			continue
 		if npc.get("work_pause_until", 0) > s.tick:
@@ -294,10 +317,13 @@ static func _finish(sim: RefCounted, site: Dictionary, npc: Dictionary) -> void:
 	site.done = true
 	site.status = "Completed"
 	entity.kind = def.kind
-	entity.name = "New " + def.kind
+	entity.name = "New " + (String(Housing.type_by_id(str(entity.house_type)).get("name", def.kind)).to_lower() if entity.has("house_type") else def.kind)
 	World.install_building(s, site.id)
-	s.settlements[str(site.settlement)].housing += int(def.get("housing", 0))
+	s.settlements[str(site.settlement)].housing += int(entity.get("house_beds", def.get("housing", 0)))
 	if def.has("capacity"): s.inventories[str(site.id)].capacity = def.capacity
-	npc.occupation = "Gatherer"
+	npc.occupation = npc.get("prior_trade", "Gatherer")
 	s.completed_buildings += 1
+	if def.kind == "home" and s.has("households"):
+		Households.on_home_built(sim, site.id)
+		Chests.ensure(sim, entity)
 	sim.record("Finished %s one tile at a time; used %d planks" % [def.kind, site.cost])

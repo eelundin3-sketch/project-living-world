@@ -1,5 +1,6 @@
 extends RefCounted
 const Art = preload("res://view/world/fixture_art.gd")
+const Recipes = preload("res://sim/production/recipe_system.gd")
 var phases: Dictionary = {}
 var running: Dictionary = {}
 var flights: Array[Dictionary] = []
@@ -17,7 +18,7 @@ func update(s: Dictionary, dt: float, paused: bool, speed: int) -> void:
 		var npc: Dictionary = s.get("residents",{}).get(str(workshop.worker),{})
 		var entity: Dictionary = s.entities[str(workshop.id)]
 		var at_station: bool = not entity.get("fixtures",[]).is_empty() and s.entities.get(str(workshop.worker),{}).get("cell",[]) == entity.fixtures[0].stance
-		var active: bool = at_station and workshop.enabled and workshop.active and npc.get("status","")=="Sawing logs into planks" and npc.get("goal","").is_empty() and npc.get("work_pause_until",0)<=s.tick and npc.get("hunger",100)<60 and npc.get("fatigue",100)<75
+		var active: bool = at_station and workshop.enabled and workshop.active and npc.get("status","")==Recipes.TRADES[workshop.get("kind","sawmill")].label and npc.get("goal","").is_empty() and npc.get("work_pause_until",0)<=s.tick and npc.get("hunger",100)<60 and npc.get("fatigue",100)<75
 		if workshop.get("player_operator",0)==s.get("player",-1):
 			active=workshop.active and workshop.enabled and s.get("player_control",{}).get("work",{}).get("target",0)==workshop.id and s.entities[str(s.player)].cell==entity.fixtures[0].stance
 		running[str(workshop.id)]=active
@@ -35,8 +36,8 @@ func update(s: Dictionary, dt: float, paused: bool, speed: int) -> void:
 		if not (source_fixture or dest_fixture): continue
 		# Only physical worker handling, not abstract market/caravan transactions.
 		if source.kind not in ["resident","player"] and destination.kind not in ["resident","player"]: continue
-		var a: Vector2 = Art.slot(source,event.item) if source_fixture else Vector2(source.cell[0],source.cell[1])*24-Vector2(0,29)
-		var b: Vector2 = Art.slot(destination,event.item) if dest_fixture else Vector2(destination.cell[0],destination.cell[1])*24-Vector2(0,29)
+		var a: Vector2 = Art.slot(source,event.item) if source_fixture else Vector2(source.cell[0],source.cell[1])*24-Vector2(0,19)
+		var b: Vector2 = Art.slot(destination,event.item) if dest_fixture else Vector2(destination.cell[0],destination.cell[1])*24-Vector2(0,19)
 		if a.distance_to(b)>120: continue
 		flights.append({"from":a,"to":b,"item":event.item,"age":0.0})
 		if flights.size()>24: flights.pop_front()

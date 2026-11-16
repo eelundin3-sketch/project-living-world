@@ -1,4 +1,6 @@
 extends RefCounted
+const Names = preload("res://sim/entities/names.gd")
+const Sheriff = preload("res://sim/settlement/sheriff.gd")
 ## Deterministic local encounters. All damage and projectile travel are simulated.
 const World = preload("res://sim/world/world_db.gd")
 const Nav = preload("res://sim/movement/navigation.gd")
@@ -24,7 +26,7 @@ static func start_encounter(sim: RefCounted) -> void:
 		for entity in s.entities.values():
 			if entity.get("kind", "") in ["resident", "player", "raider"] and entity.get("cell", []) == cell: occupied = true; break
 		if occupied: continue
-		var id := World.add_entity(sim, "raider", "Road raider", cell, 0)
+		var id := World.add_entity(sim, "raider", Names.generate(sim), cell, 0)
 		Inventory.create(s, id, 10)
 		s.local_combat.fighters[str(id)] = _fighter(id, "raider", "ranged" if spawned.is_empty() else "melee")
 		spawned.append(id)
@@ -32,7 +34,7 @@ static func start_encounter(sim: RefCounted) -> void:
 		sim.record("No clear ground nearby for an encounter.")
 		return
 	var defenders: int = 0
-	for npc in s.residents.values():
+	for npc in Sheriff.defender_order(s):
 		if defenders >= 3: break
 		if npc.get("migration", {}).is_empty() and npc.health > 0 and s.entities.has(str(npc.id)):
 			var cell: Array = s.entities[str(npc.id)].cell

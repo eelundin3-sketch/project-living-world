@@ -13,7 +13,10 @@ func _initialize() -> void:
 	var sim := Sim.new()
 	sim.start_game()
 	var s: Dictionary = sim.state
+	# Workshop workers, builders and the sheriff stay at their posts; migrate someone free to move.
 	var npc: Dictionary = s.residents.values()[0]
+	for candidate in s.residents.values():
+		if candidate.settlement == 1 and candidate.occupation in ["Gatherer", "Woodsman", "Farmer"]: npc = candidate; break
 	for index in range(100):
 		Society.remember(s, npc.id, "trade", s.player, "Helpful trade", 5)
 	check(npc.memories.size() == 16 and npc.relations[str(s.player)].trust == 100, "Bounded memories and trust")

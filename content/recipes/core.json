@@ -1,1 +1,1 @@
-{"version":1,"recipes":{"core:recipe/planks":{"input":"log","input_quantity":2,"output":"plank","output_quantity":6,"work_ticks":40}}}
+{"version": 1, "recipes": {"core:recipe/planks": {"input": "log", "input_quantity": 2, "output": "plank", "output_quantity": 6, "work_ticks": 40}, "core:recipe/bread": {"input": "rye", "input_quantity": 3, "output": "food", "output_quantity": 4, "work_ticks": 40}, "core:recipe/tools": {"input": "ore", "input_quantity": 2, "output": "tool", "output_quantity": 1, "work_ticks": 60}}}

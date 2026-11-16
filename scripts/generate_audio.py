@@ -31,7 +31,8 @@ for name,args in {
  'chop':(.26,210,17,1.2,3), 'saw':(.26,120,8,1.3,4,True),
  'pickup':(.16,80,22,.45,5), 'drop':(.24,110,18,.7,6),
  'build':(.18,330,25,.7,7), 'harvest':(.16,70,22,.9,8),
- 'fall':(.65,65,7,1.1,9)
+ 'fall':(.65,65,7,1.1,9),
+ 'punch':(.2,150,32,.95,11), 'shove':(.28,95,15,1.15,12), 'thud':(.5,52,10,.85,13)
 }.items(): write(name,*args)
 rng=random.Random(10); value=0.; wind=[]
 for i in range(RATE*4):

@@ -2,29 +2,46 @@ extends RefCounted
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const World = preload("res://sim/world/world_db.gd")
 const Nav = preload("res://sim/movement/navigation.gd")
+const Brawl = preload("res://sim/player/brawl.gd")
 
 static func initialize(sim: RefCounted) -> void:
 	var s: Dictionary = sim.state
 	s.recipes = JSON.parse_string(FileAccess.get_file_as_string("res://content/recipes/core.json")).recipes
 	s.workshops = {}
 	add_workshop(sim, 1, [81, 42], s.warehouse)
+	add_workshop(sim, 1, [97, 42], s.warehouse, "bakery")
 
-static func add_workshop(sim: RefCounted, settlement: int, cell: Array, store: int) -> int:
-	var id := World.add_entity(sim, "sawmill", "Timber workshop", cell, settlement)
+## Trade table shared by every workshop kind: building name, recipe, worker title and work label.
+const TRADES: Dictionary = {
+	"sawmill": {"name": "Timber workshop", "recipe": "core:recipe/planks", "occupation": "Sawyer", "label": "Sawing logs into planks", "waiting": "Waiting for logs"},
+	"bakery": {"name": "Bakery", "recipe": "core:recipe/bread", "occupation": "Baker", "label": "Baking rye bread", "waiting": "Waiting for rye"},
+	"forge": {"name": "Forge", "recipe": "core:recipe/tools", "occupation": "Blacksmith", "label": "Forging iron tools", "waiting": "Waiting for ore"}}
+
+static func add_workshop(sim: RefCounted, settlement: int, cell: Array, store: int, kind: String = "sawmill") -> int:
+	var trade: Dictionary = TRADES[kind]
+	var id := World.add_entity(sim, kind, trade.name, cell, settlement)
 	Inventory.create(sim.state, id, 100)
-	sim.state.workshops[str(id)] = {"id": id, "settlement": settlement, "store": store, "recipe": "core:recipe/planks", "worker": 0,
-		"progress": 0, "work_ticks": 40, "batch": 0, "completed": 0, "active": false, "status": "Waiting for logs", "enabled": true}
+	sim.state.workshops[str(id)] = {"id": id, "settlement": settlement, "store": store, "recipe": trade.recipe, "worker": 0, "kind": kind,
+		"progress": 0, "work_ticks": 40, "batch": 0, "completed": 0, "active": false, "status": trade.waiting, "enabled": true}
 	return id
 
 static func assign_worker(s: Dictionary, workshop: Dictionary) -> void:
 	if s.residents.has(str(workshop.worker)) and s.residents[str(workshop.worker)].health > 0:
 		return
 	workshop.worker = 0
-	for npc in s.residents.values():
-		if npc.settlement == workshop.settlement and npc.occupation == "Gatherer" and npc.get("migration", {}).is_empty() and npc.job == 0:
-			npc.occupation = "Sawyer"
-			workshop.worker = npc.id
-			return
+	var occupation: String = TRADES[workshop.get("kind", "sawmill")].occupation
+	# A resident already trained for the trade is preferred; otherwise an idle gatherer retrains.
+	for wanted in [occupation, "Gatherer"]:
+		for npc in s.residents.values():
+			if npc.settlement == workshop.settlement and npc.occupation == wanted and npc.get("migration", {}).is_empty() and npc.job == 0 and npc.health > 0 and not _is_assigned(s, npc.id):
+				npc.occupation = occupation
+				workshop.worker = npc.id
+				return
+
+static func _is_assigned(s: Dictionary, npc_id: int) -> bool:
+	for workshop in s.workshops.values():
+		if workshop.worker == npc_id: return true
+	return false
 
 static func start(s: Dictionary, workshop: Dictionary, source: int = 0) -> bool:
 	if workshop.active:
@@ -43,7 +60,7 @@ static func start(s: Dictionary, workshop: Dictionary, source: int = 0) -> bool:
 	workshop.progress = 0
 	workshop.active = true
 	workshop.work_ticks = recipe.work_ticks
-	workshop.status = "Sawing reserved logs"
+	workshop.status = "Working reserved " + str(recipe.input)
 	return true
 
 static func finish(s: Dictionary, workshop: Dictionary) -> bool:
@@ -110,7 +127,7 @@ static func update(sim: RefCounted) -> void:
 			continue
 		var npc: Dictionary = s.residents[str(workshop.worker)]
 		if npc.health <= 0 or s.get("local_combat", {}).get("fighters", {}).has(str(npc.id)): continue
-		if npc.job != 0 or not npc.goal.is_empty() or npc.hunger >= 60 or npc.fatigue >= 75:
+		if npc.job != 0 or not npc.goal.is_empty() or npc.hunger >= 60 or npc.fatigue >= 75 or Brawl.busy(s, npc):
 			workshop.status = "Worker attending to needs"
 			continue
 		if npc.get("work_pause_until", 0) > s.tick:
@@ -124,10 +141,10 @@ static func _update_workshop(s: Dictionary, workshop: Dictionary, npc: Dictionar
 		return
 	if workshop.active:
 		if not work_at(s, npc, workshop.id):
-			npc.status = "Walking to sawmill"
+			npc.status = "Walking to " + String(workshop.get("kind", "sawmill"))
 			return
 		workshop.progress += 2
-		npc.status = "Sawing logs into planks"
+		npc.status = TRADES[workshop.get("kind", "sawmill")].label
 		finish(s, workshop)
 		return
 
@@ -150,7 +167,7 @@ static func _update_workshop(s: Dictionary, workshop: Dictionary, npc: Dictionar
 		return
 	if npc.get("work_cargo", false) or Inventory.amount(s, npc.id, recipe.input) > 0:
 		if not work_at(s, npc, workshop.id, rack):
-			npc.status = "Carrying inputs to sawmill"
+			npc.status = "Carrying inputs to " + String(workshop.get("kind", "sawmill"))
 			return
 		var quantity := mini(Inventory.amount(s, npc.id, recipe.input), Inventory.available(s, workshop.id))
 		if quantity > 0 and Inventory.transfer(s, npc.id, workshop.id, recipe.input, quantity).ok:
@@ -161,7 +178,7 @@ static func _update_workshop(s: Dictionary, workshop: Dictionary, npc: Dictionar
 		return
 	if input_ready and has_room:
 		if not work_at(s, npc, workshop.id):
-			npc.status = "Walking from stock rack to sawmill"
+			npc.status = "Walking from stock rack to " + String(workshop.get("kind", "sawmill"))
 			return
 		start(s, workshop, workshop.id)
 		return

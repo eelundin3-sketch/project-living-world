@@ -5,6 +5,7 @@ const Jobs = preload("res://sim/jobs/job_board.gd")
 const Health = preload("res://sim/player/body_health.gd")
 const Actions = preload("res://sim/player/player_actions.gd")
 const Combat = preload("res://sim/factions/local_combat.gd")
+const Brawl = preload("res://sim/player/brawl.gd")
 const ACTION_TICKS: int = 10
 const IMPACT_DELAY: int = 3
 const REACTION_TICKS: int = 12
@@ -48,7 +49,7 @@ static func _resolve(sim: RefCounted, action: Dictionary) -> void:
 		if entity.get("kind", "") not in ["resident", "raider"] or not entity.has("cell"): continue
 		var npc: Dictionary = s.get("residents", {}).get(str(entity.id), {})
 		var fighter: Dictionary = s.get("local_combat", {}).get("fighters", {}).get(str(entity.id), {})
-		if not npc.is_empty() and (npc.health <= 0 or not npc.get("migration", {}).is_empty()): continue
+		if not npc.is_empty() and (npc.health <= 0 or not npc.get("migration", {}).is_empty() or Brawl.knocked(s, npc)): continue
 		if not fighter.is_empty() and fighter.health <= 0: continue
 		var difference := Vector2(entity.cell[0] - origin[0], entity.cell[1] - origin[1])
 		var distance: float = difference.length()
@@ -64,19 +65,18 @@ static func _resolve(sim: RefCounted, action: Dictionary) -> void:
 	var victim: Dictionary = s.entities[str(best)]
 	var npc: Dictionary = s.get("residents", {}).get(str(best), {})
 	var fighter: Dictionary = s.get("local_combat", {}).get("fighters", {}).get(str(best), {})
-	if not npc.is_empty():
-		if npc.job != 0: Jobs.release(s, npc.job, "INTERRUPTED_BY_IMPACT")
-		npc.goal = ""
-		npc.path = []
-		npc.work_path = []
+	if not npc.is_empty() and fighter.is_empty():
+		# A villager: anger, blood, knockdowns and retaliation are handled by the brawl module.
 		npc.work_pause_until = maxi(int(npc.get("work_pause_until", 0)), s.tick + REACTION_TICKS)
 		npc.impact_until = s.tick + REACTION_TICKS
 		npc.impact_kind = action.kind
-		npc.status = "Staggered by " + action.kind
+		Brawl.on_player_hit(sim, npc, victim, action.kind, action.direction)
+	elif not npc.is_empty():
+		npc.impact_until = s.tick + REACTION_TICKS
+		npc.impact_kind = action.kind
 	if not fighter.is_empty(): fighter.impact_until = s.tick + REACTION_TICKS
 	if action.kind == "punch":
 		if not fighter.is_empty(): Combat._damage(sim, best, 10)
-		elif not npc.is_empty(): npc.health = maxi(0, npc.health - 10)
 	else:
 		var step: Array = [signi(action.direction[0]), 0] if absi(action.direction[0]) >= absi(action.direction[1]) else [0, signi(action.direction[1])]
 		var destination: Array = [victim.cell[0] + step[0], victim.cell[1] + step[1]]

@@ -1,6 +1,7 @@
 extends RefCounted
 ## Original, deterministic presentation shapes; no gameplay state is stored here.
 const TREES = [preload("res://content/art/tree_0.svg"), preload("res://content/art/tree_1.svg"), preload("res://content/art/tree_2.svg"), preload("res://content/art/tree_3.svg")]
+const DEAD_TREES = [preload("res://content/art/tree_dead_0.svg"), preload("res://content/art/tree_dead_1.svg")]
 const World = preload("res://sim/world/world_db.gd")
 const Props = preload("res://view/world/prop_art.gd")
 const Furniture = preload("res://view/world/interior_art.gd")
@@ -24,17 +25,47 @@ static func floor_tile(c: Node2D, rect: Rect2, x: int, y: int) -> void:
 	c.draw_rect(rect, Color(0.26, 0.12, 0.03, 0.04))
 
 static func tree(c: Node2D, p: Vector2, logs: int, id: int, pose: Dictionary = {}) -> void:
-	if logs == 0 and pose.get("fall", -1.0) >= 0:
-		c.draw_set_transform(p, float(pose.fall) * float(pose.fall) * 1.45)
-		tree(c, Vector2.ZERO, 60, id)
-		c.draw_set_transform(Vector2.ZERO)
+	var fall: float = float(pose.get("fall", -1.0))
 	if logs == 0:
-		box(c, Rect2(p - Vector2(7, 10), Vector2(14, 12)), Color("83623c"))
-		Character.oval(c, p + Vector2(0, -10), Vector2(8, 4), Color("bd9860"))
+		_stump(c, p)
+		return
+	if fall >= 0.0:
+		# Felled: the tree topples from its stump (slowly at first, then faster) and stays lying
+		# there, leaning the way its id decides, until its wood has been gathered.
+		_stump(c, p)
+		var direction: float = 1.0 if id % 2 == 0 else -1.0
+		# A felled tree creaks over slowly, gathers speed like anything falling, and keeps
+		# accelerating until it hits the ground, where it bounces once and settles.
+		var lie := 1.42
+		var angle: float
+		if fall < 0.8:
+			var u := fall / 0.8
+			angle = lie * (0.06 * u + 0.94 * u * u * u)
+		else:
+			var v := (fall - 0.8) / 0.2
+			angle = lie - 0.09 * sin(v * PI) * (1.0 - 0.4 * v)
+		angle *= direction
+		c.draw_set_transform(p + Vector2(0, -6), angle)
+		c.draw_texture_rect(_tree_texture(id, pose), Rect2(Vector2(-40, -88), Vector2(80, 100)), false, _tree_tint(id, pose))
+		c.draw_set_transform(Vector2.ZERO)
 		return
 	var sway: float = float(pose.get("sway", 0))
-	var tint := Color("d7e5c9").lerp(Color.WHITE, float(posmod(id * 13, 17)) / 24.0)
-	c.draw_texture_rect(TREES[posmod(id, 4)], Rect2(p + Vector2(-40 + sway, -94), Vector2(80, 100)), false, tint)
+	c.draw_texture_rect(_tree_texture(id, pose), Rect2(p + Vector2(-40 + sway, -94), Vector2(80, 100)), false, _tree_tint(id, pose))
+
+## Dry-country trees: bare dead trunks, and a few trees still holding autumn-coloured leaves.
+static func _tree_texture(id: int, pose: Dictionary) -> Texture2D:
+	return DEAD_TREES[posmod(id, 2)] if pose.get("dead", false) else TREES[posmod(id, 4)]
+
+static func _tree_tint(id: int, pose: Dictionary) -> Color:
+	if pose.get("dead", false): return Color.WHITE
+	if pose.get("autumn", false): return Color(1.0, 0.82, 0.36).lerp(Color(1.0, 0.7, 0.3), float(posmod(id * 7, 5)) / 8.0)
+	return Color("d7e5c9").lerp(Color.WHITE, float(posmod(id * 13, 17)) / 24.0)
+
+static func _stump(c: Node2D, p: Vector2) -> void:
+	box(c, Rect2(p - Vector2(7, 10), Vector2(14, 12)), Color("83623c"))
+	Character.oval(c, p + Vector2(0, -10), Vector2(8, 4), Color("bd9860"))
+	for ring in [Vector2(5.2, 2.4), Vector2(2.6, 1.2)]:
+		Character.oval(c, p + Vector2(0, -10), ring, Color("a98048"))
 
 static func rock(c: Node2D, p: Vector2) -> void:
 	poly(c, PackedVector2Array([p + Vector2(-11, 5), p + Vector2(-12, -4), p + Vector2(-5, -12), p + Vector2(7, -9), p + Vector2(12, 1), p + Vector2(7, 7)]), Color("8c896f"))
@@ -42,6 +73,43 @@ static func rock(c: Node2D, p: Vector2) -> void:
 	c.draw_polyline(PackedVector2Array([p + Vector2(-5, -10), p + Vector2(0, -1), p + Vector2(10, 1)]), Color("b4ad8b"), 1.4, true)
 	c.draw_polyline(PackedVector2Array([p + Vector2(-8, -4), p + Vector2(-6, 0), p + Vector2(-8, 4)]), Color("6d6b55"), 0.65, true)
 	c.draw_line(p + Vector2(2, 2), p + Vector2(6, 4), Color("6a6955"), 0.65, true)
+
+## The large iron-bearing boulder: a faceted grey-brown mass streaked with rust and glints of ore,
+## with fewer veins showing as it is mined out. `area` is its blocked footprint in pixels.
+static func big_rock(c: Node2D, area: Rect2, ore_left: int, id: int) -> void:
+	var centre := area.get_center() + Vector2(0, 4)
+	var rx := area.size.x * 0.5 + 6.0
+	var ry := area.size.y * 0.5 + 2.0
+	Props.ellipse(c, centre + Vector2(6, 12), Vector2(rx + 6, ry * 0.55), Color(0, 0, 0, 0.26), 0.0, INK, 0.0)
+	var outline := PackedVector2Array()
+	for step in range(18):
+		var angle := TAU * float(step) / 18.0
+		var wobble := 0.86 + 0.24 * fposmod(sin(float(step) * 12.9898 + float(id)) * 43758.5453, 1.0)
+		outline.append(centre + Vector2(cos(angle) * rx * wobble, sin(angle) * ry * wobble * 0.86 - 6.0))
+	poly(c, outline, Color("6e655c"))
+	var lit := PackedVector2Array()
+	for point in outline:
+		lit.append(centre + (point - centre) * 0.78 + Vector2(-5, -9))
+	c.draw_colored_polygon(lit, Color("8c8174"))
+	var crown := PackedVector2Array()
+	for point in outline:
+		crown.append(centre + (point - centre) * 0.5 + Vector2(-8, -16))
+	c.draw_colored_polygon(crown, Color("a39787"))
+	# Facet lines and rust-coloured iron veins running across the stone.
+	for index in range(7):
+		var start: Vector2 = outline[(index * 3) % outline.size()]
+		var finish: Vector2 = centre + (start - centre) * 0.3 + Vector2(-4, -12)
+		c.draw_line(start.lerp(finish, 0.12), start.lerp(finish, 0.72), Color("4e463e"), 1.4, true)
+	var veins: int = clampi(ore_left / 60, 1, 10)
+	for vein in range(veins):
+		var a: Vector2 = outline[(vein * 5 + 2) % outline.size()].lerp(centre, 0.2 + 0.1 * float(vein % 3))
+		var b: Vector2 = a.lerp(centre + Vector2(-6, -12), 0.55)
+		c.draw_line(a, b, Color("a8512f"), 3.0, true)
+		c.draw_line(a, b, Color("d27a45"), 1.3, true)
+		c.draw_circle(a.lerp(b, 0.5), 1.8, Color("f2d29a"))
+	for chip in range(5):
+		var base := centre + Vector2((float(chip) - 2.0) * 26.0 + 4.0, ry * 0.62)
+		poly(c, PackedVector2Array([base + Vector2(-5, 2), base + Vector2(-2, -4), base + Vector2(4, -3), base + Vector2(6, 2)]), Color("7b6e62"))
 
 static func crate(c: Node2D, p: Vector2) -> void:
 	c.draw_rect(Rect2(p - Vector2(8, 11), Vector2(24, 19)), Color(0, 0, 0, 0.19))
@@ -94,16 +162,47 @@ static func furnishings(entity: Dictionary) -> Array[Dictionary]:
 		var rect := Rect2(Vector2(cells[0], cells[1]) * 24 - Vector2(12, 12), Vector2(cells[2], cells[3]) * 24)
 		var point := rect.position + Vector2(4, 3)
 		var bottom := 0.0
+		var rot: int = int(layout.get("rot", 3 if layout.kind == "bed" else 2))
 		match layout.kind:
 			"lamp", "chair", "chest": point = rect.get_center() + Vector2(0, 8)
-			"bed": bottom = 36.0
-			"table": bottom = 39.0
-			"shelf": bottom = 35.0
-		items.append({"kind": layout.kind, "point": point, "bottom": bottom,
+			"bed": bottom = rect.size.y - 12.0
+			"table": bottom = rect.size.y - 9.0
+			"shelf": bottom = rect.size.y - 13.0
+		items.append({"kind": layout.kind, "point": point, "bottom": bottom, "rot": rot, "center": rect.get_center(), "size": rect.size,
 			"width": rect.size.x - 8, "color": Color("9fa7a5")})
 	return items
 
-static func draw_furnishing(c: Node2D, item: Dictionary) -> void:
+## Art is authored for one base pose; the other three orientations rotate or mirror it about the
+## object's own centre. Beds have dedicated vertical art so the pillow end always reads correctly.
+static func draw_furnishing(c: Node2D, item: Dictionary, outer: Vector2 = Vector2.ZERO) -> void:
+	var rot: int = int(item.get("rot", 3 if item.kind == "bed" else 2))
+	var kind: String = item.kind
+	if kind == "bed":
+		var p: Vector2 = item.point
+		match rot:
+			3: Furniture.bed(c, p, item.color)
+			1:  # head right: mirror the head-left art about the bed's own centre
+				var center: Vector2 = item.center
+				c.draw_set_transform_matrix(Transform2D(Vector2(-1, 0), Vector2(0, 1), outer + Vector2(2.0 * center.x, 0)))
+				Furniture.bed(c, p, item.color)
+				c.draw_set_transform(outer)
+			0: Furniture.bed_vertical(c, p, item.color, true)
+			2: Furniture.bed_vertical(c, p, item.color, false)
+		return
+	var turn: float = 0.0
+	var flip: bool = false
+	if kind in ["table", "shelf", "chest"] and rot % 2 == 1: turn = float(rot - 2) * PI / 2.0
+	elif kind in ["chair", "lamp", "stove"] and rot % 2 == 1: flip = rot == 3
+	if turn != 0.0:
+		var middle: Vector2 = item.center
+		c.draw_set_transform_matrix(Transform2D(turn, outer + middle) * Transform2D(0.0, -middle))
+	elif flip:
+		var middle: Vector2 = item.center
+		c.draw_set_transform_matrix(Transform2D(Vector2(-1, 0), Vector2(0, 1), outer + Vector2(2.0 * middle.x, 0)))
+	_draw_base_pose(c, item)
+	if turn != 0.0 or flip: c.draw_set_transform(outer)
+
+static func _draw_base_pose(c: Node2D, item: Dictionary) -> void:
 	var p: Vector2 = item.point
 	match item.kind:
 		"lamp": lamp(c, p)
@@ -308,7 +407,7 @@ static func square(c: Node2D, center: Vector2) -> void:
 		box(c, Rect2(center + Vector2(dx - 20, 26), Vector2(40, 9)), Color("8d643a"), 1)
 		lamp(c, center + Vector2(dx, -20))
 
-static func vegetation(c: Node2D, bounds: Rect2, buildings: Array, wind_phase: float = 0.0, wind_strength: float = 0.0, road_coverage: Callable = Callable()) -> void:
+static func vegetation(c: Node2D, bounds: Rect2, buildings: Array, wind_phase: float = 0.0, wind_strength: float = 0.0, road_coverage: Callable = Callable(), dry_center: Vector2 = Vector2(122, 126)) -> void:
 	for y in range(floori(bounds.position.y / 24), ceili(bounds.end.y / 24)):
 		for x in range(floori(bounds.position.x / 24), ceili(bounds.end.x / 24)):
 			var hash_value: int = absi(x * 719 ^ y * 113 ^ x * y * 31)
@@ -321,6 +420,7 @@ static func vegetation(c: Node2D, bounds: Rect2, buildings: Array, wind_phase: f
 			var base := cell_rect.position + Vector2(6 + hash_value % 9, 17)
 			if road_coverage.is_valid() and road_coverage.call(base) > 0.53: continue
 			var shade: Color = Color("355a33") if hash_value % 2 == 0 else Color("53723e")
+			if Vector2(float(x) - dry_center.x, (float(y) - dry_center.y) * 1.2).length() < 46.0: shade = Color("8a7448") if hash_value % 2 == 0 else Color("a38b57")  # dry grass around Dustvale
 			var sway: float = sin(wind_phase + float(x) * 0.19 + float(y) * 0.13) * wind_strength * 2.0
 			c.draw_line(base, base + Vector2(-2 + sway, -6), shade, 1.4, true)
 			c.draw_line(base + Vector2(1, 0), base + Vector2(3 + sway, -8), shade.lightened(0.12), 1.4, true)
