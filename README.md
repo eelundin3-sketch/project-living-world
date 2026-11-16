@@ -10,10 +10,11 @@ as the settlement grows. Reedbank is a separate settlement on the same map.
 
 ## Start the game
 
-On macOS, open [LivingWorld-release.app](builds/macos/LivingWorld-release.app)
-from this project folder. For development, open [project.godot](project.godot)
+Clone or download this repository, then open [project.godot](project.godot)
 in **Godot 4.6 stable**, standard edition, and press **F5** in the editor. The
-pinned build is `4.6.stable.official.89cea1439`.
+pinned build is `4.6.stable.official.89cea1439`. If you have already exported the
+Mac app locally, open `builds/macos/LivingWorld-release.app`. See the export
+instructions below to build it from a fresh checkout.
 
 If the portable engine is present on this Mac, run from the project folder:
 
