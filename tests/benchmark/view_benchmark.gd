@@ -58,7 +58,7 @@ func run() -> void:
 		print(JSON.stringify(row))
 	var label := OS.get_environment("SOLO_BENCH_LABEL")
 	if label != "":
-		var file := FileAccess.open("res://docs/validation/view_benchmark_%s.json" % label, FileAccess.WRITE)
+		var file := FileAccess.open("res://docs/validation".path_join("view_benchmark_%s.json" % label), FileAccess.WRITE)
 		file.store_string(JSON.stringify({"label": label, "engine": Engine.get_version_info().string, "cpu": OS.get_processor_name(), "gpu": RenderingServer.get_video_adapter_name(), "renderer": RenderingServer.get_current_rendering_method(), "window": root.size, "rows": rows}, "  "))
 		file.close()
 	quit(0)

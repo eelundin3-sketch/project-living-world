@@ -48,7 +48,7 @@ func _initialize() -> void:
 	print("save_ms %.0f" % save_ms)
 	var label := OS.get_environment("SOLO_BENCH_LABEL")
 	if label != "":
-		var output := FileAccess.open("res://docs/validation/full_game_benchmark_%s.json" % label, FileAccess.WRITE)
+		var output := FileAccess.open("res://docs/validation".path_join("full_game_benchmark_%s.json" % label), FileAccess.WRITE)
 		output.store_string(JSON.stringify({"label": label, "engine": Engine.get_version_info().string, "cpu": OS.get_processor_name(), "setup_ms": setup_ms, "save_ms": save_ms, "jobs": sim.state.get("jobs", {}).size(), "rows": rows}, "  "))
 		output.close()
 	quit(0)
