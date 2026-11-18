@@ -214,7 +214,7 @@ func _process(delta: float) -> void:
 	Probe.add("f:simulation", Time.get_ticks_usec() - started)
 	Probe.count("ticks", advanced)
 	if advanced > 0:
-		tick_ms = float(Time.get_ticks_usec() - started) / 1000.0 / advanced
+		tick_ms = float(clock.worst_step_usec) / 1000.0   # the slowest tick this frame: spikes show
 	var shotgun_equipped: bool = simulation.state.get("shotgun", {}).get("equipped", false)
 	$WorldView.motion.player_aiming = (aiming or (pointer_held and not shotgun_equipped)) and not player_panels.visible and not map_mode
 	$WorldView.motion.player_ready = pointer_held and not player_panels.visible

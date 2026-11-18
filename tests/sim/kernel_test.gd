@@ -42,5 +42,14 @@ func _initialize() -> void:
 	clock_c.advance(5.0, c)
 	check(before == c.state_hash(), "Paused state remains unchanged")
 	check(Canonical.encode({"b": 2, "a": 1}) == Canonical.encode({"a": 1, "b": 2}), "Canonical key ordering")
+	# A slow tick cannot snowball: work per frame is capped and the backlog is clamped.
+	var slow := SlowSim.new()
+	var clock_e := Clock.new()
+	var ran: int = clock_e.advance(2.0, slow)
+	check(ran >= 1 and ran <= 3 and clock_e.accumulator <= Clock.MAX_BACKLOG_SECONDS + 0.0001, "Frame budget caps catch-up ticks and backlog (%d ticks, %.2f s left)" % [ran, clock_e.accumulator])
 	print("Kernel: %s (100k replay, IDs, events, frame cadence, pause)" % ("PASS" if failures == 0 else "FAIL"))
 	quit(0 if failures == 0 else 1)
+
+class SlowSim extends RefCounted:
+	func step() -> void:
+		OS.delay_usec(6000)
