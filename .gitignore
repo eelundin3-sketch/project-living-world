@@ -10,3 +10,6 @@ controls.cfg
 .env
 .env.*
 !.env.example
+
+# Packaged builds
+dist/
