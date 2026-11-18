@@ -257,13 +257,24 @@ func refresh_view() -> void:
 	if $WorldView.background != null and selected_id != last_selected_id:
 		last_selected_id = selected_id
 		$WorldView.background.queue_redraw()
+	var t := Time.get_ticks_usec()
 	$DebugHUD.refresh(simulation, clock, selected_id, tick_ms)
+	t = _lap("u:debug_hud", t)
 	player_panels.refresh()
+	t = _lap("u:panels", t)
 	if moodles != null: moodles.refresh()
+	t = _lap("u:moodles", t)
 	if bottom_bar != null:
 		bottom_bar.blocked = player_panels.visible
 		bottom_bar.refresh()
+	t = _lap("u:bottom_bar", t)
 	if not map_mode: $DebugHUD.notice.text = PlayerActions.prompt(simulation.state, selected_id)
+	_lap("u:prompt", t)
+
+func _lap(name: String, since: int) -> int:
+	var now := Time.get_ticks_usec()
+	Probe.add(name, now - since)
+	return now
 
 func handle_action(kind: String) -> void:
 	if kind.begins_with("buy:") or kind.begins_with("sell:"):

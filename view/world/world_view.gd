@@ -52,6 +52,7 @@ var last_camera: Vector2 = Vector2.INF
 var last_zoom: Vector2 = Vector2.ZERO
 var daylight: CanvasModulate
 var building_rects: Array[Rect2i] = []
+var building_rects_signature: Array = []
 var atmosphere_time: float = 0.0
 var character_models: Dictionary = {}
 var depth_objects: Dictionary = {}
@@ -140,6 +141,7 @@ class DepthObject extends Node2D:
 	var wall_neighbours: Dictionary = {}
 	var door_data: Dictionary = {}
 	var door_open: float = 0.0
+	var paint_signature: int = -2   # what the last paint showed, for redraw-on-change
 	func _draw() -> void:
 		if projector.simulation == null: return
 		var t := Time.get_ticks_usec()
@@ -209,6 +211,8 @@ func animate(delta: float, paused: bool, speed: int) -> void:
 	_sync_landscape()
 	_sync_decor(delta)
 	t = _lap("v:landscape+decor", t)
+	var tracked := view_bounds().grow(200)
+	motion.view_cells = Rect2i(floori(tracked.position.x / CELL), floori(tracked.position.y / CELL), ceili(tracked.size.x / CELL) + 1, ceili(tracked.size.y / CELL) + 1)
 	motion.update(simulation.state, delta, paused, speed)
 	t = _lap("v:animation_director", t)
 	_sync_characters(0.0 if paused else minf(delta, 0.1) * speed)
@@ -304,32 +308,147 @@ func _sync_characters(delta: float = -1.0) -> void:
 			character_models[key].queue_free()
 			character_models.erase(key)
 
-func _depth_node(key: String, kind: String, pos: Vector2, entity_id: int = 0) -> void:
-	var fresh: bool = not depth_objects.has(key)
-	if fresh:
-		var item := DepthObject.new()
+func _depth_node(key: String, kind: String, pos: Vector2, entity_id: int = 0) -> DepthObject:
+	var item: DepthObject = depth_objects.get(key)
+	if item == null:
+		item = DepthObject.new()
 		item.projector = self
 		item.object_kind = kind
 		item.entity_id = entity_id
 		add_child(item)
 		depth_objects[key] = item
-	var item: DepthObject = depth_objects[key]
-	item.position = pos
-	# Redraw only what can have changed: new nodes, animated things, or a slow refresh for
-	# the rest. Walls, rocks and furniture repaint when their data changes (see callers).
-	if fresh:
+		item.position = pos
 		item.queue_redraw()
-		return
-	match kind:
-		"wall", "rock", "furniture", "door": pass
-		"tree":
-			# Trees sway slowly, so a third of them per frame is invisible; stumps and falling trees animate every frame.
-			var logs: int = simulation.state.inventories.get(str(entity_id), {}).get("items", {}).get("log", 0)
-			var felled: bool = simulation.state.entities.get(str(entity_id), {}).get("felled", false)
-			if logs == 0 or felled or (depth_frame + entity_id) % 3 == 0: item.queue_redraw()
-		"fixture":
-			if fixture_motion.running.get(str(entity_id), false) or (depth_frame + entity_id) % 4 == 0: item.queue_redraw()
-		_: item.queue_redraw()
+	elif item.position != pos:
+		item.position = pos
+	return item
+
+## Redraw only what can have changed since it was last painted. Walls, rocks, furniture and doors
+## repaint when their data changes (the sync pass and _update_doors handle those).
+func _schedule_redraws() -> void:
+	var s: Dictionary = simulation.state
+	for key in depth_objects:
+		var item: DepthObject = depth_objects[key]
+		match item.object_kind:
+			"tree":
+				var id: int = item.entity_id
+				var tree: Dictionary = motion.trees.get(str(id), {})
+				var logs: int = int(tree.get("logs", 1))
+				var felled: bool = bool(tree.get("felled", false))
+				var hit_age: float = motion.time - float(tree.get("hit", -10.0))
+				var falling: bool = felled and float(tree.get("fall", -1.0)) >= 0.0 and motion.time - float(tree.fall) < 2.2
+				var look: int = logs * 4 + (2 if felled else 0) + (1 if tree.get("dead", false) else 0)
+				if falling or hit_age < 0.55:
+					item.queue_redraw()   # toppling or shaking from an axe blow
+				elif logs > 0 and not felled:
+					if (depth_frame + id) % 3 == 0: item.queue_redraw()   # slow sway: a third per frame is invisible
+				elif item.paint_signature != look:
+					item.queue_redraw()   # a stump or a trunk on the ground only changes when its state does
+				item.paint_signature = look
+			"fixture":
+				var running: bool = fixture_motion.running.get(str(item.entity_id), false)
+				var stock: int = s.inventories.get(str(item.entity_id), {}).get("items", {}).hash()
+				if running or item.paint_signature != stock: item.queue_redraw()
+				item.paint_signature = stock if not running else -1
+			"stash":
+				var stock: int = s.inventories.get(str(item.entity_id), {}).get("items", {}).hash()
+				if item.paint_signature != stock: item.queue_redraw()
+				item.paint_signature = stock
+
+const DEPTH_CHUNK: int = 16
+var depth_index: Dictionary = {}           # "cx,cy" (16-cell chunks) -> Array of [key, kind, position, entity_id]
+var depth_index_signature: Array = []
+var wall_index: Dictionary = {}            # "cx,cy" -> Array of [key, x, y, owner]
+var wall_index_signature: Array = []
+var building_items: Array = []             # fixtures, furniture and doors: [key, kind, position, entity_id, data]
+var building_items_signature: Array = []
+var mover_ids: Array = []                  # stashes and caravans, whose cell is read live
+var depth_pass_signature: Array = []
+
+static func _depth_chunk(x: int, y: int) -> String:
+	return "%d,%d" % [floori(float(x) / DEPTH_CHUNK), floori(float(y) / DEPTH_CHUNK)]
+
+## Trees, rocks, stashes and caravans, bucketed by 16-cell chunk. Rebuilt only when entities are
+## added or removed, rocks change, or a building appears (trees inside a building are not drawn).
+func _rebuild_depth_index(s: Dictionary) -> void:
+	var occupied_rooms: Array[Rect2i] = []
+	for building in s.entities.values():
+		if building.has("footprint"): occupied_rooms.append(World.building_rect(building))
+	depth_index = {}
+	mover_ids = []
+	var big_rocks: Array = []
+	for entity in s.entities.values():
+		if entity.has("rock_rect"): big_rocks.append(entity.rock_rect)
+		var kind: String = entity.get("kind", "")
+		if kind == "tree":
+			var cell := Vector2i(entity.cell[0], entity.cell[1])
+			var inside: bool = false
+			for room in occupied_rooms:
+				if room.has_point(cell): inside = true; break
+			if inside: continue
+			var bucket := _depth_chunk(cell.x, cell.y)
+			if not depth_index.has(bucket): depth_index[bucket] = []
+			depth_index[bucket].append(["tree:%d" % entity.id, "tree", Vector2(cell) * CELL, int(entity.id)])
+		elif kind in ["stash", "caravan"] and entity.has("cell"):
+			mover_ids.append(int(entity.id))
+	for cell_key in s.world.blocked:
+		var comma: int = cell_key.find(",")
+		var x: int = int(cell_key.substr(0, comma))
+		var y: int = int(cell_key.substr(comma + 1))
+		var under_big_rock := false
+		for rr in big_rocks:
+			if x >= rr[0] and x < rr[0] + rr[2] and y >= rr[1] and y < rr[1] + rr[3]: under_big_rock = true; break
+		if under_big_rock: continue  # drawn once as the large boulder
+		var bucket := _depth_chunk(x, y)
+		if not depth_index.has(bucket): depth_index[bucket] = []
+		depth_index[bucket].append(["rock:" + cell_key, "rock", Vector2(x, y) * CELL, 0])
+
+func _rebuild_wall_index(s: Dictionary) -> void:
+	wall_index = {}
+	for cell_key in s.world.get("building_walls", {}):
+		var comma: int = cell_key.find(",")
+		var x: int = int(cell_key.substr(0, comma))
+		var y: int = int(cell_key.substr(comma + 1))
+		var bucket := _depth_chunk(x, y)
+		if not wall_index.has(bucket): wall_index[bucket] = []
+		wall_index[bucket].append(["wall:" + cell_key, x, y, int(s.world.building_walls[cell_key])])
+
+## Fixtures, furniture and doors of every building. A few dozen buildings, rebuilt when the
+## buildings or their fittings change (fittings always bump the navigation revision).
+func _rebuild_building_items(s: Dictionary) -> void:
+	building_items = []
+	for entity in s.entities.values():
+		if not entity.get("fixtures", []).is_empty() and s.inventories.has(str(entity.id)):
+			for index in range(entity.fixtures.size()):
+				var rect: Array = entity.fixtures[index].rect
+				var p := Vector2(rect[0] + rect[2] / 2.0, rect[1] + rect[3]) * CELL - Vector2(0, 12)
+				var key := "fixture:%d" % entity.id if index == 0 else "fixture:%d:%d" % [entity.id, index]
+				building_items.append([key, "fixture", p, int(entity.id), index])
+		if not entity.has("footprint"): continue
+		var items := MapArt.furnishings(entity)
+		for index in range(items.size()):
+			var entry: Dictionary = items[index]
+			building_items.append(["furniture:%d:%d" % [entity.id, index], "furniture", entry.point + Vector2(0, entry.bottom), int(entity.id), entry])
+		if not entity.has("door"): continue
+		# Doors: one in every outside doorway and one in every passage between rooms.
+		var doors: Array = []
+		var out := Vector2(Orient.outward(int(entity.get("door_side", 2))))
+		doors.append({"suffix": "out", "cells": [entity.door], "axis": "h" if absf(out.y) > 0.5 else "v", "inward": -out, "style": "heavy" if entity.kind in ["office", "warehouse", "market", "sawmill", "bakery", "forge"] else "plank", "double": false})
+		var gap_index := 0
+		for gap in World.interior_doorways(entity):
+			var inward_dir: Vector2 = Vector2(1, 0) if gap.axis == "v" else Vector2(0, -1)
+			doors.append({"suffix": "in%d" % gap_index, "cells": gap.cells, "axis": gap.axis, "inward": inward_dir, "style": "plank", "double": gap.cells.size() >= 3})
+			gap_index += 1
+		for entry in doors:
+			var cells: Array = entry.cells
+			var first: Array = cells[0]
+			var last: Array = cells[cells.size() - 1]
+			var pos := Vector2(first[0] * CELL, first[1] * CELL + CELL / 2)
+			var local_first := Vector2(0, -CELL / 2)
+			var local_last: Vector2 = Vector2((last[0] - first[0]) * CELL, (last[1] - first[1]) * CELL) + local_first
+			var a: Vector2 = local_first - (Vector2(CELL / 2, 0) if entry.axis == "h" else Vector2(0, CELL / 2))
+			var b: Vector2 = local_last + (Vector2(CELL / 2, 0) if entry.axis == "h" else Vector2(0, CELL / 2))
+			building_items.append(["door:%d:%s" % [entity.id, entry.suffix], "door", pos, int(entity.id), {"a": a, "b": b, "inward": entry.inward, "style": entry.style, "double": entry.double}])
 
 func _sync_depth_objects() -> void:
 	if simulation == null: return
@@ -339,38 +458,66 @@ func _sync_depth_objects() -> void:
 		for key in depth_objects.keys():
 			depth_objects[key].queue_free()
 			depth_objects.erase(key)
+		depth_pass_signature = []
 		return
 	var s: Dictionary = simulation.state
+	var walls: Dictionary = s.world.get("building_walls", {})
+	var index_signature := [s.entities.size(), s.world.blocked.size(), s.get("completed_buildings", 0)]
+	if index_signature != depth_index_signature:
+		_rebuild_depth_index(s)
+		depth_index_signature = index_signature
+	var wall_signature := [walls.size()]
+	if wall_signature != wall_index_signature or not is_same(walls, wall_index.get("__table", walls)):
+		_rebuild_wall_index(s)
+		wall_index["__table"] = walls
+		wall_index_signature = wall_signature
+	var items_signature := [s.entities.size(), s.get("completed_buildings", 0), s.world.get("nav_revision", 0)]
+	if items_signature != building_items_signature:
+		_rebuild_building_items(s)
+		building_items_signature = items_signature
 	var bounds := view_bounds().grow(130)
+	# The keep/create pass runs when the view moves by a cell, on a new tick, or when an index
+	# changed; in between, only the animated objects need their redraws scheduled.
+	var pass_signature := [floori(bounds.position.x / CELL), floori(bounds.position.y / CELL), floori(bounds.size.x / CELL), floori(bounds.size.y / CELL), s.tick, depth_index_signature, wall_index_signature, building_items_signature]
+	if pass_signature == depth_pass_signature:
+		_schedule_redraws()
+		return
+	depth_pass_signature = pass_signature
 	var keep: Dictionary = {}
-	var occupied_rooms: Array[Rect2i] = []
-	for building in s.entities.values():
-		if building.has("footprint"): occupied_rooms.append(World.building_rect(building))
-	for cell_key in s.world.get("building_walls", {}):
-		var xy: PackedStringArray = cell_key.split(",")
-		var x: int = int(xy[0])
-		var y: int = int(xy[1])
-		var p := Vector2(x * CELL, y * CELL + CELL / 2)
-		if not bounds.has_point(p): continue
-		var key: String = "wall:" + cell_key
-		keep[key] = true
-		_depth_node(key, "wall", p)
-		var owner: int = s.world.building_walls[cell_key]
-		var neighbours := {
-			"north": s.world.building_walls.get("%d,%d" % [x, y - 1], 0) == owner,
-			"south": s.world.building_walls.get("%d,%d" % [x, y + 1], 0) == owner,
-			"west": s.world.building_walls.get("%d,%d" % [x - 1, y], 0) == owner,
-			"east": s.world.building_walls.get("%d,%d" % [x + 1, y], 0) == owner,
-			"northwest": s.world.building_walls.get("%d,%d" % [x - 1, y - 1], 0) == owner,
-			"northeast": s.world.building_walls.get("%d,%d" % [x + 1, y - 1], 0) == owner,
-			"southwest": s.world.building_walls.get("%d,%d" % [x - 1, y + 1], 0) == owner,
-			"southeast": s.world.building_walls.get("%d,%d" % [x + 1, y + 1], 0) == owner,
-		}
-		var wall: DepthObject = depth_objects[key]
-		wall.modulate = house_tint(s, owner)
-		if wall.wall_neighbours != neighbours:
-			wall.wall_neighbours = neighbours
-			wall.queue_redraw()
+	var low := Vector2i(floori(bounds.position.x / CELL / DEPTH_CHUNK), floori(bounds.position.y / CELL / DEPTH_CHUNK))
+	var high := Vector2i(floori(bounds.end.x / CELL / DEPTH_CHUNK), floori((bounds.end.y + CELL) / CELL / DEPTH_CHUNK))
+	for cy in range(low.y, high.y + 1):
+		for cx in range(low.x, high.x + 1):
+			var bucket := "%d,%d" % [cx, cy]
+			for entry in wall_index.get(bucket, []):
+				var x: int = entry[1]
+				var y: int = entry[2]
+				var p := Vector2(x * CELL, y * CELL + CELL / 2)
+				if not bounds.has_point(p): continue
+				keep[entry[0]] = true
+				var fresh: bool = not depth_objects.has(entry[0])
+				var wall: DepthObject = _depth_node(entry[0], "wall", p)
+				if fresh or wall.paint_signature != wall_index_signature[0]:
+					var owner: int = entry[3]
+					var neighbours := {
+						"north": walls.get("%d,%d" % [x, y - 1], 0) == owner,
+						"south": walls.get("%d,%d" % [x, y + 1], 0) == owner,
+						"west": walls.get("%d,%d" % [x - 1, y], 0) == owner,
+						"east": walls.get("%d,%d" % [x + 1, y], 0) == owner,
+						"northwest": walls.get("%d,%d" % [x - 1, y - 1], 0) == owner,
+						"northeast": walls.get("%d,%d" % [x + 1, y - 1], 0) == owner,
+						"southwest": walls.get("%d,%d" % [x - 1, y + 1], 0) == owner,
+						"southeast": walls.get("%d,%d" % [x + 1, y + 1], 0) == owner,
+					}
+					wall.modulate = house_tint(s, owner)
+					wall.paint_signature = wall_index_signature[0]
+					if wall.wall_neighbours != neighbours:
+						wall.wall_neighbours = neighbours
+						wall.queue_redraw()
+			for entry in depth_index.get(bucket, []):
+				if not bounds.has_point(entry[2]): continue
+				keep[entry[0]] = true
+				_depth_node(entry[0], entry[1], entry[2], entry[3])
 	for site in s.get("construction", {}).values():
 		if site.done or site.get("build_phase", "") != "build": continue
 		var piece := Planner.current_tile(site)
@@ -379,100 +526,36 @@ func _sync_depth_objects() -> void:
 		if not bounds.has_point(p): continue
 		var key := "construction_tile:%d" % site.id
 		keep[key] = true
-		_depth_node(key, "construction_tile", p, site.id)
-		depth_objects[key].construction_tile = piece
-	var big_rocks: Array = []
-	for entity in s.entities.values():
-		if entity.has("rock_rect"): big_rocks.append(entity.rock_rect)
-	for cell_key in s.world.blocked:
-		var xy: PackedStringArray = cell_key.split(",")
-		var p := Vector2(int(xy[0]), int(xy[1])) * CELL
+		var node: DepthObject = _depth_node(key, "construction_tile", p, site.id)
+		if node.construction_tile != piece:
+			node.construction_tile = piece
+			node.queue_redraw()
+	for id in mover_ids:
+		var entity: Dictionary = s.entities.get(str(id), {})
+		if entity.is_empty() or not entity.has("cell"): continue
+		var p := Vector2(entity.cell[0], entity.cell[1]) * CELL
 		if not bounds.has_point(p): continue
-		var under_big_rock := false
-		for rr in big_rocks:
-			if int(xy[0]) >= rr[0] and int(xy[0]) < rr[0] + rr[2] and int(xy[1]) >= rr[1] and int(xy[1]) < rr[1] + rr[3]: under_big_rock = true
-		if under_big_rock: continue  # drawn once as the large boulder
-		var key: String = "rock:" + cell_key
+		var key := "%s:%d" % [entity.kind, entity.id]
 		keep[key] = true
-		_depth_node(key, "rock", p)
-	for entity in s.entities.values():
-		if entity.get("kind", "") == "tree":
-			var p := Vector2(entity.cell[0], entity.cell[1]) * CELL
-			if not bounds.has_point(p): continue
-			var inside: bool = false
-			for room in occupied_rooms:
-				if room.has_point(Vector2i(entity.cell[0], entity.cell[1])): inside = true; break
-			if inside: continue
-			var key := "tree:%d" % entity.id
-			keep[key] = true
-			_depth_node(key, "tree", p, entity.id)
-		elif entity.get("kind", "") in ["stash", "caravan"] and entity.has("cell"):
-			var p := Vector2(entity.cell[0], entity.cell[1]) * CELL
-			if not bounds.has_point(p): continue
-			var key := "%s:%d" % [entity.kind, entity.id]
-			keep[key] = true
-			_depth_node(key, entity.kind, p, entity.id)
-		elif not entity.get("fixtures", []).is_empty() and s.inventories.has(str(entity.id)):
-			for index in range(entity.fixtures.size()):
-				var rect: Array = entity.fixtures[index].rect
-				var p := Vector2(rect[0] + rect[2] / 2.0, rect[1] + rect[3]) * CELL - Vector2(0, 12)
-				if not bounds.has_point(p): continue
-				var key := "fixture:%d" % entity.id if index == 0 else "fixture:%d:%d" % [entity.id, index]
-				keep[key] = true
-				_depth_node(key, "fixture", p, entity.id)
-				depth_objects[key].fixture_index = index
-		if entity.has("footprint"):
-			var items := MapArt.furnishings(entity)
-			for index in range(items.size()):
-				var entry: Dictionary = items[index]
-				var p: Vector2 = entry.point + Vector2(0, entry.bottom)
-				if not bounds.has_point(p): continue
-				var key := "furniture:%d:%d" % [entity.id, index]
-				keep[key] = true
-				_depth_node(key, "furniture", p, entity.id)
-				if depth_objects[key].furniture_data != entry:
-					depth_objects[key].furniture_data = entry
-					depth_objects[key].queue_redraw()
-	# Doors: one in every outside doorway and one in every passage between rooms.
-	for entity in s.entities.values():
-		if not entity.has("footprint") or not entity.has("door"): continue
-		var doors: Array = []
-		var outer_door: Array = entity.door
-		var out := Vector2(Orient.outward(int(entity.get("door_side", 2))))
-		doors.append({"suffix": "out", "cells": [outer_door], "axis": "h" if absf(out.y) > 0.5 else "v", "inward": -out, "style": "heavy" if entity.kind in ["office", "warehouse", "market", "sawmill", "bakery", "forge"] else "plank", "double": false})
-		var index := 0
-		for gap in World.interior_doorways(entity):
-			var cells: Array = gap.cells
-			var inward_dir: Vector2 = Vector2(1, 0) if gap.axis == "v" else Vector2(0, -1)
-			doors.append({"suffix": "in%d" % index, "cells": cells, "axis": gap.axis, "inward": inward_dir, "style": "plank", "double": cells.size() >= 3})
-			index += 1
-		for entry in doors:
-			var cells: Array = entry.cells
-			var first: Array = cells[0]
-			var last: Array = cells[cells.size() - 1]
-			var pos := Vector2(first[0] * CELL, first[1] * CELL + CELL / 2)
-			if not bounds.has_point(pos): continue
-			var key := "door:%d:%s" % [entity.id, entry.suffix]
-			keep[key] = true
-			_depth_node(key, "door", pos)
-			var local_first := Vector2(0, -CELL / 2)
-			var local_last: Vector2 = Vector2((last[0] - first[0]) * CELL, (last[1] - first[1]) * CELL) + local_first
-			var a: Vector2
-			var b: Vector2
-			if entry.axis == "h":
-				a = local_first - Vector2(CELL / 2, 0)
-				b = local_last + Vector2(CELL / 2, 0)
-			else:
-				a = local_first - Vector2(0, CELL / 2)
-				b = local_last + Vector2(0, CELL / 2)
-			var node: DepthObject = depth_objects[key]
-			var data := {"a": a, "b": b, "inward": entry.inward, "style": entry.style, "double": entry.double}
-			if node.door_data.is_empty(): node.queue_redraw()
-			node.door_data = data
+		_depth_node(key, entity.kind, p, entity.id)
+	for entry in building_items:
+		if not bounds.has_point(entry[2]): continue
+		keep[entry[0]] = true
+		var node: DepthObject = _depth_node(entry[0], entry[1], entry[2], entry[3])
+		match entry[1]:
+			"fixture": node.fixture_index = entry[4]
+			"furniture":
+				if node.furniture_data != entry[4]:
+					node.furniture_data = entry[4]
+					node.queue_redraw()
+			"door":
+				if node.door_data.is_empty(): node.queue_redraw()
+				node.door_data = entry[4]
 	for key in depth_objects.keys():
 		if not keep.has(key):
 			depth_objects[key].queue_free()
 			depth_objects.erase(key)
+	_schedule_redraws()
 
 ## Every frame: a door swings open when anyone is near it and shuts about a second after they leave.
 ## Only art: the doorway stays walkable whatever the door is doing.
@@ -563,13 +646,16 @@ func _draw_world() -> void:
 		fixture_motion.update(simulation.state,0,true,1)
 	var s: Dictionary = simulation.state
 	var bounds := view_bounds().grow(90)
-	building_rects.clear()
-	for building in s.entities.values():
-		if building.has("footprint"):
-			building_rects.append(World.building_rect(building))
+	if building_rects_signature != [s.entities.size(), s.get("completed_buildings", 0)]:
+		building_rects_signature = [s.entities.size(), s.get("completed_buildings", 0)]
+		building_rects.clear()
+		for building in s.entities.values():
+			if building.has("footprint"):
+				building_rects.append(World.building_rect(building))
 	var visible: Array = []
-	for entity in s.entities.values():
-		if not entity.has("cell") or entity.kind not in ["resident", "player", "raider"]:
+	for key in Director._actor_keys(s):
+		var entity: Dictionary = s.entities.get(key, {})
+		if entity.is_empty() or not entity.has("cell") or entity.kind not in ["resident", "player", "raider"]:
 			continue
 		var point := Vector2(entity.cell[0], entity.cell[1]) * CELL
 		if motion.actors.has(str(entity.id)):
@@ -578,15 +664,20 @@ func _draw_world() -> void:
 			visible.append({"entity": entity, "point": point})
 	visible.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.point.y < b.point.y or (a.point.y == b.point.y and a.entity.id < b.entity.id))
 	visible_entities = visible.size()
+	var t := Time.get_ticks_usec()
 	for entry in visible:
 		_draw_entity(s, entry.entity, entry.point)
+	t = _lap("dw:entities", t)
 	fixture_motion.draw_transfers(self)
+	t = _lap("dw:transfers", t)
 	_draw_combat(s)
 	_draw_shotgun(s)
 	_draw_brawl(s)
+	t = _lap("dw:combat+blood", t)
 	_draw_travel_goal(s)
 	_draw_map_labels(s)
 	_draw_weather(s, bounds)
+	_lap("dw:labels+weather", t)
 
 ## Blood left on the ground by fights (pools and flung drops that darken as they dry), a short
 ## spray at the moment a blow lands, and the "z z" over someone who is out cold.
@@ -624,9 +715,10 @@ func _draw_brawl(s: Dictionary) -> void:
 		for fleck in range(5):
 			var angle: float = push.angle() + (CropArt.rand01(int(fight_event.tick), fleck) - 0.5) * 1.6
 			draw_circle(at + Vector2.from_angle(angle) * (4.0 + 12.0 * age) + Vector2(0, 8.0 * age * age), 1.5 * (1.0 - age * 0.5), Color(0.6, 0.08, 0.07, 1.0 - age))
-	for entity in s.entities.values():
-		var npc: Dictionary = s.get("residents", {}).get(str(entity.id), {})
-		if npc.is_empty(): continue
+	for npc_key in s.get("residents", {}):
+		var npc: Dictionary = s.residents[npc_key]
+		var entity: Dictionary = s.entities.get(npc_key, {})
+		if entity.is_empty(): continue
 		var knock: Dictionary = npc.get("knock", {})
 		if not knock.is_empty() and knock.kind == "ko" and s.tick >= int(knock.start) + 6 and s.tick < int(knock.down_until):
 			var head := Vector2(entity.cell[0], entity.cell[1]) * CELL + Vector2(float(knock.get("side", 1)) * 22.0, -20.0 + sin(float(s.tick) * 0.15) * 2.0)
