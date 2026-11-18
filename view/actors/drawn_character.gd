@@ -331,7 +331,7 @@ func _build_frame() -> Dictionary:
 	if action == "cuff": fold += 4.0             # leaning in to fit the cuffs
 	if action == "search": fold += 3.5           # bending to pat the prisoner down
 	if action == "build": fold += build.hit * 5.0 + build.raise * 1.5 - build.check * 1.5  # lean into each blow
-	if action == "shoot": fold -= 4.0 * smoothstep(0.0, 0.08, phase) * (1.0 - smoothstep(0.1, 0.55, phase))
+	if action == "shoot": fold -= (4.0 + 3.0 * float(pose.get("bloom", 0)) / 900.0) * smoothstep(0.0, 0.08, phase) * (1.0 - smoothstep(0.1, 0.55, phase))
 	if action == "build" and pose.get("build_kind", "") == "floor":
 		crouch = 0.55 + impact * 0.32
 		fold += 7.0
@@ -403,7 +403,7 @@ func _build_frame() -> Dictionary:
 	if action == "pickup" and pose.get("cargo_quantity", 0) == 0: show_cargo = carrying and phase >= 0.33
 	if action == "drop" and pose.get("cargo_quantity", 0) == 0: show_cargo = carrying and phase < 0.67
 	var armed := action in ["gun_carry", "aim", "shoot", "reload"]
-	var recoil := 7.0 * smoothstep(0.0, 0.08, phase) * (1.0 - smoothstep(0.1, 0.55, phase)) if action == "shoot" else 0.0
+	var recoil := (7.0 + 4.0 * float(pose.get("bloom", 0)) / 900.0) * smoothstep(0.0, 0.08, phase) * (1.0 - smoothstep(0.1, 0.55, phase)) if action == "shoot" else 0.0
 	# The barrel follows the cursor between the drawn body's eight directions.
 	var sight := Vector2.from_angle(float(pose.get("heading", heading))) if pose.get("aiming", false) else forward
 	var projected_sight := Vector2(sight.x, sight.y * 0.48)

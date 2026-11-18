@@ -13,10 +13,15 @@ const COOLDOWN_TICKS := 18
 const RELOAD_TICKS_PER_SHELL := 12
 const SPEED_CELLS_PER_TICK := 2
 const EFFECT_TICKS := 14
+const BLOOM_PER_SHOT := 220       # spread grows with every shot (thousandths) ...
+const BLOOM_MAX := 900
+const BLOOM_DECAY := 25           # ... and settles by this much each tick
+const SPREAD := 0.17
+const Brawl = preload("res://sim/player/brawl.gd")
 
 static func initialize(s: Dictionary) -> void:
 	if not s.has("shotgun"):
-		s.shotgun = {"equipped": false, "loaded": 0, "reloading": false, "reload_next": 0, "last_shot": -1000, "pellets": [], "effects": [], "kicks": 0}
+		s.shotgun = {"equipped": false, "loaded": 0, "reloading": false, "reload_next": 0, "last_shot": -1000, "pellets": [], "effects": [], "kicks": 0, "bloom": 0, "last_dir": [0, 1000]}
 
 static func owns(s: Dictionary) -> bool:
 	return Inventory.amount(s, s.player, "shotgun") > 0
@@ -52,8 +57,11 @@ static func fire(sim: RefCounted, direction: Array) -> bool:
 	gun.reloading = false  # firing interrupts loading, as with a pump gun
 	gun.last_shot = s.tick
 	gun.kicks += 1
+	gun.bloom = mini(BLOOM_MAX, int(gun.get("bloom", 0)) + BLOOM_PER_SHOT)
+	gun.last_dir = [int(direction[0]), int(direction[1])]
+	Brawl.event(s, "gunshot", origin, gun.last_dir)
 	for index in range(PELLETS):
-		var spread: float = (float(sim.random_int("shotgun", -1000, 1000)) / 1000.0) * 0.17
+		var spread: float = (float(sim.random_int("shotgun", -1000, 1000)) / 1000.0) * SPREAD * (1.0 + 1.5 * float(gun.get("bloom", 0)) / 1000.0)
 		var angle: float = base + spread
 		var reach: float = RANGE_CELLS - float(sim.random_int("shotgun", 0, 200)) / 100.0
 		gun.pellets.append({"x": float(origin[0]) + 0.5 * cos(base), "y": float(origin[1]) + 0.5 * sin(base), "dx": cos(angle), "dy": sin(angle), "left": reach, "owner": s.player})
@@ -80,6 +88,7 @@ static func update(sim: RefCounted) -> void:
 	var s: Dictionary = sim.state
 	if not s.has("shotgun"): return
 	var gun: Dictionary = s.shotgun
+	if int(gun.get("bloom", 0)) > 0: gun.bloom = maxi(0, int(gun.bloom) - BLOOM_DECAY)
 	while not gun.effects.is_empty() and s.tick - int(gun.effects[0].tick) > EFFECT_TICKS: gun.effects.pop_front()
 	if gun.reloading and s.tick >= gun.reload_next:
 		if gun.loaded < CAPACITY and Inventory.consume(s, s.player, "shell", 1):

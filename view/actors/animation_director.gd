@@ -206,7 +206,7 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 	for fight_event in fight_events:
 		if int(fight_event.serial) <= last_brawl_serial: continue
 		last_brawl_serial = int(fight_event.serial)
-		var cue_kind: String = {"punch_hit": "punch", "shove_hit": "shove", "fall": "thud"}.get(fight_event.kind, "")
+		var cue_kind: String = {"punch_hit": "punch", "shove_hit": "shove", "fall": "thud", "gunshot": "shot"}.get(fight_event.kind, "")
 		if not cue_kind.is_empty(): cues.append({"kind": cue_kind, "position": Vector2(fight_event.cell[0], fight_event.cell[1]) * CELL})
 	var dt: float = 0.0 if paused else minf(delta, 0.1) * speed
 	time += dt
@@ -362,6 +362,7 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 		pose.facing = -1.0 if cos(float(pose.heading)) < 0.0 else 1.0
 		pose.back = sin(float(pose.heading)) < -0.35
 		pose.aiming = entity.kind == "player" and player_aiming
+		pose.bloom = int(s.get("shotgun", {}).get("bloom", 0)) if entity.kind == "player" else 0
 		pose.limp = Limbs.mode(s, int(entity.id)) == "limp"
 		pose.limp_side = -1 if Limbs.disabled(s, int(entity.id), "left_leg") else 1
 		var dead_arms: Array = []

@@ -22,6 +22,8 @@ var world_audio: Node2D
 var simulation := Simulation.new()
 var clock := Clock.new()
 var follow_player: bool = true
+var kick_seen: int = 0
+var kick_offset: Vector2 = Vector2.ZERO
 var last_input_tick: int = -1
 var last_draw_tick: int = -1
 var tick_ms: float = 0.0
@@ -206,6 +208,7 @@ func _process(delta: float) -> void:
 	if follow_player:
 		var cell: Array = simulation.state.entities[str(simulation.state.player)].cell
 		$ObserverCamera.position = $WorldView.motion.actors.get(str(simulation.state.player), {}).get("position", Vector2(cell[0], cell[1]) * CELL)
+	_update_camera_kick(delta)
 	var knock_now: Dictionary = simulation.state.player_control.get("knock", {})
 	var waiting_out: bool = (not knock_now.is_empty() and str(knock_now.get("kind", "")) == "ko") or Law.in_custody(simulation.state)
 	if skipping and (not waiting_out or simulation.state.player_control.get("dead", false)):
@@ -476,3 +479,15 @@ func _submit_strike(kind: String) -> void:
 	if direction.length_squared() < 16.0: direction = Vector2.from_angle(float(actor.get("heading", PI / 2.0)))
 	direction = direction.normalized()
 	simulation.submit("player_strike", {"kind": kind, "direction": [roundi(direction.x * 1000.0), roundi(direction.y * 1000.0)]})
+
+## Each shot shoves the camera back against the aim for a moment (presentation only).
+func _update_camera_kick(delta: float) -> void:
+	var gun: Dictionary = simulation.state.get("shotgun", {})
+	var kicks: int = int(gun.get("kicks", 0))
+	if kicks != kick_seen:
+		if kicks > kick_seen:
+			var aim := Vector2(float(gun.get("last_dir", [0, 1000])[0]), float(gun.get("last_dir", [0, 1000])[1])).normalized()
+			kick_offset = -aim * (7.0 + 5.0 * float(gun.get("bloom", 0)) / 900.0) / maxf(0.5, $ObserverCamera.zoom.x)
+		kick_seen = kicks
+	kick_offset = kick_offset.move_toward(Vector2.ZERO, (60.0 + kick_offset.length() * 9.0) * delta)
+	$ObserverCamera.offset = kick_offset

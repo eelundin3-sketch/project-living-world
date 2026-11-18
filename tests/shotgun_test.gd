@@ -41,9 +41,11 @@ func run() -> void:
 	# Ground impact: nothing in the way.
 	sim.submit("shotgun_fire", {"direction": [0, 1000]}); sim.step()
 	check(s.shotgun.loaded == 4 and s.shotgun.pellets.size() == Shotgun.PELLETS, "A blast fires a spread of pellets")
+	check(int(s.shotgun.bloom) > 0, "Firing builds up bloom (%d)" % int(s.shotgun.bloom))
 	for tick in range(15): sim.step()
 	check(effects(s).has("ground") or s.shotgun.effects.size() == 0, "Pellets that miss raise ground dust")
 	player.cell = [60, 60]   # back to the fixed spot the wall, body and tree checks below are laid out around
+	check(int(s.shotgun.bloom) == 0, "The bloom settles back to nothing")
 	# Cooldown.
 	sim.step(); 
 	check(not Shotgun.can_fire(s) or s.tick - s.shotgun.last_shot >= Shotgun.COOLDOWN_TICKS, "Fire rate is limited")
