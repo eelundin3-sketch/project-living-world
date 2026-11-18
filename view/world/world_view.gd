@@ -13,6 +13,7 @@ const Director = preload("res://view/actors/animation_director.gd")
 const DrawnCharacter = preload("res://view/actors/drawn_character.gd")
 const RoadSurface = preload("res://view/world/road_surface.gd")
 const LANDSCAPE = preload("res://view/world/landscape.gdshader")
+const Probe = preload("res://sim/diagnostics/perf_probe.gd")
 const CELL: float = 24.0
 ## Characters are drawn at half size so they are in proportion to doors, furniture and trees.
 const CHAR_SCALE: float = 0.625
@@ -59,20 +60,26 @@ var depth_frame: int = 0
 class Background extends Node2D:
 	var projector: Node2D
 	func _draw() -> void:
+		var t := Time.get_ticks_usec()
 		projector.draw_static(self)
+		Probe.add("d:background", Time.get_ticks_usec() - t)
 
 ## Sun shadows for everything that stands up: drawn above the ground and buildings' floors,
 ## below trees and people.
 class ShadowLayer extends Node2D:
 	var projector: Node2D
 	func _draw() -> void:
+		var t := Time.get_ticks_usec()
 		projector.draw_shadows(self)
+		Probe.add("d:shadows", Time.get_ticks_usec() - t)
 
 ## Speech bubbles over the speakers' heads, above every character.
 class SpeechLayer extends Node2D:
 	var projector: Node2D
 	func _draw() -> void:
+		var t := Time.get_ticks_usec()
 		projector.draw_speech(self)
+		Probe.add("d:speech", Time.get_ticks_usec() - t)
 
 ## Large, slow-changing ground art (the market plaza, one crop plot) is painted once into a
 ## texture and shown as a sprite. Thousands of small shapes cost real time to submit every
@@ -135,6 +142,12 @@ class DepthObject extends Node2D:
 	var door_open: float = 0.0
 	func _draw() -> void:
 		if projector.simulation == null: return
+		var t := Time.get_ticks_usec()
+		_paint()
+		Probe.add("d:depth_objects", Time.get_ticks_usec() - t)
+		Probe.count("depth_redraws")
+
+	func _paint() -> void:
 		var s: Dictionary = projector.simulation.state
 		if object_kind == "wall":
 			MapArt.cutaway_wall(self, wall_neighbours)
@@ -192,14 +205,20 @@ func _ready() -> void:
 func animate(delta: float, paused: bool, speed: int) -> void:
 	if simulation == null:
 		return
+	var t := Time.get_ticks_usec()
 	_sync_landscape()
 	_sync_decor(delta)
+	t = _lap("v:landscape+decor", t)
 	motion.update(simulation.state, delta, paused, speed)
+	t = _lap("v:animation_director", t)
 	_sync_characters(0.0 if paused else minf(delta, 0.1) * speed)
+	t = _lap("v:characters_sync", t)
 	if not paused: atmosphere_time += minf(delta, 0.1) * speed
 	fixture_motion.update(simulation.state,delta,paused,speed)
 	_sync_depth_objects()
+	t = _lap("v:depth_sync", t)
 	_update_doors(minf(delta, 0.1))
+	t = _lap("v:doors", t)
 	# Lighting follows the authoritative 24-hour clock and freezes on pause.
 	var sun: float = sin((float(simulation.state.tick % 14400) / 14400.0 - 0.25) * TAU)
 	var light: float = smoothstep(-0.35, 0.25, sun)
@@ -217,6 +236,11 @@ func animate(delta: float, paused: bool, speed: int) -> void:
 		last_zoom = camera.zoom
 		refresh_age = 0
 	queue_redraw()
+
+func _lap(name: String, since: int) -> int:
+	var now := Time.get_ticks_usec()
+	Probe.add(name, now - since)
+	return now
 
 func _sync_landscape() -> void:
 	var state: Dictionary = simulation.state
@@ -527,6 +551,11 @@ func draw_static(canvas: Node2D) -> void:
 			_draw_entity(s, entity, point, canvas)
 
 func _draw() -> void:
+	var t := Time.get_ticks_usec()
+	_draw_world()
+	Probe.add("d:world", Time.get_ticks_usec() - t)
+
+func _draw_world() -> void:
 	if simulation == null:
 		return
 	if motion.previous_tick < 0:

@@ -1,11 +1,13 @@
 extends RefCounted
 const World = preload("res://sim/world/world_db.gd")
+const Probe = preload("res://sim/diagnostics/perf_probe.gd")
 ## Deterministic four-neighbour A*. Cached by the caller with a navigation revision.
 static func request_path(state: Dictionary, start: Array, goal: Array) -> Dictionary:
 	if not World.walkable(state, start) or not World.walkable(state, goal):
 		return {"ok": false, "error_code": "BLOCKED_ENDPOINT", "path": []}
 	if start == goal:
 		return {"ok": true, "error_code": "", "path": []}
+	Probe.count("astar_calls")
 	var frontier: Array = [start]
 	var costs: Dictionary = {World.cell_key(start): 0}
 	var parents: Dictionary = {}
@@ -21,6 +23,7 @@ static func request_path(state: Dictionary, start: Array, goal: Array) -> Dictio
 				best = index
 				best_score = score
 		var current: Array = frontier.pop_at(best)
+		Probe.count("astar_nodes")
 		var key := World.cell_key(current)
 		if key == goal_key:
 			var path: Array = []

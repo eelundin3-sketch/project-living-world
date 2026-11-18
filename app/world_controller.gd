@@ -19,6 +19,7 @@ const ContextActions = preload("res://sim/player/context_actions.gd")
 const MainMenu = preload("res://view/ui/main_menu.gd")
 const KnockoutScreen = preload("res://view/ui/knockout_screen.gd")
 const Law = preload("res://sim/law/law.gd")
+const Probe = preload("res://sim/diagnostics/perf_probe.gd")
 const CELL: float = 24.0
 var player_panels: CanvasLayer
 var world_audio: Node2D
@@ -210,6 +211,8 @@ func _process(delta: float) -> void:
 		simulation.submit("travel_run", {"run": Input.is_key_pressed(KEY_SHIFT)})
 	var started := Time.get_ticks_usec()
 	var advanced: int = clock.advance(delta, simulation)
+	Probe.add("f:simulation", Time.get_ticks_usec() - started)
+	Probe.count("ticks", advanced)
 	if advanced > 0:
 		tick_ms = float(Time.get_ticks_usec() - started) / 1000.0 / advanced
 	var shotgun_equipped: bool = simulation.state.get("shotgun", {}).get("equipped", false)
@@ -224,7 +227,9 @@ func _process(delta: float) -> void:
 	map_overlay.zoom = $ObserverCamera.zoom.x
 	map_overlay.player_world = $WorldView.motion.actors.get(str(simulation.state.player), {}).get("position", Vector2.ZERO)
 	map_overlay.queue_redraw()
+	var view_started := Time.get_ticks_usec()
 	$WorldView.animate(delta, clock.paused, clock.speed)
+	Probe.add("f:animate", Time.get_ticks_usec() - view_started)
 	if follow_player:
 		var cell: Array = simulation.state.entities[str(simulation.state.player)].cell
 		$ObserverCamera.position = $WorldView.motion.actors.get(str(simulation.state.player), {}).get("position", Vector2(cell[0], cell[1]) * CELL)
@@ -238,7 +243,9 @@ func _process(delta: float) -> void:
 	knockout.update_state(simulation.state, get_viewport().get_canvas_transform() * (body_world + Vector2(0, -6)), delta)
 	world_audio.present($WorldView.motion.cues, simulation.state, $ObserverCamera.position, clock.paused, delta)
 	if simulation.state.tick != last_draw_tick:
+		var refresh_started := Time.get_ticks_usec()
 		refresh_view()
+		Probe.add("f:refresh_ui", Time.get_ticks_usec() - refresh_started)
 	if not follow_player:
 		$WorldView.queue_redraw()
 
