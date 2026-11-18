@@ -118,7 +118,8 @@ static func advance(sim: RefCounted, npc_id: int) -> void:
 	var actor: Dictionary = s.entities[str(npc_id)]
 	if npc.nav_revision != s.world.nav_revision:
 		var goal: Array = World.Fixtures.interaction_cell(s, job.destination) if job.state in ["MOVING_TO_DEST", "DEPOSITING"] else source_stance(s, job)
-		var route := Nav.request_path(s, actor.cell, goal)
+		var keeps: bool = (npc.path.is_empty() and actor.cell == goal) or (not npc.path.is_empty() and npc.path.back() == goal and Nav.still_clear(s, npc.path))
+		var route := {"ok": true, "path": npc.path} if keeps else Nav.request_path(s, actor.cell, goal)
 		if not route.ok:
 			release(s, job.id, route.error_code)
 			return

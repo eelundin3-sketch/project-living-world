@@ -68,6 +68,8 @@ static func update(sim: RefCounted) -> void:
 			elif not npc.goal.is_empty():
 				var actions: int = cadence / 2 if step <= 2 else 1
 				var distance: int = mini(actions, npc.path.size())
+				if distance > 0 and npc.nav_revision != s.world.nav_revision and Nav.still_clear(s, npc.path):
+					npc.nav_revision = s.world.nav_revision   # the world changed elsewhere; this route is still open
 				if distance > 0 and npc.nav_revision == s.world.nav_revision:
 					s.entities[str(npc.id)].cell = npc.path[distance - 1]
 					npc.path = npc.path.slice(distance)
@@ -151,6 +153,8 @@ static func set_goal(s: Dictionary, npc: Dictionary, goal: String) -> void:
 
 static func _need_action(sim: RefCounted, npc: Dictionary) -> void:
 	var s: Dictionary = sim.state
+	if npc.nav_revision != s.world.nav_revision and not npc.path.is_empty() and Nav.still_clear(s, npc.path):
+		npc.nav_revision = s.world.nav_revision   # a change elsewhere in the world: keep walking this route
 	if npc.nav_revision != s.world.nav_revision and npc.get("sleeping", {}).is_empty():
 		var goal: String = npc.goal
 		npc.goal = ""

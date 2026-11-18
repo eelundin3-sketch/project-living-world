@@ -284,6 +284,8 @@ static func _work_at_tile(s: Dictionary, npc: Dictionary, site: Dictionary, tile
 	if absi(current[0] - tile[0]) + absi(current[1] - tile[1]) == 1:
 		site.work_stance = current.duplicate()
 		return true
+	if site.get("tile_path_revision", -1) != s.world.nav_revision and site.get("tile_path_target", []) == tile and site.get("tile_path_from", []) == current and not site.get("tile_path", []).is_empty() and Nav.still_clear(s, site.tile_path):
+		site.tile_path_revision = s.world.nav_revision   # the wall just placed is not on this route
 	if site.get("tile_path_target", []) != tile or site.get("tile_path_revision", -1) != s.world.nav_revision or site.get("tile_path_from", []) != current:
 		var best: Array = []
 		var found: bool = false

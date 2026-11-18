@@ -32,8 +32,11 @@ static func chunk_coord(x: int, y: int) -> Vector2i:
 	return Vector2i(floori(float(x) / CHUNK_SIDE), floori(float(y) / CHUNK_SIDE))
 
 static func walkable(state: Dictionary, cell: Array) -> bool:
-	var bounds: Array = state.world.get("bounds", [0, 0, WIDTH, HEIGHT])
-	return cell[0] >= bounds[0] and cell[1] >= bounds[1] and cell[0] < bounds[2] and cell[1] < bounds[3] and not state.world.blocked.has(cell_key(cell)) and not state.world.get("building_walls", {}).has(cell_key(cell)) and not state.world.get("fixture_cells", {}).has(cell_key(cell))
+	var world: Dictionary = state.world
+	var bounds: Array = world.get("bounds", [0, 0, WIDTH, HEIGHT])
+	if cell[0] < bounds[0] or cell[1] < bounds[1] or cell[0] >= bounds[2] or cell[1] >= bounds[3]: return false
+	var key: String = "%d,%d" % [cell[0], cell[1]]
+	return not world.blocked.has(key) and not world.get("building_walls", {}).has(key) and not world.get("fixture_cells", {}).has(key)
 
 static func get_cell(state: Dictionary, cell: Array) -> Dictionary:
 	return {"cell": cell, "walkable": walkable(state, cell), "chunk": [chunk_coord(cell[0], cell[1]).x, chunk_coord(cell[0], cell[1]).y]}

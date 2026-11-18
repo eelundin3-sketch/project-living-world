@@ -102,6 +102,8 @@ static func work_at(s: Dictionary, npc: Dictionary, destination: int, station: i
 	var target := World.Fixtures.interaction_cell(s, destination, station)
 	if actor.cell == target:
 		return true
+	if npc.get("work_revision", -1) != s.world.nav_revision and npc.get("work_destination", 0) == destination and npc.get("work_station", 0) == station and npc.get("work_from", []) == actor.cell and not npc.get("work_path", []).is_empty() and npc.work_path.back() == target and Nav.still_clear(s, npc.work_path):
+		npc.work_revision = s.world.nav_revision   # changed elsewhere; the route is still open
 	if npc.get("work_destination", 0) != destination or npc.get("work_station", 0) != station or npc.get("work_revision", -1) != s.world.nav_revision or npc.get("work_from", []) != actor.cell:
 		var route := Nav.request_path(s, actor.cell, target)
 		if not route.ok:
