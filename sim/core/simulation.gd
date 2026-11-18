@@ -87,6 +87,7 @@ func start_game(population: int = 5) -> void:
 	Chests.ensure_all(self)
 	World.lay_out_woodlands(self)
 	for town in state.settlements.values(): Professions.assign(state, town.id)
+	Sheriff.ensure(self)
 	Market.ensure_tents(self)
 
 func new_id() -> int:

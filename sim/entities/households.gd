@@ -158,6 +158,7 @@ static func daily(sim: RefCounted) -> void:
 			sim.record(s.entities[str(npc.id)].name + " has grown up and is ready to work.")
 	for town in s.settlements.values():
 		Professions.assign(s, town.id)
+		load("res://sim/settlement/sheriff.gd").ensure(sim)
 		_pair_up(sim, town)
 		_births(sim, town)
 
@@ -269,6 +270,7 @@ static func bed_info(s: Dictionary, npc: Dictionary) -> Dictionary:
 		for other in s.households.values():
 			if other.home == household.home: members.append_array(other.members)
 	members.sort()
+	if home == office: members = load("res://sim/settlement/sheriff.gd").roster(s, int(npc.settlement))   # each sheriff has his own bunk
 	var bed: Dictionary = beds[maxi(0, members.find(npc.id)) % beds.size()]
 	var rect: Array = bed.rect
 	var lie: Array = [rect[0] + rect[2] / 2, rect[1] + rect[3] / 2]

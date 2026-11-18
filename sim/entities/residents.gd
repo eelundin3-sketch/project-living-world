@@ -42,7 +42,9 @@ static func update(sim: RefCounted) -> void:
 		if Brawl.busy(s, npc): continue
 		if not npc.get("migration", {}).is_empty():
 			continue
-		if not npc.get("arrest", {}).is_empty(): continue   # making an arrest (law.gd)
+		if not npc.get("arrest", {}).is_empty():
+			if npc.has("sitting"): Sheriff.stand_up(s, npc)
+			continue   # making an arrest (law.gd)
 		if npc.occupation == "Trader" and load("res://sim/economy/traders.gd").away(s, npc):
 			continue   # on the road, or waiting at a foreign market
 		# Tiredness builds more slowly than hunger, so a normal day ends with people ready for bed.
@@ -109,9 +111,10 @@ static func _decide(sim: RefCounted, npc: Dictionary) -> void:
 	elif Professions.GATHERERS.has(npc.occupation):
 		Jobs.assign(s, npc.id)
 	elif npc.occupation == "Sheriff" and s.has("settlements"):
-		Sheriff.next_patrol(s, npc)
+		Sheriff.next_duty(s, npc)
 
 static func set_goal(s: Dictionary, npc: Dictionary, goal: String) -> void:
+	if npc.has("sitting"): Sheriff.stand_up(s, npc)   # nobody walks off from a chair that is part of the furniture
 	var destination_cell: Array = []
 	if goal == "sleep":
 		# Sleep in the bed assigned in the resident's home; with no bed, rest at the door as before.
@@ -156,6 +159,8 @@ static func _need_action(sim: RefCounted, npc: Dictionary) -> void:
 		s.entities[str(npc.id)].cell = npc.path.pop_front()
 		return
 	match npc.goal:
+		"desk":
+			Sheriff.sit(s, npc)
 		"patrol":
 			npc.goal = ""
 			npc.status = "On patrol, watching the square"

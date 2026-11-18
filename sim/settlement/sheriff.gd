@@ -46,6 +46,8 @@ static func patrol_points(s: Dictionary, npc: Dictionary) -> Array:
 ## Gives an idle sheriff the next patrol leg. Returns true when a goal was set.
 static func next_patrol(s: Dictionary, npc: Dictionary) -> bool:
 	var points: Array = patrol_points(s, npc)
+	if not npc.has("patrol_index"):
+		npc.patrol_index = (roster(s, int(npc.settlement)).find(int(npc.id)) * 2) % points.size()   # spread the rounds out
 	var index: int = (int(npc.get("patrol_index", -1)) + 1) % points.size()
 	for attempt in range(points.size()):
 		var route := Nav.request_path(s, s.entities[str(npc.id)].cell, points[index])
@@ -67,3 +69,101 @@ static func defender_order(s: Dictionary) -> Array:
 	for npc in s.residents.values():
 		(sheriffs if npc.occupation == "Sheriff" else others).append(npc)
 	return sheriffs + others
+
+# --- how many, and what they do all day ---------------------------------------------------------
+
+const ROTATION_TICKS := 1200        # how long one spell at the desk or on patrol lasts
+const MIN_SHERIFFS := 2
+const BIG_TOWN_RESIDENTS := 12      # a town with this many other adults keeps three
+
+## The town's living sheriffs, by id.
+static func roster(s: Dictionary, town: int) -> Array:
+	var ids: Array = []
+	for npc in s.get("residents", {}).values():
+		if npc.occupation == "Sheriff" and npc.settlement == town and npc.health > 0: ids.append(int(npc.id))
+	ids.sort()
+	return ids
+
+## Tops every town up to two sheriffs (three in a bigger town) with new residents who live at the
+## office, so the people already there keep their trades.
+static func ensure(sim: RefCounted) -> void:
+	var s: Dictionary = sim.state
+	if not s.has("settlements") or not s.has("residents"): return
+	var towns: Array = s.settlements.keys()
+	towns.sort()
+	for key in towns:
+		var town: Dictionary = s.settlements[key]
+		if not town.has("office") or not s.entities.has(str(town.office)): continue
+		var others := 0
+		for npc in s.residents.values():
+			if npc.settlement == town.id and npc.occupation not in ["Sheriff", "Child"] and npc.health > 0 and not npc.get("garrison", false): others += 1
+		var want: int = 3 if others >= BIG_TOWN_RESIDENTS else MIN_SHERIFFS
+		var have: int = roster(s, town.id).size()
+		var office: Dictionary = s.entities[str(town.office)]
+		while have < want:
+			var door: Array = office.get("door", office.cell)
+			var id: int = load("res://sim/entities/residents.gd").add_resident(sim, town.id, [door[0], door[1] + 1 + have])
+			s.residents[str(id)].occupation = "Sheriff"
+			s.residents[str(id)].garrison = true   # lives at the office; does not change the trades the town needs
+			have += 1
+		if have > 0: dress(s)
+
+## "desk" or "patrol": sheriffs take turns, so at least one is in the office at any time.
+static func duty(s: Dictionary, npc: Dictionary) -> String:
+	var ids: Array = roster(s, int(npc.settlement))
+	var index: int = ids.find(int(npc.id))
+	if index < 0 or ids.size() < 2: return "patrol"
+	var phase: int = (s.tick / ROTATION_TICKS) % ids.size()
+	return "desk" if (index + phase) % ids.size() == 0 else "patrol"
+
+## The office chair, and the free cell beside it to walk to.
+static func chair_of(s: Dictionary, npc: Dictionary) -> Dictionary:
+	var office: Dictionary = s.entities.get(str(s.get("settlements", {}).get(str(npc.settlement), {}).get("office", 0)), {})
+	for item in office.get("furniture", []):
+		if item.kind != "chair": continue
+		var cell: Array = [item.rect[0], item.rect[1]]
+		for offset in [[0, 1], [0, -1], [-1, 0], [1, 0]]:
+			var approach: Array = [cell[0] + offset[0], cell[1] + offset[1]]
+			if World.walkable(s, approach):
+				return {"cell": cell, "approach": approach, "face": [-offset[0], -offset[1]]}
+	return {}
+
+## Chooses between the desk and the rounds.
+static func next_duty(s: Dictionary, npc: Dictionary) -> bool:
+	if duty(s, npc) == "desk":
+		if not npc.get("sitting", {}).is_empty():
+			npc.work_pause_until = s.tick + 300
+			npc.status = "Doing paperwork at his desk"
+			return true
+		if go_desk(s, npc): return true
+	elif not npc.get("sitting", {}).is_empty():
+		stand_up(s, npc)
+	return next_patrol(s, npc)
+
+static func go_desk(s: Dictionary, npc: Dictionary) -> bool:
+	var chair := chair_of(s, npc)
+	if chair.is_empty(): return false
+	var route := Nav.request_path(s, s.entities[str(npc.id)].cell, chair.approach)
+	if not route.ok: return false
+	npc.path = route.path
+	npc.nav_revision = s.world.nav_revision
+	npc.goal = "desk"
+	npc.status = "Going to his desk"
+	return true
+
+## Sits in the chair (the cell is furniture, so the body is put there by hand, as for a sleeper).
+static func sit(s: Dictionary, npc: Dictionary) -> void:
+	var chair := chair_of(s, npc)
+	if chair.is_empty(): npc.goal = ""; return
+	s.entities[str(npc.id)].cell = chair.cell.duplicate()
+	npc.sitting = {"chair": chair.cell.duplicate(), "approach": chair.approach.duplicate(), "face": chair.face.duplicate(), "since": s.tick}
+	npc.goal = ""
+	npc.path = []
+	npc.status = "Doing paperwork at his desk"
+	npc.work_pause_until = s.tick + 600
+
+static func stand_up(s: Dictionary, npc: Dictionary) -> void:
+	var sitting: Dictionary = npc.get("sitting", {})
+	if sitting.is_empty(): return
+	s.entities[str(npc.id)].cell = sitting.approach.duplicate()
+	npc.erase("sitting")
