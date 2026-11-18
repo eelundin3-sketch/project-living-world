@@ -3,7 +3,7 @@ const World = preload("res://sim/world/world_db.gd")
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const Recipes = preload("res://sim/production/recipe_system.gd")
 const Market = preload("res://sim/economy/market.gd")
-const Health = preload("res://sim/player/body_health.gd")
+const Health = preload("res://sim/combat/body_health.gd")
 const Crops = preload("res://sim/farming/crops.gd")
 const Looting = preload("res://sim/player/looting.gd")
 static func initialize(s: Dictionary) -> void:

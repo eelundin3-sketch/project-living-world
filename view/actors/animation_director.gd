@@ -4,7 +4,8 @@ const Planner = preload("res://sim/settlement/planner.gd")
 const World = preload("res://sim/world/world_db.gd")
 const BuildMotion = preload("res://view/actors/build_motion.gd")
 const Outfits = preload("res://sim/entities/outfits.gd")
-const Brawl = preload("res://sim/player/brawl.gd")
+const Brawl = preload("res://sim/combat/brawl.gd")
+const Limbs = preload("res://sim/combat/limbs.gd")
 const CELL: float = 24.0
 const WALK_CYCLE_METERS := 2.0
 const RUN_CYCLE_METERS := 3.25
@@ -51,6 +52,10 @@ static func action_for(s: Dictionary, entity: Dictionary, aim_held: bool = false
 			result.action = "getup"
 			result.phase = float(s.tick - int(knock.down_until)) / float(Brawl.RISE_TICKS)
 		return result
+	# Both legs shot out: crawling along the ground.
+	if Limbs.crawling(s, int(entity.id)) and (npc.is_empty() or int(npc.get("health", 100)) > 0):
+		result.action = "crawl"
+		return result
 	if int(npc.get("impact_until", 0)) > s.tick:
 		result.action = "stagger" if npc.get("impact_kind", "") == "shove" else "hit"
 		result.phase = 1.0 - float(npc.impact_until - s.tick) / 12.0
@@ -67,6 +72,17 @@ static func action_for(s: Dictionary, entity: Dictionary, aim_held: bool = false
 				result.phase = clampf(float(s.tick - int(arrest.since)) / 30.0, 0.0, 1.0)
 			"escort": result.action = "escort"
 			"book": result.action = "search" if s.tick - int(arrest.since) < 50 else "idle"   # the pat-down, then the paperwork
+			"engage":
+				# Hide behind cover, lean out and aim, fire, and reload while hidden.
+				var cycle: Dictionary = npc.get("cover_cycle", {})
+				match str(cycle.get("phase", "hide")):
+					"peek": result.action = "aim"
+					"fire":
+						result.action = "shoot"
+						result.phase = clampf(float(s.tick - int(cycle.get("since", s.tick))) / 8.0, 0.0, 1.0)
+					_: result.action = "reload" if int(cycle.get("ammo", 1)) <= 0 else "gun_carry"
+			"backup": result.action = "aim"
+			"assist": result.action = "gun_carry"
 			"pursue": result.action = "combat_idle"
 			_: result.action = "idle"
 		return result
@@ -119,6 +135,7 @@ static func action_for(s: Dictionary, entity: Dictionary, aim_held: bool = false
 		var unarmed: Dictionary = s.get("player_control", {}).get("unarmed", {})
 		if not unarmed.is_empty() and s.tick < int(unarmed.end):
 			result.action = unarmed.kind
+			result.style = str(unarmed.get("style", "straight"))
 			result.phase = clampf(float(s.tick - unarmed.start) / maxf(1.0, float(unarmed.end - unarmed.start)), 0.0, 1.0)
 			return result
 	if entity.kind == "player" and not s.get("player_health", {}).get("treatment", {}).is_empty():
@@ -201,7 +218,7 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 	for fight_event in fight_events:
 		if int(fight_event.serial) <= last_brawl_serial: continue
 		last_brawl_serial = int(fight_event.serial)
-		var cue_kind: String = {"punch_hit": "punch", "shove_hit": "shove", "fall": "thud"}.get(fight_event.kind, "")
+		var cue_kind: String = {"punch_hit": "punch", "shove_hit": "shove", "fall": "thud", "gunshot": "shot"}.get(fight_event.kind, "")
 		if not cue_kind.is_empty(): cues.append({"kind": cue_kind, "position": Vector2(fight_event.cell[0], fight_event.cell[1]) * CELL})
 	var dt: float = 0.0 if paused else minf(delta, 0.1) * speed
 	time += dt
@@ -260,6 +277,9 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 			var resident: Dictionary = s.get("residents", {}).get(key, {})
 			var thrown: bool = (not resident.is_empty() and Brawl.knocked(s, resident)) or (entity.kind == "player" and Brawl.player_down(s))
 			if thrown: follow = maxf(follow, CELL * dt * 18.0)
+			var gait_mode: String = Limbs.mode(s, int(entity.id))
+			if gait_mode == "crawl": follow = CELL * dt * 1.05
+			elif gait_mode == "limp": follow = minf(follow, CELL * dt * 2.7)
 			pose.position = before.move_toward(target, follow)
 		# At high simulation speed a frame can skip a corner; never interpolate feet
 		# through a solid fixture/wall while catching up with authoritative movement.
@@ -354,6 +374,14 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 		pose.facing = -1.0 if cos(float(pose.heading)) < 0.0 else 1.0
 		pose.back = sin(float(pose.heading)) < -0.35
 		pose.aiming = entity.kind == "player" and player_aiming
+		pose.bloom = int(s.get("shotgun", {}).get("bloom", 0)) if entity.kind == "player" else 0
+		pose.limp = Limbs.mode(s, int(entity.id)) == "limp"
+		pose.limp_side = -1 if Limbs.disabled(s, int(entity.id), "left_leg") else 1
+		var dead_arms: Array = []
+		# "right_*" is the figure's side -1 (see the health screen), so the right arm is arms[-1].
+		if Limbs.disabled(s, int(entity.id), "right_arm"): dead_arms.append(-1)
+		if Limbs.disabled(s, int(entity.id), "left_arm"): dead_arms.append(1)
+		pose.dead_arms = dead_arms
 		pose.ready = entity.kind == "player" and player_ready
 		# An unreadied shotgun, and every sheriff's, hangs from a sling across the back.
 		var carried_items: Dictionary = s.inventories.get(key, {}).get("items", {})
@@ -392,9 +420,9 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 			action = pose.handling
 			state_action.phase = pose.handling_age / 0.5
 		# An armed upper-body pose can play over the walking or running legs.
-		var lawman_armed: bool = str(s.get("residents", {}).get(key, {}).get("arrest", {}).get("phase", "")) in ["standoff", "approach"]
+		var lawman_armed: bool = str(s.get("residents", {}).get(key, {}).get("arrest", {}).get("phase", "")) in ["standoff", "approach", "engage", "backup", "assist"]
 		var gun_pose := (gun_equipped or lawman_armed) and action in ["gun_carry", "aim", "reload", "shoot"]
-		if pose.moving and not gun_pose and action not in ["punch", "shove", "kick", "hit", "stagger", "down", "fall", "getup", "rest", "cuffed", "escort", "surrender", "cuff", "search"]:
+		if pose.moving and not gun_pose and action not in ["punch", "shove", "kick", "hit", "stagger", "down", "fall", "getup", "rest", "cuffed", "escort", "surrender", "cuff", "search", "crawl"]:
 			action = "run" if sprinting else ("carry" if quantity > 0 else "walk")
 		elif entity.kind == "player" and player_ready and action == "idle":
 			action = "ready"
@@ -407,6 +435,7 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 		if action in ["punch", "shove", "kick", "stagger", "cuff", "shoot", "reload", "melee", "hit", "fall", "getup", "treat"] and state_action.phase >= 0:
 			var duration: float = 1.0
 			match action:
+				"punch": duration = {"hook": 1.1, "uppercut": 1.2, "haymaker": 1.6}.get(str(state_action.get("style", "straight")), 1.0)
 				"stagger": duration = 1.2
 				"cuff": duration = 3.0
 				"fall": duration = float(state_action.get("duration", Brawl.FALL_TICKS / 10.0))
@@ -441,7 +470,23 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 		# Crouching eases down in about a third of a second with a small dip past the final
 		# height, and rises again a little more slowly, so neither is a snap.
 		var wants_sneak: bool = is_player and bool(s.get("player_control", {}).get("crouching", false)) and action not in ["fall", "down", "getup", "treat", "rest"]
-		var sneak_raw: float = move_toward(float(pose.get("sneak_raw", 0.0)), 1.0 if wants_sneak else 0.0, dt * (3.0 if wants_sneak else 2.4))
+		# In cover the body is low against the wall; leaning out lifts it a little and shifts it towards the corner.
+		var in_cover: bool = false
+		var lean_to := Vector2.ZERO
+		if entity.kind == "player":
+			var control: Dictionary = s.get("player_control", {})
+			in_cover = control.has("cover") and not pose.moving
+			if control.has("peek"): lean_to = Vector2(control.peek.to[0] - control.peek.from[0], control.peek.to[1] - control.peek.from[1])
+		else:
+			var cycle: Dictionary = s.get("residents", {}).get(key, {}).get("cover_cycle", {})
+			in_cover = not cycle.is_empty() or bool(s.get("residents", {}).get(key, {}).get("fear", {}).get("arrived", false))
+			if str(cycle.get("phase", "")) in ["peek", "fire"] and not cycle.get("peek_to", []).is_empty():
+				lean_to = Vector2(cycle.peek_to[0] - entity.cell[0], cycle.peek_to[1] - entity.cell[1])
+		pose.peek_lean = Vector2(pose.get("peek_lean", Vector2.ZERO)).move_toward(lean_to, dt * 6.0)
+		var cover_target: float = 0.0
+		if in_cover: cover_target = 0.46 if lean_to != Vector2.ZERO else 0.82
+		var sneak_goal: float = 1.0 if wants_sneak else cover_target
+		var sneak_raw: float = move_toward(float(pose.get("sneak_raw", 0.0)), sneak_goal, dt * (3.0 if sneak_goal > float(pose.get("sneak_raw", 0.0)) else 2.4))
 		pose.sneak_raw = sneak_raw
 		var eased: float = smoothstep(0.0, 1.0, sneak_raw)
 		pose.sneak = eased + (0.1 * sin(sneak_raw * PI) * sneak_raw if wants_sneak else 0.0)
@@ -452,6 +497,7 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 		pose.breath = clampf(1.0 - float(stamina_now - 20) / 40.0, 0.35, 1.0) if bool(stamina_state.get("winded", false)) else 0.0
 		pose.gun_equipped = gun_equipped
 		pose.treat_part = state_action.get("treat_part", "")
+		pose.punch_style = str(state_action.get("style", "straight")) if action == "punch" else "straight"
 		pose.treat_kind = state_action.get("treat_kind", "")
 		pose.fall_style = state_action.get("style", "back")
 		pose.rest_rot = state_action.get("rest_rot", -1)

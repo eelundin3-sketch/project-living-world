@@ -35,7 +35,7 @@ static func settlement_resources(s: Dictionary, settlement: int) -> Dictionary:
 			"ore": result.ore += 1 if near else 0
 			"farm": result.fields += 1 if entity.settlement == settlement else 0
 	for npc in s.residents.values():
-		if npc.settlement == settlement and npc.health > 0 and npc.occupation != "Child": result.population += 1
+		if npc.settlement == settlement and npc.health > 0 and npc.occupation != "Child" and not npc.get("garrison", false): result.population += 1   # the extra office sheriffs are not part of the trades economy
 	for workshop in s.get("workshops", {}).values():
 		if workshop.settlement == settlement: result.workshops[workshop.get("kind", "sawmill")] = true
 	result.danger = int(s.get("routes", {}).get("1", {}).get("risk", 0))
@@ -87,7 +87,7 @@ static func assign(s: Dictionary, settlement: int) -> void:
 		if best == "~": break
 		s.residents[str(free.pop_front())].occupation = best
 	if s.has("settlements"):
-		load("res://sim/settlement/sheriff.gd").dress(s)
+		load("res://sim/law/sheriff.gd").dress(s)
 		load("res://sim/economy/traders.gd").ensure(s)
 
 static func gathers(npc: Dictionary, target_kind: String) -> bool:

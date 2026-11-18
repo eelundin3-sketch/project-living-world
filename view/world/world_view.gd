@@ -6,6 +6,7 @@ const MarketArt = preload("res://view/world/market_art.gd")
 const Crops = preload("res://sim/farming/crops.gd")
 const Planner = preload("res://sim/settlement/planner.gd")
 const World = preload("res://sim/world/world_db.gd")
+const Orient = preload("res://sim/world/orient.gd")
 const FixtureArt = preload("res://view/world/fixture_art.gd")
 const Fixtures = preload("res://view/world/fixture_director.gd")
 const Director = preload("res://view/actors/animation_director.gd")
@@ -130,11 +131,15 @@ class DepthObject extends Node2D:
 	var furniture_data: Dictionary = {}
 	var construction_tile: Dictionary = {}
 	var wall_neighbours: Dictionary = {}
+	var door_data: Dictionary = {}
+	var door_open: float = 0.0
 	func _draw() -> void:
 		if projector.simulation == null: return
 		var s: Dictionary = projector.simulation.state
 		if object_kind == "wall":
 			MapArt.cutaway_wall(self, wall_neighbours)
+		elif object_kind == "door":
+			MapArt.door(self, door_data, door_open)
 		elif object_kind == "construction_tile":
 			MapArt.build_piece(self, construction_tile.kind, construction_tile.progress, construction_tile.cell)
 		elif object_kind == "tree":
@@ -194,6 +199,7 @@ func animate(delta: float, paused: bool, speed: int) -> void:
 	if not paused: atmosphere_time += minf(delta, 0.1) * speed
 	fixture_motion.update(simulation.state,delta,paused,speed)
 	_sync_depth_objects()
+	_update_doors(minf(delta, 0.1))
 	# Lighting follows the authoritative 24-hour clock and freezes on pause.
 	var sun: float = sin((float(simulation.state.tick % 14400) / 14400.0 - 0.25) * TAU)
 	var light: float = smoothstep(-0.35, 0.25, sun)
@@ -291,7 +297,7 @@ func _depth_node(key: String, kind: String, pos: Vector2, entity_id: int = 0) ->
 		item.queue_redraw()
 		return
 	match kind:
-		"wall", "rock", "furniture": pass
+		"wall", "rock", "furniture", "door": pass
 		"tree":
 			# Trees sway slowly, so a third of them per frame is invisible; stumps and falling trees animate every frame.
 			var logs: int = simulation.state.inventories.get(str(entity_id), {}).get("items", {}).get("log", 0)
@@ -403,10 +409,69 @@ func _sync_depth_objects() -> void:
 				if depth_objects[key].furniture_data != entry:
 					depth_objects[key].furniture_data = entry
 					depth_objects[key].queue_redraw()
+	# Doors: one in every outside doorway and one in every passage between rooms.
+	for entity in s.entities.values():
+		if not entity.has("footprint") or not entity.has("door"): continue
+		var doors: Array = []
+		var outer_door: Array = entity.door
+		var out := Vector2(Orient.outward(int(entity.get("door_side", 2))))
+		doors.append({"suffix": "out", "cells": [outer_door], "axis": "h" if absf(out.y) > 0.5 else "v", "inward": -out, "style": "heavy" if entity.kind in ["office", "warehouse", "market", "sawmill", "bakery", "forge"] else "plank", "double": false})
+		var index := 0
+		for gap in World.interior_doorways(entity):
+			var cells: Array = gap.cells
+			var inward_dir: Vector2 = Vector2(1, 0) if gap.axis == "v" else Vector2(0, -1)
+			doors.append({"suffix": "in%d" % index, "cells": cells, "axis": gap.axis, "inward": inward_dir, "style": "plank", "double": cells.size() >= 3})
+			index += 1
+		for entry in doors:
+			var cells: Array = entry.cells
+			var first: Array = cells[0]
+			var last: Array = cells[cells.size() - 1]
+			var pos := Vector2(first[0] * CELL, first[1] * CELL + CELL / 2)
+			if not bounds.has_point(pos): continue
+			var key := "door:%d:%s" % [entity.id, entry.suffix]
+			keep[key] = true
+			_depth_node(key, "door", pos)
+			var local_first := Vector2(0, -CELL / 2)
+			var local_last: Vector2 = Vector2((last[0] - first[0]) * CELL, (last[1] - first[1]) * CELL) + local_first
+			var a: Vector2
+			var b: Vector2
+			if entry.axis == "h":
+				a = local_first - Vector2(CELL / 2, 0)
+				b = local_last + Vector2(CELL / 2, 0)
+			else:
+				a = local_first - Vector2(0, CELL / 2)
+				b = local_last + Vector2(0, CELL / 2)
+			var node: DepthObject = depth_objects[key]
+			var data := {"a": a, "b": b, "inward": entry.inward, "style": entry.style, "double": entry.double}
+			if node.door_data.is_empty(): node.queue_redraw()
+			node.door_data = data
 	for key in depth_objects.keys():
 		if not keep.has(key):
 			depth_objects[key].queue_free()
 			depth_objects.erase(key)
+
+## Every frame: a door swings open when anyone is near it and shuts about a second after they leave.
+## Only art: the doorway stays walkable whatever the door is doing.
+func _update_doors(delta: float) -> void:
+	var near_sq: float = pow(CELL * 1.7, 2.0)
+	var opened_now: Array = []
+	for key in depth_objects.keys():
+		var node: DepthObject = depth_objects[key]
+		if node.object_kind != "door" or node.door_data.is_empty(): continue
+		var centre: Vector2 = node.position + (node.door_data.a + node.door_data.b) * 0.5
+		var someone: bool = false
+		for pose in motion.actors.values():
+			if (pose.position - centre).length_squared() < near_sq: someone = true; break
+		var hold: float = float(door_hold.get(key, 0.0))
+		hold = 1.0 if someone else maxf(0.0, hold - delta)
+		door_hold[key] = hold
+		var target: float = 1.0 if hold > 0.0 else 0.0
+		var before: float = node.door_open
+		node.door_open = move_toward(before, target, delta / 0.25)
+		if before < 0.04 and node.door_open >= 0.04: opened_now.append(centre)
+		if absf(node.door_open - before) > 0.001: node.queue_redraw()
+	for centre in opened_now:
+		motion.cues.append({"kind": "door", "position": centre})
 
 func view_bounds() -> Rect2:
 	var camera := get_viewport().get_camera_2d()
@@ -557,6 +622,7 @@ func _draw_map_labels(s: Dictionary) -> void:
 	if camera == null or camera.zoom.x >= 0.6: return
 	var inverse: float = 1.0 / camera.zoom.x
 	for town in s.get("settlements", {}).values():
+		if overlay_labels: break   # the map overlay draws the town names itself, clear of the hotbar
 		var store: Array = s.entities[str(town.warehouse)].cell
 		var at := Vector2(store[0], store[1] - 16) * CELL
 		var size: Vector2 = font.get_string_size(town.name, HORIZONTAL_ALIGNMENT_LEFT, -1, int(22 * inverse))
@@ -905,6 +971,8 @@ func is_far() -> bool:
 
 var decor_nodes: Dictionary = {}
 var decor_signatures: Dictionary = {}
+var door_hold: Dictionary = {}
+var overlay_labels: bool = false      # set by the controller while the map overlay is up
 var decor_clock: float = 99.0
 
 ## Creates, refreshes and removes the cached ground layers; checked twice a second.

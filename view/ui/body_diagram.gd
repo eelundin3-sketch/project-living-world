@@ -3,7 +3,7 @@ extends Control
 ## standing front-on, with the wounds drawn over it. Hover a part to find it, click to select,
 ## right-click for treatment. Zones are measured from the character's real joints.
 const Character = preload("res://view/actors/drawn_character.gd")
-const Health = preload("res://sim/player/body_health.gd")
+const Health = preload("res://sim/combat/body_health.gd")
 
 signal part_selected(part: String)
 signal treatment_requested(part: String)

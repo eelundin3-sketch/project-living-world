@@ -84,7 +84,7 @@ static func seed_world(sim: RefCounted) -> void:
 	s.inventories = {}
 	s.accounting = {"initial": {}, "created": {}, "consumed": {}}
 	s.player = add_entity(sim, "player", Names.generate(sim), [62, 49])
-	Inventory.create(s, s.player, 40, {"food": 4})
+	Inventory.create(s, s.player, 40, {"food": 4, "shotgun": 1, "shell": 10})   # you begin with a shotgun, lowered, and ten shells
 	s.warehouse = add_entity(sim, "warehouse", "Alder Hollow storehouse", [64, 46], 1)
 	Inventory.create(s, s.warehouse, 3000, {"food": 160})
 	s.home = add_entity(sim, "home", "Common lodge", [46, 42], 1)
@@ -229,6 +229,36 @@ static func add_constructed_wall(s: Dictionary, id: int, cell: Array) -> void:
 static func building_rect(entity: Dictionary) -> Rect2i:
 	var data: Array = entity.get("footprint", [])
 	return Rect2i(data[0], data[1], data[2], data[3]) if data.size() == 4 else plot_rect(entity, entity.kind)
+
+## The passages through a building's inside walls: [{"cells": [[x, y], ...], "axis": "h" | "v"}], where
+## "v" means the gap runs up and down a vertical partition. Worked out from the walls themselves, so
+## old saves need nothing stored.
+static func interior_doorways(entity: Dictionary) -> Array:
+	var walls: Array = entity.get("interior_walls", [])
+	if walls.is_empty(): return []
+	var wall_set: Dictionary = {}
+	var xs: Dictionary = {}
+	var ys: Dictionary = {}
+	var low := Vector2i(1 << 30, 1 << 30)
+	var high := Vector2i(-(1 << 30), -(1 << 30))
+	for cell in walls:
+		wall_set["%d,%d" % [cell[0], cell[1]]] = true
+		xs[int(cell[0])] = true
+		ys[int(cell[1])] = true
+		low = Vector2i(mini(low.x, int(cell[0])), mini(low.y, int(cell[1])))
+		high = Vector2i(maxi(high.x, int(cell[0])), maxi(high.y, int(cell[1])))
+	var result: Array = []
+	if xs.size() == 1:
+		var gap: Array = []
+		for y in range(low.y, high.y + 1):
+			if not wall_set.has("%d,%d" % [low.x, y]) and building_contains(entity, [low.x, y]): gap.append([low.x, y])
+		if not gap.is_empty(): result.append({"cells": gap, "axis": "v"})
+	elif ys.size() == 1:
+		var gap: Array = []
+		for x in range(low.x, high.x + 1):
+			if not wall_set.has("%d,%d" % [x, low.y]) and building_contains(entity, [x, low.y]): gap.append([x, low.y])
+		if not gap.is_empty(): result.append({"cells": gap, "axis": "h"})
+	return result
 
 static func inside_building(s: Dictionary, cell: Array) -> int:
 	for entity in s.entities.values():

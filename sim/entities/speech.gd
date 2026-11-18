@@ -2,7 +2,7 @@ extends RefCounted
 ## What villagers say. Lines are chosen deterministically from the "speech" random stream and kept
 ## in `state.speech` (a short rolling list) for the view to draw as speech bubbles.
 ## Ambient chatter: idle neighbours make small talk, and now and then someone greets the player.
-const Brawl = preload("res://sim/player/brawl.gd")
+const Brawl = preload("res://sim/combat/brawl.gd")
 const LIFETIME := 45          # ticks a bubble stays up
 const MAX_LINES := 30
 
@@ -18,6 +18,7 @@ const LINES: Dictionary = {
 	"greet_player": ["Morning, traveller.", "Afternoon.", "Evening, stranger.", "Hello there.", "Good to see a new face.", "Keep your boots dry, friend.", "Quiet day, isn't it?"],
 	"smalltalk": ["Looks like rain later.", "The rye's coming along nicely.", "Prices at the market are odd today.", "Did you hear? A trader's been walking the road.", "I could do with a rest.", "Timber's going quickly this week.", "My back aches from the work.", "Have you seen the sheriff about?", "The days are getting shorter.", "Bread's ready soon, I think.", "That new house is coming along.", "Strange folk, these travellers."],
 	"reply": ["Aye, I'd say so.", "Hah, you're not wrong.", "So I've heard.", "Don't get me started.", "Hmm, fair enough.", "Mm. Take care now.", "Tell me about it."],
+	"scared": ["Gunshots! Get down!", "Somebody is shooting!", "Take cover!", "Run for it!", "Oh no, oh no..."],
 	"trader_pitch": ["Cheap planks, going east!", "Fine timber, fair prices!", "Best food on the Moss Road!"],
 }
 

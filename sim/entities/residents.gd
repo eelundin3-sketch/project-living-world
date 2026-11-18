@@ -3,14 +3,15 @@ const World = preload("res://sim/world/world_db.gd")
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const Jobs = preload("res://sim/jobs/job_board.gd")
 const Nav = preload("res://sim/movement/navigation.gd")
-const LocalCombat = preload("res://sim/factions/local_combat.gd")
+const LocalCombat = preload("res://sim/combat/local_combat.gd")
 const Names = preload("res://sim/entities/names.gd")
 const Needs = preload("res://sim/entities/needs.gd")
 const Households = preload("res://sim/entities/households.gd")
 const Professions = preload("res://sim/settlement/professions.gd")
 const Crops = preload("res://sim/farming/crops.gd")
-const Sheriff = preload("res://sim/settlement/sheriff.gd")
-const Brawl = preload("res://sim/player/brawl.gd")
+const Sheriff = preload("res://sim/law/sheriff.gd")
+const Brawl = preload("res://sim/combat/brawl.gd")
+const Limbs = preload("res://sim/combat/limbs.gd")
 
 static func spawn(sim: RefCounted, count: int, settlement: int = 1, origin: Array = [60, 49]) -> void:
 	var s: Dictionary = sim.state
@@ -41,7 +42,10 @@ static func update(sim: RefCounted) -> void:
 		if Brawl.busy(s, npc): continue
 		if not npc.get("migration", {}).is_empty():
 			continue
-		if not npc.get("arrest", {}).is_empty(): continue   # making an arrest (law.gd)
+		if not npc.get("fear", {}).is_empty(): continue   # running for cover or crouched behind it (fear.gd)
+		if not npc.get("arrest", {}).is_empty():
+			if npc.has("sitting"): Sheriff.stand_up(s, npc)
+			continue   # making an arrest (law.gd)
 		if npc.occupation == "Trader" and load("res://sim/economy/traders.gd").away(s, npc):
 			continue   # on the road, or waiting at a foreign market
 		# Tiredness builds more slowly than hunger, so a normal day ends with people ready for bed.
@@ -54,11 +58,15 @@ static func update(sim: RefCounted) -> void:
 		var cadence: int = 2 if npc.fidelity == "detailed" else (10 if npc.fidelity == "coarse" else 100)
 		if (npc.fidelity == "detailed" and s.tick % 10 == npc.id % 10) or (npc.fidelity != "detailed" and s.tick % cadence == 0):
 			_decide(sim, npc)
+		var step: int = Limbs.step_ticks(s, npc.id)
+		if step > 2 and npc.job != 0 and Limbs.crawling(s, npc.id):
+			Jobs.release(s, npc.job, "CRAWLING")   # nobody works on their belly
+		if step > 2 and s.tick % step != 0: continue   # a limp or a crawl: far fewer steps
 		if s.tick % cadence == 0:
 			if npc.job != 0:
 				Jobs.advance_many(sim, npc.id, cadence / 2)
 			elif not npc.goal.is_empty():
-				var actions: int = cadence / 2
+				var actions: int = cadence / 2 if step <= 2 else 1
 				var distance: int = mini(actions, npc.path.size())
 				if distance > 0 and npc.nav_revision == s.world.nav_revision:
 					s.entities[str(npc.id)].cell = npc.path[distance - 1]
@@ -104,9 +112,10 @@ static func _decide(sim: RefCounted, npc: Dictionary) -> void:
 	elif Professions.GATHERERS.has(npc.occupation):
 		Jobs.assign(s, npc.id)
 	elif npc.occupation == "Sheriff" and s.has("settlements"):
-		Sheriff.next_patrol(s, npc)
+		Sheriff.next_duty(s, npc)
 
 static func set_goal(s: Dictionary, npc: Dictionary, goal: String) -> void:
+	if npc.has("sitting"): Sheriff.stand_up(s, npc)   # nobody walks off from a chair that is part of the furniture
 	var destination_cell: Array = []
 	if goal == "sleep":
 		# Sleep in the bed assigned in the resident's home; with no bed, rest at the door as before.
@@ -151,6 +160,8 @@ static func _need_action(sim: RefCounted, npc: Dictionary) -> void:
 		s.entities[str(npc.id)].cell = npc.path.pop_front()
 		return
 	match npc.goal:
+		"desk":
+			Sheriff.sit(s, npc)
 		"patrol":
 			npc.goal = ""
 			npc.status = "On patrol, watching the square"

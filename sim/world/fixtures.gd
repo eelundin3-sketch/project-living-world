@@ -58,6 +58,7 @@ static func install(s: Dictionary, building: Dictionary) -> void:
 				building.furniture = [
 					{"kind": "bed", "rect": [left+1, top+1, 2, 3], "rot": 0, "for": "prisoner"},
 					{"kind": "bed", "rect": [left+11, top+6, 3, 2], "rot": 1, "for": "sheriff"},
+					{"kind": "bed", "rect": [left+7, top+5, 2, 3], "rot": 0, "for": "sheriff"},
 					# The booking desk: new prisoners are searched, photographed and handed their uniform here,
 					# and the sheriff does his paperwork at it. Their belongings go in the locker beside the door.
 					{"kind": "booking_desk", "rect": [left+10, top+9, 4, 2], "rot": 2},
