@@ -152,8 +152,41 @@ static func building(c: Node2D, entity: Dictionary) -> void:
 				floor_tile(c, Rect2(Vector2(x, y) * 24 - Vector2(12, 12), Vector2(24, 24)), x, y)
 	var threshold := Rect2(Vector2(entity.cell[0], entity.cell[1]) * 24 - Vector2(12, 12), Vector2(24, 24))
 	floor_tile(c, threshold, entity.cell[0], entity.cell[1])
-	c.draw_rect(Rect2(threshold.position + Vector2(0, 19), Vector2(24, 5)), Color("b58f5f"))
-	c.draw_line(threshold.end - Vector2(24, 1), threshold.end - Vector2(0, 1), Color("634327"), 1)
+	if entity.kind == "office":
+		# The jail cell's iron bars across the gap in the partition; the door swings open for escorts and release.
+		var bar_x: float = (float(entity.footprint[0]) + 5.0) * 24.0
+		var top: float = (float(entity.footprint[1]) + 7.0) * 24.0 - 12.0
+		if bool(entity.get("cell_open", false)):
+			c.draw_rect(Rect2(Vector2(bar_x - 12, top), Vector2(24, 72)), Color(0.0, 0.0, 0.0, 0.10))
+			# the open leaf lies along the main-room side of the gap, hinged at its top end
+			c.draw_rect(Rect2(Vector2(bar_x + 12, top - 2), Vector2(4, 4)), Color("3a3a3d"))
+			c.draw_rect(Rect2(Vector2(bar_x + 12, top - 3), Vector2(48, 7)), Color("2d2d2f"))
+			c.draw_line(Vector2(bar_x + 12, top - 2), Vector2(bar_x + 60, top - 2), Color("8a8c90"), 0.9, true)
+			for i in range(5): c.draw_line(Vector2(bar_x + 18 + i * 9, top - 1), Vector2(bar_x + 18 + i * 9, top + 18), Color("2d2d2f"), 2.0, true)
+			c.draw_line(Vector2(bar_x + 12, top + 18), Vector2(bar_x + 60, top + 18), Color("3a3a3d"), 2.0, true)
+		else:
+			c.draw_rect(Rect2(Vector2(bar_x - 12, top), Vector2(24, 72)), Color(0.12, 0.1, 0.09, 0.25))
+			for i in range(6):
+				var x: float = bar_x - 10.0 + float(i) * 4.0
+				c.draw_line(Vector2(x, top), Vector2(x, top + 72), Color("2d2d2f"), 2.2, true)
+				c.draw_line(Vector2(x - 0.6, top), Vector2(x - 0.6, top + 72), Color("8a8c90"), 0.8, true)
+			for y in [top + 4, top + 36, top + 68]:
+				c.draw_line(Vector2(bar_x - 12, y), Vector2(bar_x + 12, y), Color("3a3a3d"), 2.6, true)
+	# The sill: a strip along the doorway's outer edge, whichever way the door faces.
+	var sill := Rect2(threshold.position + Vector2(0, 19), Vector2(24, 5))
+	var sill_line: Array = [threshold.end - Vector2(24, 1), threshold.end - Vector2(0, 1)]
+	match int(entity.get("door_side", 2)):
+		0:
+			sill = Rect2(threshold.position, Vector2(24, 5))
+			sill_line = [threshold.position + Vector2(0, 5), threshold.position + Vector2(24, 5)]
+		1:
+			sill = Rect2(threshold.position + Vector2(19, 0), Vector2(5, 24))
+			sill_line = [threshold.position + Vector2(23, 0), threshold.position + Vector2(23, 24)]
+		3:
+			sill = Rect2(threshold.position, Vector2(5, 24))
+			sill_line = [threshold.position + Vector2(5, 0), threshold.position + Vector2(5, 24)]
+	c.draw_rect(sill, Color("b58f5f"))
+	c.draw_line(sill_line[0], sill_line[1], Color("634327"), 1)
 
 static func furnishings(entity: Dictionary) -> Array[Dictionary]:
 	var items: Array[Dictionary] = []
@@ -164,9 +197,9 @@ static func furnishings(entity: Dictionary) -> Array[Dictionary]:
 		var bottom := 0.0
 		var rot: int = int(layout.get("rot", 3 if layout.kind == "bed" else 2))
 		match layout.kind:
-			"lamp", "chair", "chest": point = rect.get_center() + Vector2(0, 8)
+			"lamp", "chair", "chest", "locker", "toilet": point = rect.get_center() + Vector2(0, 8)
 			"bed": bottom = rect.size.y - 12.0
-			"table": bottom = rect.size.y - 9.0
+			"table", "booking_desk": bottom = rect.size.y - 9.0
 			"shelf": bottom = rect.size.y - 13.0
 		items.append({"kind": layout.kind, "point": point, "bottom": bottom, "rot": rot, "center": rect.get_center(), "size": rect.size,
 			"width": rect.size.x - 8, "color": Color("9fa7a5")})
@@ -212,6 +245,59 @@ static func _draw_base_pose(c: Node2D, item: Dictionary) -> void:
 		"shelf": Furniture.shelf(c, p, item.width)
 		"stove": Furniture.stove(c, p)
 		"chest": chest(c, p)
+		"booking_desk": booking_desk(c, p, item.size)
+		"locker": locker(c, p, item.size)
+		"toilet": toilet(c, p)
+
+## The intake desk in the sheriff's office: ledger, ink, a stamp, and the box camera used for mugshots.
+static func booking_desk(c: Node2D, p: Vector2, size: Vector2) -> void:
+	var width: float = size.x - 8.0
+	var height: float = size.y - 10.0
+	for offset in [Vector2(3, height - 4), Vector2(width - 8, height - 4)]:
+		Furniture.timber(c, Rect2(p + offset, Vector2(5, 12)), Color("5c3d29"), 1.0)
+	Furniture.timber(c, Rect2(p, Vector2(width, height)), Color("8f6540"), 4.0)
+	for y in [9.0, 18.0, 27.0]:
+		if y < height - 2.0: c.draw_line(p + Vector2(1, y), p + Vector2(width - 1, y), Color("6a472e"), 0.65)
+	# ledger and pen
+	c.draw_rect(Rect2(p + Vector2(10, 7), Vector2(20, 14)), Color("d9ccaa"))
+	c.draw_line(p + Vector2(20, 7), p + Vector2(20, 21), Color("8d7c5a"), 0.8)
+	c.draw_line(p + Vector2(12, 11), p + Vector2(18, 11), Color("5b5646"), 0.6)
+	c.draw_line(p + Vector2(22, 11), p + Vector2(28, 11), Color("5b5646"), 0.6)
+	c.draw_line(p + Vector2(32, 18), p + Vector2(38, 9), Color("3b2f26"), 1.1, true)
+	Props.ellipse(c, p + Vector2(44, 13), Vector2(3.2, 2.6), Color("26241f"), 0.0, Color("6b6a66"), 0.5)
+	# the box camera on a short tripod
+	var camera: Vector2 = p + Vector2(width - 18, 8)
+	c.draw_line(camera + Vector2(0, 8), camera + Vector2(-6, 18), Color("3b2f26"), 1.2, true)
+	c.draw_line(camera + Vector2(0, 8), camera + Vector2(6, 18), Color("3b2f26"), 1.2, true)
+	Furniture.timber(c, Rect2(camera + Vector2(-7, -7), Vector2(14, 14)), Color("352e28"), 1.5)
+	Props.ellipse(c, camera + Vector2(0, 1), Vector2(3.6, 3.6), Color("1a1a1c"), 0.0, Color("a7adb4"), 0.8)
+	c.draw_rect(Rect2(camera + Vector2(-5, -10), Vector2(10, 3)), Color("6f5e49"))
+
+## A steel prisoner-property locker: two doors with vents and numbered plates.
+static func locker(c: Node2D, p: Vector2, size: Vector2) -> void:
+	var width: float = size.x - 6.0
+	Props.ellipse(c, p + Vector2(0, 3), Vector2(width * 0.5 + 2.0, 4.0), Color(0, 0, 0, 0.18), 0, INK, 0)
+	var left: Vector2 = p + Vector2(-width * 0.5, -36)
+	Furniture.timber(c, Rect2(left, Vector2(width, 36)), Color("6d737a"), 1.6)
+	var half: float = width * 0.5
+	for i in range(2):
+		var door: Rect2 = Rect2(left + Vector2(2 + i * half, 2), Vector2(half - 3, 32))
+		c.draw_rect(door, Color("868d94") if i == 0 else Color("7d848b"))
+		c.draw_rect(door, Color("40454a"), false, 0.9)
+		for slot in range(3):
+			c.draw_line(door.position + Vector2(3, 5 + slot * 2.2), door.position + Vector2(door.size.x - 3, 5 + slot * 2.2), Color("3f444a"), 0.8)
+		c.draw_rect(Rect2(door.position + Vector2(door.size.x * 0.5 - 4, 14), Vector2(8, 5)), Color("d4cbb0"))
+		c.draw_line(door.position + Vector2(door.size.x * 0.5 - 3, 16.5), door.position + Vector2(door.size.x * 0.5 + 3, 16.5), Color("5e5748"), 0.6)
+		Props.ellipse(c, door.position + Vector2(door.size.x * (0.78 if i == 0 else 0.22), 24), Vector2(1.5, 1.8), Color("b9a35a"), 0.0, Color("5f4f23"), 0.5)
+
+## A plain porcelain toilet with a cistern against the cell wall.
+static func toilet(c: Node2D, p: Vector2) -> void:
+	Props.ellipse(c, p + Vector2(0, 3), Vector2(11, 4), Color(0, 0, 0, 0.18), 0, INK, 0)
+	Furniture.timber(c, Rect2(p + Vector2(-8, -24), Vector2(16, 12)), Color("d8d6cc"), 1.4)
+	c.draw_rect(Rect2(p + Vector2(-5, -27), Vector2(10, 3)), Color("b7b6ae"))
+	Props.ellipse(c, p + Vector2(0, -6), Vector2(8.5, 7.0), Color("e5e3da"), 0.0, Color("8d8b82"), 0.7)
+	Props.ellipse(c, p + Vector2(0, -6), Vector2(5.6, 4.2), Color("85888a"), 0.0, Color("5b5e60"), 0.5)
+	c.draw_line(p + Vector2(5, -19), p + Vector2(8, -23), Color("8e949a"), 1.2, true)
 
 static func cart(c: Node2D, p: Vector2) -> void:
 	Props.ellipse(c, p + Vector2(1, 9), Vector2(27, 9), Color(0, 0, 0, 0.17), 0, INK, 0)
@@ -397,10 +483,19 @@ static func chest(c: Node2D, p: Vector2) -> void:
 static func frontage(c: Node2D, entity: Dictionary, rect: Rect2) -> void:
 	var door := Vector2(entity.cell[0], entity.cell[1]) * 24
 	# A short stoop marks the open doorway and leaves the rest of the facade clear.
-	var stoop := Rect2(door.x - 12, rect.end.y, 24, 12)
+	var stoop: Rect2
+	match int(entity.get("door_side", 2)):
+		0: stoop = Rect2(door.x - 12, door.y - 24, 24, 12)
+		1: stoop = Rect2(door.x + 12, door.y - 12, 12, 24)
+		3: stoop = Rect2(door.x - 24, door.y - 12, 12, 24)
+		_: stoop = Rect2(door.x - 12, rect.end.y, 24, 12)
 	c.draw_rect(stoop, Color("9e7448"))
-	c.draw_line(stoop.position + Vector2(0, 5), stoop.position + Vector2(24, 5), Color("bd9665"), 1)
-	c.draw_line(stoop.end - Vector2(24, 1), stoop.end - Vector2(0, 1), Color("65452c"), 1)
+	if stoop.size.x > stoop.size.y:
+		c.draw_line(stoop.position + Vector2(0, 5), stoop.position + Vector2(24, 5), Color("bd9665"), 1)
+		c.draw_line(stoop.end - Vector2(24, 1), stoop.end - Vector2(0, 1), Color("65452c"), 1)
+	else:
+		c.draw_line(stoop.position + Vector2(5, 0), stoop.position + Vector2(5, 24), Color("bd9665"), 1)
+		c.draw_line(stoop.end - Vector2(1, 24), stoop.end - Vector2(1, 0), Color("65452c"), 1)
 
 static func square(c: Node2D, center: Vector2) -> void:
 	for dx in [-75, 75]:
@@ -411,7 +506,7 @@ static func vegetation(c: Node2D, bounds: Rect2, buildings: Array, wind_phase: f
 	for y in range(floori(bounds.position.y / 24), ceili(bounds.end.y / 24)):
 		for x in range(floori(bounds.position.x / 24), ceili(bounds.end.x / 24)):
 			var hash_value: int = absi(x * 719 ^ y * 113 ^ x * y * 31)
-			if hash_value % 5 != 0 or absf(float(y) - 48.0) < 2.0: continue
+			if hash_value % 5 != 0: continue
 			var cell_rect := Rect2(Vector2(x, y) * 24, Vector2(24, 24))
 			var intersects: bool = false
 			for rect in buildings:

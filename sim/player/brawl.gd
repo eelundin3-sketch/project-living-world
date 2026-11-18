@@ -20,6 +20,11 @@ const ANGER_PUNCH := 55
 const ANGER_SHOVE := 55          # a shove irritates exactly as much as a punch
 const HOSTILE_AT := 50           # anger at which someone fights back
 const PUNCH_DAMAGE := 9
+const KICK_DAMAGE := 14           # 1.5x a punch, on someone who is down
+const GIVE_UP_DISTANCE := 110.0   # cells from their own town square a chaser is willing to follow
+const GIVE_UP_GAP := 60.0         # how far ahead of them you must get before they stop chasing
+const RUN_WINDED_AT := 20         # NPC stamina rules mirror the player's (see BodyHealth)
+const RUN_RECOVER_AT := 50
 const KO_HEALTH := 20            # health below this and the person is out cold
 const OFFENCE_MEMORY := 3000     # how long a first offence is remembered (about 5 minutes at 1x)
 const BEAT_DAMAGE := 22          # what one punch of a furious beating does to the player's body
@@ -33,6 +38,37 @@ const MAX_BLOOD := 96
 const PLAYER_PARTS: Array[String] = ["head", "head", "head", "upper_torso", "upper_torso", "lower_torso", "right_forearm", "left_forearm", "right_hand", "neck"]
 ## Body regions for villagers (who have no per-part health): only a blow to the face draws blood.
 const NPC_PARTS: Array[String] = ["head", "head", "head", "upper_torso", "upper_torso", "lower_torso", "arm"]
+
+static func _law() -> GDScript:
+	return load("res://sim/settlement/law.gd")
+
+static func _say(sim: RefCounted, speaker: int, topic: String) -> void:
+	load("res://sim/entities/speech.gd").say(sim, speaker, topic)
+
+## Villagers tire like the player: running costs a point per cell, rest gives one back every 3 ticks,
+## and below 20 they are winded (walking pace) until they have recovered to 50.
+static func npc_stamina(s: Dictionary, npc: Dictionary) -> void:
+	if not npc.has("stamina"):
+		npc.stamina = 100
+		npc.winded = false
+		npc.running_tick = -100
+	var running: bool = int(npc.running_tick) >= s.tick - 1
+	if not running and s.tick % 3 == 0: npc.stamina = mini(100, int(npc.stamina) + 1)
+	if int(npc.stamina) <= RUN_WINDED_AT: npc.winded = true
+	elif int(npc.stamina) >= RUN_RECOVER_AT: npc.winded = false
+
+## One chase step at the pace the chaser can manage: a run (a cell a tick) while far behind and
+## not winded, otherwise the same walk the player has (a cell every 2 ticks). True if a step is due.
+static func chase_pace(s: Dictionary, npc: Dictionary, gap: float, diagonal: bool = false) -> bool:
+	if s.tick < int(npc.get("next_step", 0)): return false
+	var can_run: bool = gap > 4.0 and not bool(npc.get("winded", false)) and int(npc.get("stamina", 100)) > 0
+	if can_run:
+		npc.stamina = int(npc.get("stamina", 100)) - 1
+		npc.running_tick = s.tick
+		npc.next_step = s.tick + 1
+		return true
+	npc.next_step = s.tick + 2 + (1 if diagonal else 0)   # the player's walking cadence
+	return true
 
 static func initialize(s: Dictionary) -> void:
 	if s.has("player_control") and not s.has("brawl"):
@@ -103,7 +139,7 @@ static func on_player_hit(sim: RefCounted, npc: Dictionary, victim: Dictionary, 
 	var was_down: bool = knocked(s, npc)
 	npc.anger = mini(100, int(npc.get("anger", 0)) + (ANGER_PUNCH if kind == "punch" else ANGER_SHOVE))
 	if kind == "punch":
-		npc.health = maxi(1, int(npc.health) - PUNCH_DAMAGE)
+		npc.health = maxi(0, int(npc.health) - PUNCH_DAMAGE)
 		# Blunt damage: a bruise where the blow lands. A punch to the face can split a lip or bloody a nose.
 		var landed: String = NPC_PARTS[sim.random_int("brawl", 0, NPC_PARTS.size() - 1)]
 		var bruises: Dictionary = npc.get("bruises", {})
@@ -112,8 +148,13 @@ static func on_player_hit(sim: RefCounted, npc: Dictionary, victim: Dictionary, 
 		npc.last_bruise = landed
 		if landed == "head": add_blood(s, victim.cell, direction, 1)
 		event(s, "punch_hit", victim.cell, direction)
+		if int(npc.health) <= 0:
+			_law().crime(s, npc.settlement, "murder", npc.id)
+			kill(sim, npc, "beaten")
+			return
 		if int(npc.health) < KO_HEALTH and not was_down:
 			knockdown(s, npc, victim.cell, "ko", direction)
+			_say(sim, npc.id, "knocked_down")
 			npc.status = "Knocked out"
 			npc.brawl = {}
 			npc.anger = 40
@@ -121,25 +162,23 @@ static func on_player_hit(sim: RefCounted, npc: Dictionary, victim: Dictionary, 
 		elif not was_down:
 			npc.status = "Staggered by a punch"
 	else:
-		if not was_down: knockdown(s, npc, victim.cell, "fall", direction)
+		if not was_down:
+			knockdown(s, npc, victim.cell, "fall", direction)
+			_say(sim, npc.id, "knocked_down")
 		npc.status = "Knocked to the ground"
 		event(s, "shove_hit", victim.cell, direction)
 	if s.has("factions"): Society.remember(s, npc.id, "assault", s.player, "The traveller struck me.", -25)
-	var mode := "beat" if int(npc.offences) >= 2 else "shove"
+	_law().crime(s, npc.settlement, "assault_sheriff" if npc.occupation == "Sheriff" else "assault", npc.id)
+	if npc.occupation == "Sheriff":
+		npc.brawl = {}
+		return   # the sheriff arrests rather than brawls (law.gd)
+	var mode := "kill" if int(npc.offences) >= 3 else ("beat" if int(npc.offences) >= 2 else "shove")
 	if not npc.get("brawl", {}).is_empty(): npc.brawl.mode = mode
 	if int(npc.anger) >= HOSTILE_AT and not knocked(s, npc):
 		if npc.get("brawl", {}).is_empty():
 			engage(s, npc, mode)
-			s.player_control.notice = ("%s is furious and comes at you!" if mode == "beat" else "%s is angry and storms after you!") % s.entities[str(npc.id)].name
-		# The law steps in: any sheriff nearby joins the fight against the aggressor.
-		for other in s.residents.values():
-			if other.id == npc.id or other.occupation != "Sheriff" or other.settlement != npc.settlement or busy(s, other) or other.health <= 0: continue
-			var gap := Vector2(s.entities[str(other.id)].cell[0] - victim.cell[0], s.entities[str(other.id)].cell[1] - victim.cell[1])
-			if gap.length() <= 24.0:
-				other.anger = 60
-				engage(s, other, "shove")
-				other.status = "Stopping the fight"
-				s.player_control.notice = "The sheriff comes to break up the fight!"
+			_say(sim, npc.id, "angry_beat" if mode != "shove" else "angry_first")
+			s.player_control.notice = ("%s is furious and comes at you!" if mode != "shove" else "%s is angry and storms after you!") % s.entities[str(npc.id)].name
 
 ## Turns a resident hostile toward the player: they drop their work and fight until it burns out.
 static func engage(s: Dictionary, npc: Dictionary, mode: String = "shove") -> void:
@@ -147,7 +186,9 @@ static func engage(s: Dictionary, npc: Dictionary, mode: String = "shove") -> vo
 	if npc.job != 0: Jobs.release(s, npc.job, "INTERRUPTED_BY_FIGHT")
 	npc.goal = ""
 	npc.path = []
-	npc.brawl = {"target": s.player, "since": s.tick, "next_attack": s.tick + 14, "path_tick": -100, "mode": mode, "landed": false}
+	var town: Dictionary = s.settlements.get(str(npc.settlement), {})
+	var home: Array = s.entities[str(town.warehouse)].cell.duplicate() if not town.is_empty() and s.entities.has(str(town.get("warehouse", 0))) else s.entities[str(npc.id)].cell.duplicate()
+	npc.brawl = {"target": s.player, "since": s.tick, "next_attack": s.tick + 14, "path_tick": -100, "mode": mode, "landed": false, "home": home}
 	npc.status = "Angry at the traveller"
 
 static func update(sim: RefCounted) -> void:
@@ -162,20 +203,24 @@ static func update(sim: RefCounted) -> void:
 	if not control.get("knock", {}).is_empty() and s.tick == int(control.knock.down_until): event(s, "get_up", s.entities[str(s.player)].cell)
 	var player: Dictionary = s.entities[str(s.player)]
 	_exhaustion(s, control, player)
+	if s.tick % 10 == 0 and s.has("player_health") and not control.get("dead", false) and BodyHealth.overall(s) <= 0: kill_player(sim)
 	if s.tick % 30 == 0: _bleed(s, player)
 	for key in s.residents.keys():
 		var npc: Dictionary = s.residents[key]
 		var cell: Array = s.entities[key].cell
+		if npc.health <= 0: continue
+		npc_stamina(s, npc)
 		var knock: Dictionary = npc.get("knock", {})
 		if not knock.is_empty():
 			if s.tick == int(knock.down_until): event(s, "get_up", cell)
 			if s.tick >= int(knock.rise_until):
 				if knock.kind == "ko": npc.health = maxi(int(npc.health), KO_HEALTH + 5)
 				npc.knock = {}
+				_say(sim, npc.id, "got_up")
 				npc.status = "Back on their feet"
 				npc.work_pause_until = s.tick + 20
 				# Someone shoved down while angry gets up and goes after the player.
-				if int(npc.get("anger", 0)) >= HOSTILE_AT and npc.get("brawl", {}).is_empty() and not player_down(s):
+				if int(npc.get("anger", 0)) >= HOSTILE_AT and npc.get("brawl", {}).is_empty() and not player_down(s) and npc.occupation != "Sheriff":
 					engage(s, npc, "beat" if int(npc.get("offences", 0)) >= 2 else "shove")
 					s.player_control.notice = "%s gets up, angry!" % s.entities[str(npc.id)].name
 			continue
@@ -184,6 +229,8 @@ static func update(sim: RefCounted) -> void:
 			npc.grudge = false
 			npc.anger = 70
 			engage(s, npc, "beat")
+			_say(sim, npc.id, "robbed")
+			_law().crime(s, npc.settlement, "theft", npc.id)
 			s.player_control.notice = "%s has realised they were robbed!" % s.entities[str(npc.id)].name
 		if s.tick % 100 == 0:
 			if int(npc.get("anger", 0)) > 0 and npc.get("brawl", {}).is_empty(): npc.anger = maxi(0, int(npc.anger) - 3)
@@ -198,16 +245,23 @@ static func update(sim: RefCounted) -> void:
 			_advance_attack(sim, npc, attack, cell, player)
 			continue
 		var gap := Vector2(player.cell[0] - cell[0], player.cell[1] - cell[1])
-		# Give up when the traveller is far away, has been floored, or the anger has burned out.
-		if gap.length() > 30.0 or int(npc.get("anger", 0)) < 25 or player_down(s) or s.tick - int(fight.since) > 1800:
+		# Nobody follows a grudge forever: too far from their own town, too far behind, or cooled off.
+		var home: Array = fight.get("home", cell)
+		var from_home := Vector2(cell[0] - home[0], cell[1] - home[1]).length()
+		var killing: bool = str(fight.get("mode", "shove")) == "kill"
+		var lost_you: bool = from_home > GIVE_UP_DISTANCE or gap.length() > GIVE_UP_GAP
+		if lost_you or int(npc.get("anger", 0)) < 25 or (player_down(s) and not killing) or s.tick - int(fight.since) > 3600:
+			if lost_you: _say(sim, npc.id, "give_up")
 			npc.brawl = {}
 			npc.anger = mini(int(npc.get("anger", 0)), 35)
-			npc.status = "Cooled off"
+			npc.status = "Gave up the chase" if lost_you else "Cooled off"
+			npc.work_pause_until = s.tick + 60
 			continue
 		npc.status = "Fighting the traveller"
 		if gap.length() > 1.5:
-			# Charge in at a run while far away, then close the last few cells carefully.
-			if s.tick % (1 if gap.length() > 4.0 else 2) != 0: continue
+			# Charge in at a run while far away and fresh; otherwise at the same walk the player has.
+			var heading_diagonal: bool = not npc.path.is_empty() and npc.path[0][0] != cell[0] and npc.path[0][1] != cell[1]
+			if not chase_pace(s, npc, gap.length(), heading_diagonal): continue
 			if s.tick - int(fight.path_tick) >= 8 or npc.path.is_empty():
 				var goal: Array = player.cell.duplicate()
 				var route := Nav.request_path(s, cell, goal)
@@ -217,7 +271,9 @@ static func update(sim: RefCounted) -> void:
 				var next: Array = npc.path.pop_front()
 				if World.walkable(s, next) and next != player.cell: s.entities[key].cell = next
 		elif s.tick >= int(fight.next_attack):
-			var kind := "punch" if str(fight.get("mode", "shove")) == "beat" else "shove"
+			var mode_now: String = str(fight.get("mode", "shove"))
+			var kind := "punch" if mode_now in ["beat", "kill"] else "shove"
+			if mode_now == "kill" and player_down(s): kind = "kick"
 			npc.attack = {"kind": kind, "start": s.tick, "impact": s.tick + ATTACK_IMPACT, "end": s.tick + ATTACK_TICKS, "resolved": false, "direction": [signi(player.cell[0] - cell[0]), signi(player.cell[1] - cell[1])]}
 
 ## Running the stamina bar all the way to empty drops the player face first; they lie winded and get up.
@@ -278,9 +334,13 @@ static func _hit_player(sim: RefCounted, npc: Dictionary, attack: Dictionary, pl
 		event(s, "punch_hit", player.cell, direction)
 		if BodyHealth.overall(s) < KO_HEALTH:
 			knockdown(s, control, player.cell, "ko", direction)
-			control.notice = "You are knocked out!"
 		else:
 			control.notice = "%s punches you." % s.entities[str(npc.id)].name
+	elif attack.kind == "kick":
+		var kick_part: String = ["head", "upper_torso", "lower_torso", "upper_torso"][sim.random_int("brawl", 0, 3)]
+		BodyHealth.injure(s, kick_part, BEAT_DAMAGE, "bruise")
+		event(s, "punch_hit", player.cell, direction)
+		control.notice = "%s kicks you while you are down!" % s.entities[str(npc.id)].name
 	else:
 		var destination: Array = [player.cell[0] + attack.direction[0], player.cell[1] + attack.direction[1]]
 		if World.walkable(s, destination): player.cell = destination
@@ -288,6 +348,71 @@ static func _hit_player(sim: RefCounted, npc: Dictionary, attack: Dictionary, pl
 		event(s, "shove_hit", player.cell, direction)
 		control.notice = "%s shoves you to the ground." % s.entities[str(npc.id)].name
 	s.player_path = []
+	if BodyHealth.overall(s) <= 0: kill_player(sim)
+
+## A kick (Space) on someone lying on the ground, whether knocked out or just shoved down:
+## one and a half punches of damage. Zero health is death.
+static func on_player_kick(sim: RefCounted, npc: Dictionary, victim: Dictionary, direction: Array) -> void:
+	var s: Dictionary = sim.state
+	if npc.health <= 0: return
+	if s.tick - int(npc.get("last_offence", -99999)) > OFFENCE_MEMORY: npc.offences = 0
+	npc.offences = int(npc.get("offences", 0)) + 1
+	npc.last_offence = s.tick
+	npc.anger = mini(100, int(npc.get("anger", 0)) + ANGER_PUNCH)
+	npc.health = maxi(0, int(npc.health) - KICK_DAMAGE)
+	var bruises: Dictionary = npc.get("bruises", {})
+	bruises["upper_torso"] = int(bruises.get("upper_torso", 0)) + 1
+	npc.bruises = bruises
+	if sim.random_int("brawl", 0, 99) < 35: add_blood(s, victim.cell, direction, 1)
+	event(s, "punch_hit", victim.cell, direction)
+	var knock: Dictionary = npc.get("knock", {})
+	if not knock.is_empty() and knock.kind == "fall":
+		knock.down_until = int(knock.down_until) + 6   # kept on the ground a moment longer
+		knock.rise_until = int(knock.rise_until) + 6
+	_law().crime(s, npc.settlement, "murder" if int(npc.health) <= 0 else "kick", npc.id)
+	if int(npc.health) <= 0: kill(sim, npc, "kicked")
+	elif s.has("factions"): Society.remember(s, npc.id, "assault", s.player, "The traveller kicked me while I was down.", -30)
+
+## A villager dies: they drop where they are, their work and tent are given up and the body stays
+## for anyone to search.
+static func kill(sim: RefCounted, npc: Dictionary, cause: String) -> void:
+	var s: Dictionary = sim.state
+	if npc.get("dead", false): return
+	Households.wake(s, npc)
+	if npc.job != 0: Jobs.release(s, npc.job, "DIED")
+	npc.health = 0
+	npc.dead = true
+	npc.knock = {}
+	npc.brawl = {}
+	npc.attack = {}
+	npc.goal = ""
+	npc.path = []
+	npc.work_path = []
+	npc.status = "Dead"
+	var name_value: String = s.entities[str(npc.id)].name
+	sim.record("%s has died (%s)." % [name_value, cause])
+	event(s, "fall", s.entities[str(npc.id)].cell, [0, 0])
+	if s.has("factions"):
+		for other in s.residents.values():
+			if other.id != npc.id and other.health > 0 and other.settlement == npc.settlement:
+				Society.remember(s, other.id, "death", s.player, "%s was killed." % name_value, -35)
+
+## The player's health reached zero. Every command is refused from now on (see simulation.gd).
+static func kill_player(sim: RefCounted) -> void:
+	var s: Dictionary = sim.state
+	var control: Dictionary = s.player_control
+	if control.get("dead", false): return
+	control.dead = true
+	control.running = false
+	control.travel_run = false
+	control.pending = {}
+	control.notice = ""
+	s.player_path = []
+	if s.has("player_health"): s.player_health.treatment = {}
+	var cell: Array = s.entities[str(s.player)].cell
+	control.knock = {"kind": "dead", "start": s.tick, "fall_ticks": 9, "down_until": 1 << 40, "rise_until": 1 << 40, "style": "front", "side": 1, "dir": [0, 1]}
+	sim.record("You have died.")
+	event(s, "fall", cell, [0, 0])
 
 ## Gives a hand to someone who was shoved down: they start getting up right away.
 static func help_up(s: Dictionary, npc: Dictionary) -> void:

@@ -14,6 +14,8 @@ const PerfOverlay = preload("res://view/ui/perf_overlay.gd")
 const ContextMenu = preload("res://view/ui/context_menu.gd")
 const ContextActions = preload("res://sim/player/context_actions.gd")
 const MainMenu = preload("res://view/ui/main_menu.gd")
+const KnockoutScreen = preload("res://view/ui/knockout_screen.gd")
+const Law = preload("res://sim/settlement/law.gd")
 const CELL: float = 24.0
 var player_panels: CanvasLayer
 var world_audio: Node2D
@@ -40,6 +42,9 @@ var bottom_bar: Control
 var perf: Control
 var context_menu: Control
 var menu: CanvasLayer
+var knockout: CanvasLayer
+var skipping: bool = false
+var skip_previous_speed: int = 1
 var menu_active: bool = false
 var menu_time: float = 0.0
 var intro_tween: Tween
@@ -84,6 +89,15 @@ func _ready() -> void:
 	perf = PerfOverlay.new()
 	perf.main = self
 	perf_layer.add_child(perf)
+	knockout = KnockoutScreen.new()
+	add_child(knockout)
+	knockout.skip_requested.connect(_skip_ahead)
+	knockout.wait_requested.connect(_skip_ahead)
+	knockout.load_requested.connect(func() -> void: handle_action("load"))
+	knockout.new_game_requested.connect(func() -> void:
+		Engine.set_meta("skip_title", true)
+		get_tree().reload_current_scene())
+	knockout.quit_to_title_requested.connect(func() -> void: get_tree().reload_current_scene())
 	$WorldView.simulation = simulation
 	world_audio = Audio.new()
 	add_child(world_audio)
@@ -98,6 +112,9 @@ func _ready() -> void:
 ## The title screen appears only when the game is launched normally (tests add this scene by hand).
 func _maybe_open_menu() -> void:
 	if get_tree().current_scene != self: return
+	if Engine.has_meta("skip_title"):
+		Engine.remove_meta("skip_title")   # "New game" from the death screen goes straight in
+		return
 	menu_active = true
 	menu = MainMenu.new()
 	add_child(menu)
@@ -134,6 +151,14 @@ func _start_from_menu() -> void:
 	intro_tween.parallel().tween_property($ObserverCamera, "zoom", Vector2.ONE * 0.9, 2.2).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	intro_tween.tween_property($ObserverCamera, "zoom", Vector2.ONE * 2.0, 1.6).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
 	intro_tween.tween_callback(_finish_intro)
+
+## Knocked out: run time at top speed until the player comes round, then back to the usual speed.
+func _skip_ahead() -> void:
+	if skipping: return
+	skipping = true
+	skip_previous_speed = clock.speed
+	clock.paused = false
+	clock.speed = 40
 
 func _finish_intro() -> void:
 	menu_active = false
@@ -181,6 +206,13 @@ func _process(delta: float) -> void:
 	if follow_player:
 		var cell: Array = simulation.state.entities[str(simulation.state.player)].cell
 		$ObserverCamera.position = $WorldView.motion.actors.get(str(simulation.state.player), {}).get("position", Vector2(cell[0], cell[1]) * CELL)
+	var knock_now: Dictionary = simulation.state.player_control.get("knock", {})
+	var waiting_out: bool = (not knock_now.is_empty() and str(knock_now.get("kind", "")) == "ko") or Law.in_custody(simulation.state)
+	if skipping and (not waiting_out or simulation.state.player_control.get("dead", false)):
+		skipping = false
+		clock.speed = skip_previous_speed
+	var body_world: Vector2 = $WorldView.motion.actors.get(str(simulation.state.player), {}).get("position", $ObserverCamera.position)
+	knockout.update_state(simulation.state, get_viewport().get_canvas_transform() * (body_world + Vector2(0, -6)), delta)
 	world_audio.present($WorldView.motion.cues, simulation.state, $ObserverCamera.position, clock.paused, delta)
 	if simulation.state.tick != last_draw_tick:
 		refresh_view()
@@ -219,6 +251,7 @@ func handle_action(kind: String) -> void:
 			player_panels.toggle("health")
 		"interact":
 			if player_panels.visible: player_panels.show_mode("")
+			elif Law.standoff_sheriff(simulation.state) != 0: simulation.submit("surrender")
 			else: simulation.submit("interact",{"target":selected_id})
 		"injury_demo": simulation.submit("debug_injury",{"part":"right_forearm","damage":24,"kind":"cut"})
 		"encounter_demo": simulation.submit("demo_encounter")

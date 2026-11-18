@@ -116,7 +116,17 @@ static func footprint(cell: Array, kind: String, scale_version: int = 2) -> Rect
 		height = 9 if kind == "home" else (10 if kind == "warehouse" else 8)
 	return Rect2i(cell[0] - width / 2, cell[1] - height + 1, width, height)
 
+## The box around a set of [x, y, w, h] rectangles.
+static func rects_bounds(rects: Array) -> Rect2i:
+	var low := Vector2i(1 << 30, 1 << 30)
+	var high := Vector2i(-(1 << 30), -(1 << 30))
+	for r in rects:
+		low = Vector2i(mini(low.x, int(r[0])), mini(low.y, int(r[1])))
+		high = Vector2i(maxi(high.x, int(r[0]) + int(r[2])), maxi(high.y, int(r[1]) + int(r[3])))
+	return Rect2i(low, high - low)
+
 static func plot_rect(entity: Dictionary, kind: String) -> Rect2i:
+	if kind == "home" and entity.has("house_rects"): return rects_bounds(entity.house_rects)
 	if kind == "home" and entity.has("house_size"):
 		var size: Array = entity.house_size
 		return Rect2i(int(entity.cell[0]) - int(size[0]) / 2, int(entity.cell[1]) - int(size[1]) + 1, int(size[0]), int(size[1]))
@@ -131,6 +141,7 @@ static func shape_notch(rect: Rect2i, shape: String) -> Vector2i:
 
 ## Interior partition walls: typed houses have one only if their type says so.
 static func partitions_for(entity: Dictionary, rect: Rect2i) -> Array:
+	if entity.has("house_walls"): return entity.house_walls   # turned houses carry their own inside walls
 	if entity.has("house_size") and not entity.get("house_partition", false): return []
 	return partition_cells(rect)
 
@@ -152,6 +163,10 @@ static func partition_cells(rect: Rect2i) -> Array:
 # their original rectangular layout until completed.
 static func building_contains(entity: Dictionary, cell: Array, kind: String = "") -> bool:
 	var actual_kind: String = kind if not kind.is_empty() else entity.kind
+	if actual_kind == "home" and entity.has("house_rects"):
+		for r in entity.house_rects:
+			if cell[0] >= r[0] and cell[0] < r[0] + r[2] and cell[1] >= r[1] and cell[1] < r[1] + r[3]: return true
+		return false
 	var rect := plot_rect(entity, actual_kind)
 	var notch := house_notch(rect)
 	if not rect.has_point(Vector2i(cell[0], cell[1])): return false
@@ -164,6 +179,13 @@ static func building_contains(entity: Dictionary, cell: Array, kind: String = ""
 
 static func exterior_wall(entity: Dictionary, cell: Array, kind: String) -> bool:
 	if not building_contains(entity, cell, kind): return false
+	if kind == "home" and entity.has("house_rects"):
+		# Turned houses: a wall wherever any of the eight neighbours is outside (this also closes the
+		# inside corners of L, T and courtyard shapes).
+		for dy in range(-1, 2):
+			for dx in range(-1, 2):
+				if (dx != 0 or dy != 0) and not building_contains(entity, [cell[0] + dx, cell[1] + dy], kind): return true
+		return false
 	if kind == "home" and entity.get("layout_shape", "") == "stepped_joined":
 		var corner := house_notch(plot_rect(entity, kind)) + Vector2i.LEFT
 		if Vector2i(cell[0], cell[1]) == corner: return true
@@ -477,24 +499,14 @@ static func _crowded(occupied: Dictionary, cell: Array) -> bool:
 			if occupied.has(cell_key([cell[0] + dx, cell[1] + dy])): return true
 	return false
 
-## The roads between and into the towns, as rectangles (with a verge) that nothing may block:
-## the east-west road through Alder Hollow to Reedbank, and the south road down to Dustvale.
+## The roads, as coarse rectangles (with a verge) that nothing may block. The roads themselves are
+## data (`world.roads`, made by town_layout.gd); older saves get the old fixed layout.
 static func road_corridors(s: Dictionary) -> Array[Rect2i]:
-	var corridors: Array[Rect2i] = []
-	var east: int = 226
-	if s.get("settlements", {}).has("2"): east = int(s.entities[str(s.settlements["2"].warehouse)].cell[0]) + 46
-	corridors.append(Rect2i(28, 44, east - 28, 9))
-	if s.get("settlements", {}).has("3"):
-		var store3: Array = s.entities[str(s.settlements["3"].warehouse)].cell
-		var start := Vector2(70, 50)
-		var finish := Vector2(store3[0], store3[1] - 2)
-		for step in range(0, 41):
-			var t := float(step) / 40.0
-			var along := start.lerp(finish, t)
-			var cx: int = roundi(along.x + sin(t * 9.0) * 3.2 + sin(t * 23.0) * 1.2)
-			corridors.append(Rect2i(cx - 5, roundi(along.y) - 2, 11, int(ceil((finish.y - start.y) / 40.0)) + 4))
-		corridors.append(Rect2i(int(store3[0]) - 44, int(store3[1]) - 1, 82, 6))
-	return corridors
+	return _layout().corridors(s)
+
+## Loaded on demand: the layout code itself uses this file.
+static func _layout() -> GDScript:
+	return load("res://sim/world/town_layout.gd")
 
 ## Every cell where no tree may stand, as a set of cell keys.
 static func _woodland_keep_out(s: Dictionary) -> Dictionary:
@@ -503,7 +515,13 @@ static func _woodland_keep_out(s: Dictionary) -> Dictionary:
 		if entity.has("footprint"):
 			areas.append(building_rect(entity).grow(5))
 			var door: Array = entity.get("door", entity.cell)
-			areas.append(Rect2i(door[0] - 3, door[1] - 1, 7, 10))   # the yard in front of the door
+			# the yard in front of the door, whichever way it faces
+			var side: int = int(entity.get("door_side", 2))
+			var yard := Rect2i(door[0] - 3, door[1] - 1, 7, 10)
+			if side == 0: yard = Rect2i(door[0] - 3, door[1] - 8, 7, 10)
+			elif side == 1: yard = Rect2i(door[0] - 1, door[1] - 3, 10, 7)
+			elif side == 3: yard = Rect2i(door[0] - 8, door[1] - 3, 10, 7)
+			areas.append(yard)
 		elif entity.get("kind", "") in ["market_stall", "chest", "ore", "farm", "warehouse", "market", "office", "home", "sawmill", "bakery", "forge"]:
 			areas.append(Rect2i(entity.cell[0] - 4, entity.cell[1] - 4, 9, 9))
 		if entity.has("rock_rect"):
@@ -526,10 +544,7 @@ static func _woodland_keep_out(s: Dictionary) -> Dictionary:
 			for x in range(area.position.x, area.end.x):
 				blocked["%d,%d" % [x, y]] = true
 	# The roads and their verges.
-	for corridor in road_corridors(s):
-		for y in range(corridor.position.y, corridor.end.y):
-			for x in range(corridor.position.x, corridor.end.x):
-				blocked["%d,%d" % [x, y]] = true
+	blocked.merge(_layout().road_cells(s))
 	return blocked
 
 ## Free cells around a town, best woodland spots first.

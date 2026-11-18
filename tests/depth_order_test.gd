@@ -15,6 +15,7 @@ func run() -> void:
 	# The checks below need the whole house in view, so test at the wider 1x framing.
 	main.get_node("ObserverCamera").zoom = Vector2.ONE
 	var world = main.get_node("WorldView")
+	var sim = main.simulation
 	world.snap_visuals()
 	check(world.y_sort_enabled, "Actors and scenery share y-sort ordering")
 	var player_key: String = str(main.simulation.state.player)
@@ -53,11 +54,29 @@ func run() -> void:
 		check(actor.position.y < wall.position.y, "Actor behind wall sorts before it")
 		actor.position = wall.position + Vector2(0, 24)
 		check(actor.position.y > wall.position.y, "Actor in front sorts after the wall")
-	var road_y := 48.0 * 24.0
-	var road_x := 120.0 * 24.0
-	var middle: float = world.roads.coverage(Vector2(road_x, road_y))
-	var shoulder: float = world.roads.coverage(Vector2(road_x, road_y + 15.0))
-	var beyond: float = world.roads.coverage(Vector2(road_x, road_y + 45.0))
+	# Sample across Alder Hollow's main street, away from the square, perpendicular to the road.
+	var TL = load("res://sim/world/town_layout.gd")
+	var main_street: Dictionary = {}
+	for segment in TL.segments(sim.state): if segment.kind == "main" and int(segment.town) == 1: main_street = segment
+	# Use the stretch of street that is farthest from every other road, so only this road shades the mask.
+	var anchor: Array = main_street.points[0]
+	var best_gap := -1.0
+	for candidate in main_street.points:
+		var gap := 1.0e9
+		for other in TL.segments(sim.state):
+			if int(other.id) == int(main_street.id): continue
+			for q in other.points: gap = minf(gap, Vector2(float(candidate[0]) - float(q[0]), float(candidate[1]) - float(q[1])).length())
+		for building in sim.state.entities.values():
+			if building.has("footprint"): gap = minf(gap, Vector2(float(candidate[0]) - float(building.cell[0]), float(candidate[1]) - float(building.cell[1])).length())
+		if gap > best_gap: best_gap = gap; anchor = candidate
+	var near: Dictionary = TL.nearest_road_point(sim.state, Vector2(float(anchor[0]), float(anchor[1])))
+	var across := Vector2(-near.tangent.y, near.tangent.x) * 24.0
+	var centre: Vector2 = near.point * 24.0
+	var road_x := 0.0
+	var road_y := 0.0
+	var middle: float = world.roads.coverage(centre)
+	var shoulder: float = world.roads.coverage(centre + across * (15.0 / 24.0))
+	var beyond: float = world.roads.coverage(centre + across * (45.0 / 24.0))
 	check(middle > shoulder and shoulder > beyond and beyond == 0.0, "Road color feathers into neighboring terrain")
 	main.queue_free()
 	await process_frame

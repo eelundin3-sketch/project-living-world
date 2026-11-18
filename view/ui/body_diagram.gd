@@ -23,6 +23,8 @@ var zones: Dictionary = {}     # part -> Rect2 in the control's own pixels
 var hovered := ""
 ## Draw no floor panel of its own (when placed on a card that already has a background).
 var transparent := false
+## Minimal marking: a small dot on every injured part instead of tinted patches.
+var minimal := false
 ## The figure acts out a treatment while one is running: part, kind and progress 0..1.
 var treat_part := ""
 var treat_kind := ""
@@ -109,6 +111,9 @@ func _draw() -> void:
 	if overlay != null: overlay.queue_redraw()
 
 func draw_overlay(canvas: Control) -> void:
+	if minimal:
+		_draw_dots(canvas)
+		return
 	var treating := not treat_part.is_empty()
 	for part in zones:
 		var rect: Rect2 = zones[part]
@@ -141,6 +146,37 @@ func draw_overlay(canvas: Control) -> void:
 			_outline(canvas, rect, Color("56c2a6"), 2.0)
 		elif part == hovered and not treating:
 			_outline(canvas, rect, Color(1, 1, 1, 0.45), 1.2)
+
+## One small dot per injured part: red bleeding, purple bruise, amber sprain or infection, white
+## ring when bandaged. The selected part has a ring; the hovered part is named beside it.
+func _draw_dots(canvas: Control) -> void:
+	var font: Font = ThemeDB.fallback_font
+	var treating := not treat_part.is_empty()
+	for part in zones:
+		var state: Dictionary = parts.get(part, {})
+		var damage: int = int(state.get("damage", 0))
+		var bandage: String = state.get("bandage", "none")
+		var injured: bool = damage > 0 or int(state.get("infection", 0)) > 0 or bandage != "none"
+		var at: Vector2 = (zones[part] as Rect2).get_center()
+		if part == "head": at += Vector2(0, 2)
+		if injured and not (treating and part != treat_part):
+			var tone := Color("e8574f") if state.get("bleeding", false) else (Color("a58ae0") if state.get("wound", "") == "bruise" else (Color("e8a54b") if state.get("wound", "") in ["sprain"] or int(state.get("infection", 0)) > 0 else Color("e8574f")))
+			if bandage == "clean": tone = Color("74d08f")
+			elif bandage == "dirty": tone = Color("e8a54b")
+			var radius: float = 4.0 + clampf(float(damage) / 40.0, 0.0, 3.0)
+			canvas.draw_circle(at, radius + 3.0, Color(tone, 0.18))
+			canvas.draw_circle(at, radius, tone)
+			if bandage != "none": canvas.draw_arc(at, radius + 2.5, 0.0, TAU, 20, Color("ece6d6"), 1.4, true)
+		if part == selected and not treating and injured:
+			canvas.draw_arc(at, 12.0, 0.0, TAU, 28, Color("56c2a6"), 2.0, true)
+		if part == hovered and not treating:
+			var label: String = part.replace("_", " ").capitalize()
+			var width: float = font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x + 14.0
+			var box := Rect2(at + Vector2(14, -11), Vector2(width, 22))
+			if box.end.x > size.x: box.position.x = at.x - 14.0 - width
+			canvas.draw_rect(box, Color(0.06, 0.08, 0.09, 0.95))
+			canvas.draw_rect(box, Color("2a3a40"), false, 1.0)
+			canvas.draw_string(font, box.position + Vector2(7, 15), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("e9eef1"))
 
 ## A soft rounded patch filling a zone.
 func _blob(canvas: Control, rect: Rect2, color: Color) -> void:

@@ -213,6 +213,10 @@ static func update(sim: RefCounted) -> void:
 static func prompt(s: Dictionary,preferred: int = 0) -> String:
 	if not s.has("player_control"): return ""
 	var pc: Dictionary=s.player_control
+	for npc in s.get("residents",{}).values():
+		if npc.get("arrest",{}).get("phase","")=="standoff" and not pc.get("surrender",false): return "F: SURRENDER (raise your hands) · or run"
+	if pc.get("restrained",false): return "You are under arrest."
+	if pc.get("escorted",false): return "The sheriff is seeing you out."
 	var warning: String=""
 	for part in s.player_health.parts.values():
 		if part.bleeding: warning="BLEEDING · Press H.  "; break

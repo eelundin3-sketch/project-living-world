@@ -26,6 +26,7 @@ var motion := Director.new()
 var fixture_motion := Fixtures.new()
 var background: Node2D
 var shadows: Node2D
+var speech_layer: Node2D
 var sun_overcast: float = 0.0
 var roofs: Array[Rect2] = []
 var shadow_list: Array = []
@@ -65,6 +66,12 @@ class ShadowLayer extends Node2D:
 	var projector: Node2D
 	func _draw() -> void:
 		projector.draw_shadows(self)
+
+## Speech bubbles over the speakers' heads, above every character.
+class SpeechLayer extends Node2D:
+	var projector: Node2D
+	func _draw() -> void:
+		projector.draw_speech(self)
 
 ## Large, slow-changing ground art (the market plaza, one crop plot) is painted once into a
 ## texture and shown as a sprite. Thousands of small shapes cost real time to submit every
@@ -172,6 +179,10 @@ func _ready() -> void:
 	shadows.projector = self
 	shadows.z_index = -1
 	add_child(shadows)
+	speech_layer = SpeechLayer.new()
+	speech_layer.projector = self
+	speech_layer.z_index = 20
+	add_child(speech_layer)
 
 func animate(delta: float, paused: bool, speed: int) -> void:
 	if simulation == null:
@@ -191,6 +202,7 @@ func animate(delta: float, paused: bool, speed: int) -> void:
 	daylight.color = Color("8797b0").lerp(Color("fff1d5"), light).darkened(overcast)
 	sun_overcast = overcast
 	shadows.queue_redraw()
+	speech_layer.queue_redraw()
 	refresh_age += delta
 	var camera := get_viewport().get_camera_2d()
 	if camera != null and (camera.position.distance_to(last_camera) > BACKGROUND_MARGIN * 0.4 or camera.zoom != last_zoom or refresh_age > 1.0):
@@ -739,6 +751,34 @@ func draw_decor(node: Node2D, decor: Decor) -> void:
 ## Below this zoom the view is a map: per-object nodes are dropped and trees are simple canopies.
 const FAR_ZOOM: float = 0.35
 
+func draw_speech(canvas: Node2D) -> void:
+	if simulation == null or is_far(): return
+	var s: Dictionary = simulation.state
+	var font: Font = ThemeDB.fallback_font
+	var bounds := view_bounds().grow(80)
+	for line in s.get("speech", []):
+		if int(line.until) < s.tick: continue
+		var pose: Dictionary = motion.actors.get(str(line.speaker), {})
+		if pose.is_empty() or not bounds.has_point(pose.position): continue
+		var fade: float = clampf(float(int(line.until) - s.tick) / 10.0, 0.0, 1.0)
+		var wrap := 150.0
+		var text: String = line.text
+		var measured: Vector2 = font.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, wrap, 12)
+		var box := Rect2(pose.position + Vector2(-measured.x * 0.5 - 8, -68 - measured.y - 12), measured + Vector2(16, 12))
+		var anchor: Vector2 = pose.position + Vector2(0, -58)
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color(0.98, 0.95, 0.86, 0.96 * fade)
+		style.border_color = Color(0.23, 0.17, 0.11, fade)
+		style.set_border_width_all(1)
+		style.set_corner_radius_all(7)
+		style.anti_aliasing = true
+		style.shadow_color = Color(0, 0, 0, 0.25 * fade)
+		style.shadow_size = 4
+		canvas.draw_style_box(style, box)
+		canvas.draw_colored_polygon(PackedVector2Array([anchor + Vector2(-5, -6), anchor + Vector2(5, -6), anchor]), Color(0.98, 0.95, 0.86, 0.96 * fade))
+		canvas.draw_polyline(PackedVector2Array([anchor + Vector2(-5, -6), anchor, anchor + Vector2(5, -6)]), Color(0.23, 0.17, 0.11, fade), 1.0)
+		canvas.draw_multiline_string(font, box.position + Vector2(8, 16), text, HORIZONTAL_ALIGNMENT_LEFT, wrap, 12, -1, Color(0.16, 0.11, 0.07, fade))
+
 ## The sun's shadow for a point one pixel tall, in screen pixels, and how dark shadows are.
 ## Morning sun in the east throws long shadows to the left; they shorten and swing north (up the
 ## screen) towards noon, then lengthen to the right through the afternoon and fade at dusk.
@@ -881,7 +921,7 @@ func _sync_decor(delta: float) -> void:
 		if entity.has("footprint") and entity.kind in ["warehouse", "home", "sawmill", "bakery", "forge", "office", "market"]:
 			var fp := World.building_rect(entity)
 			var rect := Rect2(Vector2(fp.position) * CELL - Vector2.ONE * CELL / 2, Vector2(fp.size) * CELL)
-			wanted["building:%d" % entity.id] = ["building", int(entity.id), "%s:%s:%s" % [entity.kind, str(entity.footprint), str(entity.get("door", []))], rect.grow(48)]
+			wanted["building:%d" % entity.id] = ["building", int(entity.id), "%s:%s:%s:%s" % [entity.kind, str(entity.footprint), str(entity.get("door", [])), str(entity.get("cell_open", false))], rect.grow(48)]
 	for plot in s.get("crops", {}).values():
 		# One redraw per 1% of growth keeps the crop visibly changing without per-frame cost.
 		var field_area: Rect2 = plot_area(plot)

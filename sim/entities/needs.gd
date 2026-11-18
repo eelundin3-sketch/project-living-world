@@ -129,8 +129,10 @@ static func update(s: Dictionary) -> void:
 	var moving: bool = s.tick < int(control.get("next_move", 0)) + 3
 	needs.idle_ticks = 0 if moving else int(needs.idle_ticks) + 1
 	# The player's gauges move more slowly than residents': roughly one meal and two drinks a day.
-	if s.tick % 250 == 0: needs.hunger = mini(100, needs.hunger + 1)
-	if s.tick % 150 == 0: needs.thirst = mini(100, needs.thirst + 1)
+	# Prisoners are fed and watered (their gauges hold while they are in custody).
+	var in_custody: bool = not control.get("jail", {}).is_empty()
+	if s.tick % 250 == 0 and not in_custody: needs.hunger = mini(100, needs.hunger + 1)
+	if s.tick % 150 == 0 and not in_custody: needs.thirst = mini(100, needs.thirst + 1)
 	if s.tick % 200 == 0:
 		var tired_step: int = 2 if control.get("running", false) else 1
 		if needs.idle_ticks > 60: needs.fatigue = maxi(0, needs.fatigue - 3)

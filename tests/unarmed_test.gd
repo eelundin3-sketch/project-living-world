@@ -49,6 +49,7 @@ func run() -> void:
 	for i in range(12): s.tick += 1; Unarmed.update(sim)
 	target.cell = [111, 80]
 	World.apply_mutation(s, [112, 80], true)
+	npc.knock = {}   # back on his feet, so the next Space is a shove, not a kick
 	check(Unarmed.begin(s, "shove", [1000, 0]), "Second shove starts")
 	for i in range(3): s.tick += 1; Unarmed.update(sim)
 	check(target.cell == [111, 80], "Shove cannot push a person into a wall")

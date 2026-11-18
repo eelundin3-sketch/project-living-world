@@ -20,6 +20,11 @@ var simulation: RefCounted:
 		simulation = value
 		if grid != null: grid.simulation = value
 var grid: Control
+## What the window shows: the player's own goods by default, or a searched person / chest.
+var title_text := "Inventory"
+var owner_id := 0
+var foreign := false
+var show_slots := true
 var dragging := false
 var drag_offset := Vector2.ZERO
 var hover_button := ""
@@ -30,8 +35,20 @@ func _ready() -> void:
 	grid.simulation = simulation
 	grid.position = Vector2(PAD, BAR + PAD)
 	add_child(grid)
+	configure(title_text, owner_id, foreign, show_slots)
+
+## Points the window at someone's goods (or back at the player's) and resizes it to fit.
+func configure(title_value: String, owner_value: int, foreign_value: bool, slots: bool) -> void:
+	title_text = title_value
+	owner_id = owner_value
+	foreign = foreign_value
+	show_slots = slots
+	grid.owner_id = owner_value
+	grid.foreign = foreign_value
+	grid.set_layout(slots)
 	size = grid.custom_minimum_size + Vector2(PAD * 2.0, BAR + PAD * 2.0)
 	custom_minimum_size = size
+	queue_redraw()
 
 ## The window's resting place: the left side of the screen, vertically centred.
 func home_position() -> Vector2:
@@ -109,9 +126,9 @@ func _draw() -> void:
 		draw_arc(c, 6.2, 0.0, TAU, 20, colors[index].darkened(0.25), 0.8, true)
 		if not hover_button.is_empty():
 			draw_string(font, c + Vector2(-3.4, 4.0), glyphs[index], HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0, 0, 0, 0.6))
-	draw_string(font, Vector2(0, BAR * 0.5 + 5.0), "Inventory", HORIZONTAL_ALIGNMENT_CENTER, size.x, 13, Color("d8ccb0"))
+	draw_string(font, Vector2(0, BAR * 0.5 + 5.0), title_text, HORIZONTAL_ALIGNMENT_CENTER, size.x, 13, Color("d8ccb0"))
 	if simulation != null and simulation.state.has("inventories"):
 		var s: Dictionary = simulation.state
-		var inv: Dictionary = s.inventories[str(s.player)]
+		var inv: Dictionary = s.inventories.get(str(s.player if owner_id == 0 else owner_id), {"items": {}, "capacity": 0})
 		var load_text := "%d / %d" % [Inventory.used(inv), inv.capacity]
 		draw_string(font, Vector2(size.x - 14.0 - font.get_string_size(load_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x, BAR * 0.5 + 4.0), load_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("8f8670"))

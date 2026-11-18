@@ -22,12 +22,13 @@ func run() -> void:
 	root.size = Vector2i(1600, 900)
 	var main = load("res://app/main.tscn").instantiate(); root.add_child(main); main.set_process(false)
 	var s: Dictionary = main.simulation.state
+	var tag: String = OS.get_environment("TAG")
 	s.tick = 14400 + 600 * 10
 	s.weather = {"kind": "clear"}
 	main.follow_player = false
 	if OS.get_environment("NO_SHADOWS") == "1": main.get_node("WorldView").shadows.visible = false
 	for key in ["1", "2", "3"]:
 		var store: Array = s.entities[str(s.settlements[key].warehouse)].cell
-		await view(main, Vector2(store[0], store[1] + 2) * 24, 0.5, "town-%s" % s.settlements[key].name.to_lower().replace(" ", "-"))
-	await view(main, Vector2(195, 140) * 24, 0.12, "world-big-map")
+		await view(main, Vector2(store[0], store[1] + 22) * 24, 0.42, "town-%s%s" % [s.settlements[key].name.to_lower().replace(" ", "-"), tag])
+	await view(main, Vector2(195, 140) * 24, 0.12, "world-big-map" + tag)
 	quit()

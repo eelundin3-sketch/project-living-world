@@ -36,13 +36,17 @@ static func options(s: Dictionary, id: int) -> Array:
 	match e.get("kind", ""):
 		"resident":
 			var npc: Dictionary = s.residents.get(str(id), {})
-			var down: bool = Brawl.knocked(s, npc) if not npc.is_empty() else false
+			var dead: bool = not npc.is_empty() and npc.health <= 0
+			var down: bool = (Brawl.knocked(s, npc) or dead) if not npc.is_empty() else false
 			var asleep: bool = not npc.get("sleeping", {}).is_empty()
 			if down or asleep:
 				result.append(_opt("loot", "Search & loot", "hand"))
-				if asleep: result.append(_opt("wake", "Wake up", "sun"))
-				elif npc.get("knock", {}).get("kind", "") == "fall": result.append(_opt("help_up", "Help up", "hand"))
-				else: result.append(_opt("help_up", "Help up", "hand", false, "Unconscious"))
+				if dead: pass
+				elif asleep: result.append(_opt("wake", "Wake up", "sun"))
+				else:
+					if npc.get("knock", {}).get("kind", "") == "fall": result.append(_opt("help_up", "Help up", "hand"))
+					else: result.append(_opt("help_up", "Help up", "hand", false, "Unconscious"))
+					result.append(_opt("kick", "Kick (1.5× a punch)", "fist"))
 			else:
 				result.append(_opt("trade", "Talk / trade", "talk"))
 				result.append(_opt("punch", "Punch", "fist"))
@@ -99,7 +103,8 @@ static func subtitle(s: Dictionary, id: int) -> String:
 		"resident":
 			var npc: Dictionary = s.residents.get(str(id), {})
 			var state := ""
-			if Brawl.knocked(s, npc): state = " · knocked down" if npc.get("knock", {}).get("kind", "") == "fall" else " · unconscious"
+			if npc.health <= 0: state = " · dead"
+			elif Brawl.knocked(s, npc): state = " · knocked down" if npc.get("knock", {}).get("kind", "") == "fall" else " · unconscious"
 			elif not npc.get("sleeping", {}).is_empty(): state = " · asleep"
 			elif not npc.get("brawl", {}).is_empty(): state = " · angry"
 			return String(npc.get("occupation", "Villager")) + state
@@ -218,7 +223,9 @@ static func perform(sim: RefCounted, id: int, action: String) -> void:
 		"inventory", "health": pass   # opened by the interface
 		"wardrobe": Looting.open(s, s.player, "wardrobe")
 		"pickup_all": _take_everything(sim, id)
-		"trade", "chop", "gather", "harvest", "mine", "operate", "rack": Actions.interact(sim, id)
+		"trade", "chop", "gather", "harvest", "mine", "operate", "rack":
+			if action == "trade" and s.residents.has(str(id)): load("res://sim/entities/speech.gd").say(sim, id, "greet_player")
+			Actions.interact(sim, id)
 		"loot": Looting.open(s, id)
 		"help_up":
 			var npc: Dictionary = s.residents.get(str(id), {})
@@ -236,11 +243,11 @@ static func perform(sim: RefCounted, id: int, action: String) -> void:
 				patient.bleeding_until = 0
 				pc.notice = "You bind %s's wound. The bleeding stops." % e.name
 			else: pc.notice = "There is nothing to bandage."
-		"punch", "shove":
+		"punch", "shove", "kick":
 			var from: Array = s.entities[str(s.player)].cell
 			var direction: Array = [signi(e.cell[0] - from[0]) * 1000, signi(e.cell[1] - from[1]) * 1000]
 			if direction == [0, 0]: direction = [1000, 0]
-			Unarmed.begin(s, action, direction)
+			Unarmed.begin(s, "shove" if action == "kick" else action, direction)   # a shove at someone down becomes a kick
 
 static func _take_everything(sim: RefCounted, id: int) -> void:
 	var s: Dictionary = sim.state

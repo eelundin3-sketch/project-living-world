@@ -9,16 +9,16 @@ const SLOT_NAMES := {"hat": "Hat", "vest": "Vest", "shirt": "Shirt", "pants": "T
 const NAMES := {
 	"hat": ["Sun hat", "Brown hat", "Dark hat", "Sheriff's hat"],
 	"vest": ["Olive vest", "Drab vest", "Rust vest", "Moss vest", "Sheriff's vest"],
-	"shirt": ["Cream shirt", "Tan shirt", "Sage shirt", "Sand shirt"],
-	"pants": ["Tan trousers", "Grey trousers", "Dark trousers"],
-	"boots": ["Brown boots", "Black boots"],
+	"shirt": ["Cream shirt", "Tan shirt", "Sage shirt", "Sand shirt", "Prison shirt"],
+	"pants": ["Tan trousers", "Grey trousers", "Dark trousers", "Prison trousers"],
+	"boots": ["Brown boots", "Black boots", "Prison boots"],
 	"pack": ["Canvas backpack"]}
 const COLORS := {
 	"hat": [Color("d3a35a"), Color("bf9558"), Color("4f453a"), Color("3a2c22")],
 	"vest": [Color("968057"), Color("887b57"), Color("a07551"), Color("8c9371"), Color("5a3b27")],
-	"shirt": [Color("d7d0ad"), Color("c8b086"), Color("a5ab8c"), Color("d5bc91")],
-	"pants": [Color("b58c54"), Color("7d7f78"), Color("4a463d")],
-	"boots": [Color("694722"), Color("2c2823")],
+	"shirt": [Color("d7d0ad"), Color("c8b086"), Color("a5ab8c"), Color("d5bc91"), Color("e07b28")],
+	"pants": [Color("b58c54"), Color("7d7f78"), Color("4a463d"), Color("d9702a")],
+	"boots": [Color("694722"), Color("2c2823"), Color("3a3530")],
 	"pack": [Color("8a6d47")]}
 ## What shows when a piece is missing: pale long underwear for body and legs, bare feet, no hat.
 const UNDERWEAR := Color("e4ddca")
@@ -51,6 +51,8 @@ static func color(item: String, fallback: Color = UNDERWEAR) -> Color:
 ## The outfit implied by an id: matches the look people had before outfits existed.
 ## The law's clothes: a dark sheriff's hat, a leather vest with the star, dark trousers and boots.
 const SHERIFF := {"hat": "hat:3", "vest": "vest:4", "shirt": "shirt:1", "pants": "pants:2", "boots": "boots:1"}
+## What prisoners are issued at booking: an orange shirt and trousers, plain boots, nothing else.
+const PRISONER := {"hat": "", "vest": "", "shirt": "shirt:4", "pants": "pants:3", "boots": "boots:2", "pack": ""}
 static func is_sheriff_gear(item: String) -> bool:
 	return item == SHERIFF.hat or item == SHERIFF.vest
 

@@ -41,6 +41,7 @@ static func update(sim: RefCounted) -> void:
 		if Brawl.busy(s, npc): continue
 		if not npc.get("migration", {}).is_empty():
 			continue
+		if not npc.get("arrest", {}).is_empty(): continue   # making an arrest (law.gd)
 		if npc.occupation == "Trader" and load("res://sim/economy/traders.gd").away(s, npc):
 			continue   # on the road, or waiting at a foreign market
 		# Tiredness builds more slowly than hunger, so a normal day ends with people ready for bed.

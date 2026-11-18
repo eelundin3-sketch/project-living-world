@@ -1,5 +1,6 @@
 extends RefCounted
 const Placement = preload("res://sim/world/placement.gd")
+const Orient = preload("res://sim/world/orient.gd")
 ## Real fixture footprints and their clear approaches. Workshop stations share
 ## the building inventory, so the storage rack cannot duplicate machine stock.
 
@@ -19,8 +20,9 @@ static func install(s: Dictionary, building: Dictionary) -> void:
 		"construction":
 			var offset := 7 if building.get("building_scale", 1) >= 2 else 5
 			if building.has("house_size"): offset = clampi(int(building.house_size[1]) - 3, 3, 7)   # small houses: keep the pile inside
-			var stance_y := y - (5 if offset == 7 else 2)
-			building.fixtures.append(_fixture("stockpile", [x-1, y-offset, 4, 2], [x+1, stance_y]))
+			var stance_back: int = 5 if offset == 7 else 2
+			var side: int = int(building.get("door_side", 2))   # the pile sits inside, turned with the house
+			building.fixtures.append(_fixture("stockpile", Orient.rect([-1, -offset, 4, 2], [x, y], side), Orient.cell(Vector2i(1, -stance_back), [x, y], side)))
 		"sawmill", "bakery", "forge", "office", "warehouse", "market":
 			var is_saw: bool = building.kind in ["sawmill", "bakery", "forge"]
 			var rack_x: int = x+1 if expanded else x-1
@@ -51,11 +53,19 @@ static func install(s: Dictionary, building: Dictionary) -> void:
 					{"kind": "shelf", "rect": [left+1, top+4, 3, 2]},
 				]
 			"office":
+				# The small room left of the partition is the jail cell (a cot for the prisoner);
+				# the main room has the booking desk, a locker, the sheriff's bed, a lamp and a chest.
 				building.furniture = [
-					{"kind": "table", "rect": [left+1, top+5, 3, 2]},
-					{"kind": "chair", "rect": [left+1, top+7, 1, 1]},
-					{"kind": "lamp", "rect": [left+1, top+1, 1, 1]},
-					{"kind": "chest", "rect": [right-4, top+2, 2, 1]},
+					{"kind": "bed", "rect": [left+1, top+1, 2, 3], "rot": 0, "for": "prisoner"},
+					{"kind": "bed", "rect": [left+11, top+6, 3, 2], "rot": 1, "for": "sheriff"},
+					# The booking desk: new prisoners are searched, photographed and handed their uniform here,
+					# and the sheriff does his paperwork at it. Their belongings go in the locker beside the door.
+					{"kind": "booking_desk", "rect": [left+10, top+9, 4, 2], "rot": 2},
+					{"kind": "chair", "rect": [left+9, top+9, 1, 1], "rot": 1},
+					{"kind": "locker", "rect": [left+6, top+1, 2, 1], "rot": 2},
+					{"kind": "toilet", "rect": [left+4, top+1, 1, 1], "rot": 2},
+					{"kind": "lamp", "rect": [left+13, top+1, 1, 1], "rot": 2},
+					{"kind": "chest", "rect": [right-3, top+4, 2, 1], "rot": 2},
 				]
 			"sawmill", "bakery", "forge":
 				building.furniture = [

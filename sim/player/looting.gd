@@ -14,8 +14,20 @@ static func can_search(s: Dictionary, id: int) -> String:
 	if e.kind == "chest": return ""
 	var npc: Dictionary = s.residents.get(str(id), {})
 	if npc.is_empty(): return "You cannot search that."
-	if Brawl.knocked(s, npc) or not npc.get("sleeping", {}).is_empty(): return ""
+	if Brawl.knocked(s, npc) or not npc.get("sleeping", {}).is_empty() or npc.health <= 0: return ""
 	return "They would not stand for it."
+
+## Puts the player's stack of `item` into an open chest (people never accept gifts this way).
+static func give(s: Dictionary, id: int, item: String) -> void:
+	var pc: Dictionary = s.player_control
+	var e: Dictionary = s.entities.get(str(id), {})
+	if e.is_empty() or e.kind != "chest": pc.notice = "That is not a chest."; return
+	var problem := can_search(s, id)
+	if not problem.is_empty(): pc.notice = problem; return
+	var amount: int = mini(Inventory.amount(s, s.player, item), Inventory.available(s, id))
+	if amount <= 0: pc.notice = "The chest is full, or you have none."; return
+	Inventory.transfer(s, s.player, id, item, amount)
+	pc.notice = "Put %s in the chest." % Outfits.label(item).to_lower()
 
 ## Opens the loot window: `kind` "loot" for chests and people, "wardrobe" for the player's own clothes.
 static func open(s: Dictionary, id: int, kind: String = "loot") -> void:
@@ -45,6 +57,7 @@ static func _victim_robbed(s: Dictionary, id: int) -> void:
 		npc.offences = 2
 		npc.last_offence = s.tick
 		Brawl.engage(s, npc, "beat")
+		load("res://sim/settlement/law.gd").crime(s, npc.settlement, "theft", npc.id)
 		s.player_control.notice = "%s wakes up and catches you stealing!" % s.entities[str(id)].name
 		if s.has("factions"): Society.remember(s, id, "robbed", s.player, "The traveller went through my things.", -20)
 		return

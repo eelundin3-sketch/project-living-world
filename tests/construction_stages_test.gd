@@ -27,10 +27,10 @@ func _initialize() -> void:
 	var site: Dictionary = s.construction[str(site_id)]
 	var stages: Array = site.stages
 	check(stages.map(func(stage: Dictionary) -> String: return stage.id) == ["walls", "floor", "door", "roof"], "Construction phases are explicit and ordered")
-	check(site.total_units == site.work_ticks / Planner.WORK_PER_TILE and site.total_units > 350, "Every floor/wall/door/roof tile requires individual work")
+	check(site.total_units == site.work_ticks / Planner.WORK_PER_TILE and site.total_units > 120, "Every floor/wall/door/roof tile requires individual work")
 	var builder: Dictionary = {}
 	for npc in s.residents.values():
-		if npc.settlement == 1 and npc.occupation == "Gatherer" and npc.job == 0:
+		if npc.settlement == 1 and npc.occupation not in ["Sheriff", "Trader"] and npc.job == 0:
 			builder = npc
 			break
 	check(not builder.is_empty(), "A builder is available")

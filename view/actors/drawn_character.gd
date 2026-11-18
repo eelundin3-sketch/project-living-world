@@ -325,6 +325,11 @@ func _build_frame() -> Dictionary:
 		crouch = maxf(crouch, 0.85 * sitting)
 		fold -= 3.0 * sitting
 	if action in ["chop", "mine", "punch", "shove"]: fold += impact * 5.0
+	if action == "kick": fold -= impact * 4.0   # lean back onto the standing leg
+	if action == "surrender": fold -= 1.5        # hands up, leaning away from the gun
+	if action == "cuffed": fold += 2.5           # head bowed
+	if action == "cuff": fold += 4.0             # leaning in to fit the cuffs
+	if action == "search": fold += 3.5           # bending to pat the prisoner down
 	if action == "build": fold += build.hit * 5.0 + build.raise * 1.5 - build.check * 1.5  # lean into each blow
 	if action == "shoot": fold -= 4.0 * smoothstep(0.0, 0.08, phase) * (1.0 - smoothstep(0.1, 0.55, phase))
 	if action == "build" and pose.get("build_kind", "") == "floor":
@@ -389,7 +394,7 @@ func _build_frame() -> Dictionary:
 	if quantity == 0 and action == "drop":
 		item = pose.get("last_item", "")
 		quantity = pose.get("last_quantity", 0)
-	var carrying := quantity > 0 and action not in ["build", "hit", "down", "rest", "punch", "shove", "stagger"]
+	var carrying := quantity > 0 and action not in ["build", "hit", "down", "rest", "punch", "shove", "kick", "stagger", "surrender", "cuffed", "cuff", "search"]
 	var lift := 1.0
 	if action == "pickup": lift = smoothstep(0.33, 0.91, phase)
 	elif action == "drop": lift = smoothstep(0.33, 0.91, 1.0 - phase)
@@ -455,6 +460,33 @@ func _build_frame() -> Dictionary:
 			var flare := flinch
 			hand = shoulder + _joint(side * (5.0 + 8.0 * flare), 1.0 - 4.0 * flare, -8.0 + 13.0 * flare)
 			elbow = shoulder.lerp(hand, 0.5) + _joint(side * 2.5, 0, -4)
+		elif action == "surrender":
+			# Hands up, palms out, trembling a little.
+			var shake := sin(float(pose.get("age", 0.0)) * 9.0) * 0.45
+			elbow = shoulder + _joint(side * 8.5, 0.5, 7.5)
+			hand = shoulder + _joint(side * 6.0, 1.0, 17.5 + shake)
+		elif action == "cuffed":
+			# Wrists cuffed together behind the back.
+			elbow = shoulder + _joint(side * 5.5, -3.5, -8.5)
+			hand = hip + _joint(side * 1.6, -4.5, 3.5)
+		elif action == "cuff":
+			# Both hands low and forward, working the cuffs onto the prisoner's wrists.
+			var fiddle := sin(phase * TAU * 4.0) * 1.2
+			elbow = shoulder + _joint(side * 6.0, 6.0, -7.0)
+			hand = chest + _joint(side * 2.5, 11.5, -13.0 + fiddle)
+		elif action == "search":
+			# Patting the prisoner down: both hands low in front, sweeping across the body.
+			var sweep := sin(phase * TAU * 3.0 + (0.0 if side > 0 else PI))
+			elbow = shoulder + _joint(side * 6.5, 5.5, -7.0)
+			hand = chest + _joint(side * (2.0 + 3.5 * sweep), 11.0, -11.0 + 2.5 * sweep)
+		elif action == "escort" and side > 0:
+			# A firm grip on the prisoner's arm, a step behind.
+			elbow = shoulder + _joint(side * 8.0, -3.0, -8.0)
+			hand = shoulder + _joint(side * 9.5, -7.5, -14.0)
+		elif action == "kick":
+			# Arms out for balance while the leg swings.
+			hand = shoulder + _joint(side * (9.0 + 5.0 * impact), 1.0, -7.0 + 4.0 * impact)
+			elbow = shoulder.lerp(hand, 0.5) + _joint(side * 2.0, 0, -3)
 		elif action in ["punch", "shove", "melee", "ready", "combat_idle"] or pose.get("ready", false):
 			var extension := impact if side > 0 or action == "shove" else 0.0
 			hand = chest + _joint(side * 5, 9 + extension * 23, 1 - extension * 3)
@@ -494,6 +526,11 @@ func _build_frame() -> Dictionary:
 	var leg_run: float = run_amount * (1.0 - 0.3 * tired)
 	var left_leg := leg_joints(-1, hip, gait, moving, leg_run, HIP_HEIGHT + bob - crouch * 5.0 - sneak * 10.0 - kneel * 12.5)
 	var right_leg := leg_joints(1, hip, gait, moving, leg_run, HIP_HEIGHT + bob - crouch * 5.0 - sneak * 10.0 - kneel * 12.5)
+	if action == "kick":
+		# The right leg swings forward and down through the downed person; the left takes the weight.
+		var kick_foot := hip + _joint(5.3, 4.0 + 13.0 * impact, 5.0 + 4.0 * impact * (1.0 - impact))
+		var kick_knee := hip.lerp(kick_foot, 0.5) + _joint(0, 3.0 * impact, -2.0)
+		right_leg = PackedVector2Array([right_leg[0], right_leg[1].lerp(kick_knee, impact), right_leg[2].lerp(kick_foot, impact)])
 	var pack_center := Vector2.ZERO
 	if kneel > 0.0:
 		# Down on the right knee, left foot planted ahead.
@@ -803,6 +840,13 @@ func _draw() -> void:
 		_draw_arm(arms[near_side], shirt, skin)
 	if frame.get("backpack", false) and not pack_drawn:
 		_draw_pack(frame.pack_center, float(frame.pack_open), float(frame.pack_move))
+	if action == "cuffed":
+		# Iron cuffs on the crossed wrists.
+		var left_hand: Vector2 = arms[-1][2]
+		var right_hand: Vector2 = arms[1][2]
+		draw_line(left_hand, right_hand, Color("3a3b3e"), 1.4, true)
+		for wrist in [left_hand, right_hand]:
+			draw_arc(wrist, 2.2, 0.0, TAU, 12, Color("9a9ca0"), 1.2, true)
 	if action == "treat" and float(frame.get("treat_reach", 0.0)) > 0.3:
 		var roll: Vector2 = frame.treat_hand
 		var wound: Vector2 = frame.treat_center

@@ -1,4 +1,5 @@
 extends SceneTree
+const Outfits = preload("res://sim/entities/outfits.gd")
 var failures: int=0
 func check(value: bool,label: String) -> void:
 	if not value: failures+=1; printerr("FAIL: "+label)
@@ -39,11 +40,11 @@ func run() -> void:
 	main.player_panels.select_part("left_forearm")
 	check(window.selected_part=="left_forearm","Body part selection works")
 	panels.refresh()
-	check(not window.cards.has("right_hand") and window.listed.is_empty(), "Healthy areas stay out of the default injury list")
+	check(window.listed.is_empty(), "Healthy areas stay out of the default injury list")
 	main.simulation.submit("debug_injury", {"part": "right_hand", "damage": 28, "kind": "cut"})
 	main.simulation.step()
 	panels.refresh()
-	check(window.cards.has("right_hand"), "New wounds appear in the injury list")
+	check(window.rows.has("right_hand"), "New wounds appear in the injury list")
 	window.select_part("right_hand")
 	check(window.action_problem("bandage").is_empty() and not window.action_problem("remove").is_empty(), "Treatment buttons respect available actions")
 	var bandages: int = main.simulation.state.inventories[str(main.simulation.state.player)].items.get("bandage", 0)
@@ -74,5 +75,51 @@ func run() -> void:
 	main.simulation.submit("hold_item",{"item":"food"}); main.simulation.step(); main.refresh_view()
 	press(main,KEY_F); main.simulation.step(); main.refresh_view()
 	check(main.simulation.state.player_control.held_quantity==0,"F submits contextual interaction")
+	# The loot window is a second grid: drag goods across to take them, clothes onto your squares to wear them.
+	var Brawl2 = load("res://sim/player/brawl.gd")
+	var Looting = load("res://sim/player/looting.gd")
+	var Inv = load("res://sim/inventory/inventory_store.gd")
+	var st: Dictionary = main.simulation.state
+	var other: Dictionary = {}
+	for npc in st.residents.values():
+		if npc.settlement == 1: other = npc; break
+	var pcell: Array = st.entities[str(st.player)].cell
+	st.entities[str(other.id)].cell = [pcell[0] + 1, pcell[1]]
+	Inv.produce(st, other.id, "rye", 4)
+	st.accounts[str(other.id)] = 55
+	Brawl2.knockdown(st, other, [pcell[0] + 1, pcell[1]], "ko", [1000, 0])
+	main.simulation.step()
+	Looting.open(st, other.id)
+	main.simulation.step(); panels.refresh()
+	check(panels.mode == "loot" and panels.loot_window.visible and panels.inventory_window.visible, "Searching shows your inventory beside a loot window")
+	var theirs = panels.loot_window.grid
+	var mine = panels.inventory_window.grid
+	check(theirs.foreign and theirs.owner_id == other.id and theirs.stacks.has("rye") and theirs.stacks.has("coins"), "The loot grid shows their goods and coins")
+	var rye_data := {"type": "lw_item", "item": "rye", "from": "grid", "slot": "", "owner": other.id}
+	check(mine._can_drop_data(mine._cell_rect(30).get_center(), rye_data) and not theirs._can_drop_data(theirs._cell_rect(30).get_center(), rye_data), "Goods can be dragged from theirs into yours, not back")
+	var rye_before: int = Inv.amount(st, st.player, "rye")
+	mine._drop_data(mine._cell_rect(30).get_center(), rye_data); main.simulation.step()
+	check(Inv.amount(st, st.player, "rye") == rye_before + 4, "Dragging a stack across takes it")
+	var coins_before: int = int(st.accounts[str(st.player)])
+	mine._drop_data(mine._cell_rect(31).get_center(), {"type": "lw_item", "item": "coins", "from": "grid", "slot": "", "owner": other.id}); main.simulation.step()
+	check(int(st.accounts[str(st.player)]) == coins_before + 55, "Dragging the coins across takes them")
+	var shirt_slot: Vector2 = mine._slot_rect(1).get_center()
+	var shirt_data := {"type": "lw_item", "item": str(Outfits.worn(st, other.id).shirt), "from": "slot", "slot": "shirt", "owner": other.id}
+	check(mine._can_drop_data(shirt_slot, shirt_data) and not mine._can_drop_data(mine._slot_rect(2).get_center(), shirt_data), "Their shirt can only be dragged onto your shirt square or into the grid")
+	mine._drop_data(shirt_slot, shirt_data); main.simulation.step()
+	check(str(Outfits.worn(st, st.player).shirt) == shirt_data.item and str(Outfits.worn(st, other.id).shirt).is_empty(), "Dragging their shirt onto your square puts it on you")
+	var chest: Dictionary = {}
+	for e in st.entities.values(): if e.kind == "chest": chest = e; break
+	st.entities[str(st.player)].cell = [chest.cell[0], chest.cell[1] + 1]
+	Looting.open(st, chest.id)
+	main.simulation.step(); panels.refresh()
+	check(not panels.loot_window.show_slots, "A chest has no clothing squares")
+	var give_data := {"type": "lw_item", "item": "bandage", "from": "grid", "slot": "", "owner": st.player}
+	var in_chest: int = Inv.amount(st, chest.id, "bandage")
+	check(panels.loot_window.grid._can_drop_data(panels.loot_window.grid._cell_rect(3).get_center(), give_data), "Goods can be dragged into a chest")
+	panels.loot_window.grid._drop_data(panels.loot_window.grid._cell_rect(3).get_center(), give_data); main.simulation.step()
+	check(Inv.amount(st, chest.id, "bandage") > in_chest, "Dropping goods on a chest puts them inside")
+	press(main, KEY_ESCAPE)
+	check(not panels.loot_window.visible and not panels.inventory_window.visible, "Esc closes both loot windows")
 	main.queue_free(); await process_frame
 	print("Player panels: %s" % ("PASS" if failures==0 else "FAIL")); quit(0 if failures==0 else 1)

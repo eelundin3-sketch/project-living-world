@@ -4,13 +4,13 @@ const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const Market = preload("res://sim/economy/market.gd")
 const BodyDiagram = preload("res://view/ui/body_diagram.gd")
 const Outfits = preload("res://sim/entities/outfits.gd")
-const InventoryGrid = preload("res://view/ui/inventory_grid.gd")
 const HealthWindow = preload("res://view/ui/health_window.gd")
 const InventoryWindow = preload("res://view/ui/inventory_window.gd")
 var inventory_window: Control
 var inventory_moved := false
+var loot_window: Control
+var loot_moved := false
 var health_window: Control
-var inventory_grid: Control
 var simulation: RefCounted
 var mode: String = ""
 var selected_part: String = "head"
@@ -88,10 +88,6 @@ func _ready() -> void:
 	summary = Label.new()
 	summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	status_column.add_child(summary)
-	inventory_grid = InventoryGrid.new()
-	inventory_grid.simulation = simulation
-	inventory_grid.visible = false
-	status_column.add_child(inventory_grid)
 	healthy_toggle = CheckButton.new()
 	healthy_toggle.text = "Show healthy areas"
 	healthy_toggle.toggled.connect(func(_active: bool) -> void: refresh())
@@ -139,6 +135,12 @@ func _ready() -> void:
 	add_child(inventory_window)
 	inventory_window.close_requested.connect(func() -> void: show_mode(""))
 	inventory_window.minimize_requested.connect(minimize_window)
+	loot_window = InventoryWindow.new()
+	loot_window.simulation = simulation
+	loot_window.visible = false
+	add_child(loot_window)
+	loot_window.close_requested.connect(func() -> void: show_mode(""))
+	loot_window.minimize_requested.connect(minimize_window)
 	show_mode("")
 func _build_meter() -> void:
 	meter_column = VBoxContainer.new()
@@ -192,8 +194,8 @@ func scrolls_health_list_at(point: Vector2) -> bool:
 func minimize_window() -> void:
 	if mode.is_empty(): return
 	minimized = true
-	visible = false
 	treatment_menu.hide()
+	_apply_visibility()
 	dock_button.text = "▲  " + {"inventory": "Inventory", "health": "Health", "loot": "Searching", "wardrobe": "Clothes"}.get(mode, "Trading")
 	dock_button.visible = true
 
@@ -201,27 +203,33 @@ func restore_window() -> void:
 	minimized = false
 	dock_button.visible = false
 	visible = not mode.is_empty()
+	_apply_visibility()
+func _apply_visibility() -> void:
+	var shown := not minimized and not mode.is_empty()
+	panel.visible = shown and mode not in ["health", "inventory", "loot", "wardrobe"]
+	shade.visible = shown and mode not in ["inventory", "loot", "wardrobe"]
+	shade.color = Color(0.02, 0.03, 0.035, 0.55) if mode == "health" else Color(0.02, 0.03, 0.025, 0.62)
+	if health_window != null: health_window.visible = shown and mode == "health"
+	if inventory_window != null: inventory_window.visible = shown and mode in ["inventory", "loot", "wardrobe"]
+	if loot_window != null: loot_window.visible = shown and mode == "loot"
 
 func show_mode(value: String) -> void:
 	treatment_menu.hide()
 	var opening_health := value == "health" and mode != "health"
-	if simulation != null and (value == "inventory") != (mode == "inventory"):
-		simulation.submit("rummage", {"open": value == "inventory"})
+	var kneels := func(m: String) -> bool: return m in ["inventory", "loot", "wardrobe"]
+	if simulation != null and kneels.call(value) != kneels.call(mode):
+		simulation.submit("rummage", {"open": kneels.call(value)})
 	mode = value
 	minimized = false
 	dock_button.visible = false
 	visible = not mode.is_empty()
-	panel.visible = mode not in ["health", "inventory"]
-	shade.visible = mode != "inventory"
+	_apply_visibility()
 	if inventory_window != null:
-		var opening_inventory: bool = mode == "inventory" and not inventory_window.visible
-		inventory_window.visible = mode == "inventory"
 		inventory_window.simulation = simulation
-		if opening_inventory and not inventory_moved: inventory_window.position = inventory_window.home_position()
-	if health_window != null:
-		health_window.visible = mode == "health"
-		health_window.simulation = simulation
-	shade.color = Color(0.02, 0.03, 0.035, 0.55) if mode == "health" else Color(0.02, 0.03, 0.025, 0.62)
+		loot_window.simulation = simulation
+		var opening: bool = mode in ["inventory", "loot", "wardrobe"] and not inventory_window.visible
+		if opening and not inventory_moved: inventory_window.position = inventory_window.home_position()
+		if mode == "loot" and not loot_moved: loot_window.position = inventory_window.position + Vector2(inventory_window.size.x + 18.0, 0.0)
 	if simulation == null: return
 	if opening_health and simulation.state.has("player_health"):
 		var parts: Dictionary = simulation.state.player_health.parts
@@ -279,33 +287,40 @@ func refresh() -> void:
 	var s: Dictionary=simulation.state
 	var pc: Dictionary=s.player_control
 	if pc.ui_nonce!=last_nonce:
-		last_nonce=pc.ui_nonce; target=pc.ui_target; mode=str(pc.get("ui_kind","trade")); loot_signature=""; minimized=false; dock_button.visible=false; visible=true
+		last_nonce=pc.ui_nonce; target=pc.ui_target; var wanted := str(pc.get("ui_kind","trade"))
+		if (wanted in ["inventory", "loot", "wardrobe"]) != (mode in ["inventory", "loot", "wardrobe"]):
+			simulation.submit("rummage", {"open": wanted in ["inventory", "loot", "wardrobe"]})
+		mode=wanted; minimized=false; dock_button.visible=false; visible=true
+		if mode == "loot" and not loot_moved: loot_window.position = inventory_window.position + Vector2(inventory_window.size.x + 18.0, 0.0)
 	if mode.is_empty(): return
 	if cached_mode!=mode: rebuild()
-	panel.visible = mode not in ["health", "inventory"]
-	health_window.visible = mode == "health" and not minimized
-	inventory_window.visible = mode == "inventory" and not minimized
-	shade.visible = mode != "inventory"
+	_apply_visibility()
 	dock_button.visible = minimized
 	var is_health := mode == "health"
 	diagram.visible = is_health
-	inventory_grid.visible = mode == "inventory"
-	inventory_grid.simulation = simulation
-	scroll.visible = mode != "inventory"
 	meter_column.visible = is_health
 	healthy_toggle.visible = is_health
 	treatment_bar.visible = is_health
+	scroll.visible = false
 	if is_health:
 		health_window.simulation = simulation
 		if health_window.selected_part != selected_part and Health.PARTS.has(selected_part): health_window.selected_part = selected_part
 		health_window.refresh(s)
 		selected_part = health_window.selected_part
-	elif mode in ["loot", "wardrobe"]:
-		_refresh_loot(s, pc)
-	elif mode=="inventory":
+	elif mode in ["inventory", "wardrobe"]:
 		inventory_window.refresh(s)
 		if inventory_window.position != inventory_window.home_position(): inventory_moved = true
-		notice.text=pc.notice
+	elif mode == "loot":
+		var e: Dictionary = s.entities.get(str(target), {})
+		if e.is_empty(): show_mode(""); return
+		var is_chest: bool = e.kind == "chest"
+		var npc: Dictionary = s.get("residents", {}).get(str(target), {})
+		var heading: String = String(e.name) if is_chest else ("%s (dead)" if not npc.is_empty() and npc.health <= 0 else "%s") % e.name
+		loot_window.configure(heading, int(target), true, not is_chest)
+		inventory_window.refresh(s)
+		loot_window.refresh(s)
+		if inventory_window.position != inventory_window.home_position(): inventory_moved = true
+		if loot_window.position != inventory_window.position + Vector2(inventory_window.size.x + 18.0, 0.0): loot_moved = true
 	else:
 		var e: Dictionary=s.entities.get(str(target),{})
 		if e.is_empty(): show_mode(""); return
@@ -318,78 +333,9 @@ func refresh() -> void:
 			rows[item].text="%s · You %d / Here %d\nBuy %d · Sell %d coins" % [item.capitalize(),Inventory.amount(s,s.player,item),Inventory.amount(s,target,item),Market.quote(s,e.settlement,item,true),Market.quote(s,e.settlement,item,false)]
 		detail.text = "Goods come from this stall’s stock. Stay at the counter to trade." if e.kind == "market_stall" else "Stay nearby to trade. People trade personal goods; work cargo is unavailable."
 		notice.text=pc.notice
-
 func _part_name(part: String) -> String:
 	return part.replace("_", " ").capitalize()
 
 func _is_injured(wound: Dictionary) -> bool:
 	return wound.damage > 0 or wound.infection > 0 or wound.bandage != "none"
 
-func _refresh_loot(s: Dictionary, pc: Dictionary) -> void:
-	var e: Dictionary = s.entities.get(str(target), {})
-	if e.is_empty(): show_mode(""); return
-	var wardrobe: bool = mode == "wardrobe"
-	var chest: bool = e.kind == "chest"
-	var items: Dictionary = s.inventories.get(str(target), {}).get("items", {}).duplicate()
-	var outfit: Dictionary = Outfits.worn(s, target)
-	var coins: int = int(s.get("accounts", {}).get(str(target), 0)) if not wardrobe and not chest else 0
-	var pack: Dictionary = s.inventories[str(s.player)].items.duplicate()
-	var signature := str([mode, target, items, outfit, coins, pack if wardrobe else {}])
-	title.text = "YOUR CLOTHES" if wardrobe else (("OPEN · " + e.name.to_upper()) if chest else ("SEARCHING · " + e.name.to_upper()))
-	var npc: Dictionary = s.get("residents", {}).get(str(target), {})
-	summary.text = ("%s is %s.\n" % [e.name, "out cold" if not npc.is_empty() and not npc.get("knock", {}).is_empty() else "asleep"] if not npc.is_empty() and not wardrobe else "") + "Your pack: %d / %d" % [Inventory.used(s.inventories[str(s.player)]), s.inventories[str(s.player)].capacity]
-	detail.text = "Take what you want. They will not forget it." if not chest and not wardrobe else ("Wear a piece to change how you look; spares stay in your pack." if wardrobe else "Take what you need; chests refill only when you put things in.")
-	notice.text = pc.notice
-	if signature == loot_signature: return
-	loot_signature = signature
-	for child in list.get_children(): list.remove_child(child); child.queue_free()
-	if wardrobe or not chest:
-		_loot_header("You are wearing" if wardrobe else "Wearing")
-		for slot in Outfits.SLOTS:
-			var item: String = str(outfit.get(slot, ""))
-			var buttons: Array = []
-			if not item.is_empty():
-				if wardrobe: buttons.append(["Take off", func() -> void: simulation.submit("take_off", {"slot": slot})])
-				else:
-					buttons.append(["Take", func() -> void: simulation.submit("loot_strip", {"target": target, "slot": slot, "wear": false})])
-					buttons.append(["Take & wear", func() -> void: simulation.submit("loot_strip", {"target": target, "slot": slot, "wear": true})])
-			_loot_row("%s:  %s" % [Outfits.SLOT_NAMES[slot], Outfits.label(item) if not item.is_empty() else "nothing"], buttons, item.is_empty())
-	var shown: Dictionary = pack if wardrobe else items
-	_loot_header("In your pack" if wardrobe else ("Inside" if chest else "Carrying"))
-	var any := false
-	for item in shown:
-		if int(shown[item]) <= 0: continue
-		if wardrobe and not Outfits.is_clothing(item): continue
-		any = true
-		var buttons: Array = []
-		if wardrobe: buttons.append(["Wear", func() -> void: simulation.submit("wear_item", {"item": item})])
-		else:
-			buttons.append(["Take", func() -> void: simulation.submit("loot_take", {"target": target, "item": item})])
-			if Outfits.is_clothing(item): buttons.append(["Take & wear", func() -> void: _take_and_wear(item)])
-		_loot_row("%s  × %d" % [Outfits.label(item), int(shown[item])], buttons)
-	if not any: _loot_row("nothing" if not wardrobe else "no spare clothes", [], true)
-	if coins > 0: _loot_row("Coins:  %d" % coins, [["Take", func() -> void: simulation.submit("loot_coins", {"target": target})]])
-	if not wardrobe:
-		var all_row := HBoxContainer.new(); list.add_child(all_row)
-		add_button(all_row, "Take everything", func() -> void: simulation.submit("loot_all", {"target": target}))
-
-func _take_and_wear(item: String) -> void:
-	simulation.submit("loot_take", {"target": target, "item": item})
-	simulation.submit("wear_item", {"item": item})
-
-func _loot_header(text: String) -> void:
-	var label := Label.new()
-	label.text = text.to_upper()
-	label.add_theme_font_size_override("font_size", 13)
-	label.add_theme_color_override("font_color", Color("c9bd9e"))
-	list.add_child(label)
-
-func _loot_row(text: String, buttons: Array, dim: bool = false) -> void:
-	var row := HBoxContainer.new()
-	list.add_child(row)
-	var label := Label.new()
-	label.text = text
-	label.custom_minimum_size = Vector2(300, 30)
-	if dim: label.add_theme_color_override("font_color", Color("807a68"))
-	row.add_child(label)
-	for entry in buttons: add_button(row, entry[0], entry[1])

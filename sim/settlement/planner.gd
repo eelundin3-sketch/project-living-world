@@ -43,6 +43,7 @@ static func plan(sim: RefCounted, settlement_id: int, definition: String) -> int
 	var town: Dictionary = s.settlements[str(settlement_id)]
 	var location: Array = []
 	var house: Dictionary = {}
+	var door_side := 2
 	if s.building_defs[definition].kind == "home" and s.has("households"):
 		# Build for whoever needs it most: the biggest household still in the lodge or overcrowded.
 		var people := 2
@@ -54,7 +55,9 @@ static func plan(sim: RefCounted, settlement_id: int, definition: String) -> int
 				best = household.members.size()
 				people = household.members.size()
 		house = Housing.choose(sim, people, settlement_id)
-		location = Housing.find_plot(sim, settlement_id, house)
+		var site := Housing.find_site(sim, settlement_id, house)
+		location = site.get("door", [])
+		door_side = int(site.get("side", 2))
 		if location.is_empty():
 			sim.record(town.name + ": no buildable construction site")
 			return 0
@@ -73,7 +76,7 @@ static func plan(sim: RefCounted, settlement_id: int, definition: String) -> int
 		sim.record(town.name + ": no buildable construction site")
 		return 0
 	var def: Dictionary = s.building_defs[definition]
-	var id := World.add_entity(sim, "construction", "Planned " + (String(house.name).to_lower() if not house.is_empty() else def.kind), location, settlement_id, Housing.house_fields(house) if not house.is_empty() else {})
+	var id := World.add_entity(sim, "construction", "Planned " + (String(house.name).to_lower() if not house.is_empty() else def.kind), location, settlement_id, Housing.placed_fields(house, location, door_side) if not house.is_empty() else {})
 	Inventory.create(s, id, def.planks)
 	s.entities[str(id)].walls_first = true
 	if def.kind == "home" and house.is_empty(): s.entities[str(id)].layout_shape = "stepped_joined"

@@ -4,6 +4,7 @@ const World = preload("res://sim/world/world_db.gd")
 const Nav = preload("res://sim/movement/navigation.gd")
 const Save = preload("res://sim/persistence/save_manager.gd")
 const Planner = preload("res://sim/settlement/planner.gd")
+const Orient = preload("res://sim/world/orient.gd")
 var failures: int = 0
 func check(ok: bool, message: String) -> void:
 	if not ok:
@@ -17,11 +18,15 @@ func _initialize() -> void:
 		if not entity.has("footprint"):
 			continue
 		var r := World.building_rect(entity)
-		var interior: Array = [entity.cell[0], entity.cell[1] - 2]
-		var outside: Array = [entity.cell[0], entity.cell[1] + 2]
+		var out := Orient.outward(int(entity.get("door_side", 2)))
+		var interior: Array = [entity.cell[0] - out.x * 2, entity.cell[1] - out.y * 2]
+		var outside: Array = [entity.cell[0] + out.x * 2, entity.cell[1] + out.y * 2]
 		var route := Nav.request_path(s, outside, interior)
 		check(route.ok and route.path.has(entity.door), "Interior is reachable through doorway")
-		check(not World.walkable(s, [r.position.x, r.position.y + 2]), "Side wall blocks movement")
+		var wall_found := false
+		for y in range(r.position.y, r.end.y):
+			if World.building_contains(entity, [r.position.x, y]) and not World.walkable(s, [r.position.x, y]): wall_found = true
+		check(wall_found, "Side wall blocks movement")
 		check(not Planner.suitable(s, interior), "Construction cannot overlap existing room")
 		for cell in route.path:
 			check(World.walkable(s, cell), "Navigation never crosses wall")

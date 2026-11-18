@@ -21,13 +21,15 @@ static func begin(s: Dictionary, kind: String, direction: Array) -> bool:
 	var dx: int = clampi(direction[0], -1000, 1000)
 	var dy: int = clampi(direction[1], -1000, 1000)
 	if dx == 0 and dy == 0: return false
+	# A shove aimed at someone already on the ground becomes a kick.
+	if kind == "shove" and downed_target(s, [dx, dy]) != 0: kind = "kick"
 	Actions.stop(s)
 	control.held_item = ""
 	control.held_quantity = 0
 	s.player_path = []
 	control.unarmed_cooldown = s.tick + ACTION_TICKS
 	control.unarmed = {"kind": kind, "direction": [dx, dy], "start": s.tick, "impact": s.tick + IMPACT_DELAY, "end": s.tick + ACTION_TICKS, "resolved": false}
-	control.notice = "Punching." if kind == "punch" else "Shoving."
+	control.notice = {"punch": "Punching.", "shove": "Shoving.", "kick": "Kicking."}[kind]
 	return true
 
 static func update(sim: RefCounted) -> void:
@@ -39,8 +41,34 @@ static func update(sim: RefCounted) -> void:
 		_resolve(sim, action)
 	if s.tick >= action.end: s.player_control.unarmed = {}
 
+## The nearest villager lying down (knocked out or shoved over, still alive) within reach and
+## roughly in the direction aimed, or 0.
+static func downed_target(s: Dictionary, direction: Array) -> int:
+	var origin: Array = s.entities[str(s.player)].cell
+	var aim := Vector2(direction[0], direction[1]).normalized()
+	var best := 0
+	var best_distance := 100.0
+	for npc in s.get("residents", {}).values():
+		if npc.health <= 0 or not Brawl.knocked(s, npc): continue
+		var difference := Vector2(s.entities[str(npc.id)].cell[0] - origin[0], s.entities[str(npc.id)].cell[1] - origin[1])
+		var distance: float = difference.length()
+		if distance > 1.6 or (distance > 0.01 and difference.normalized().dot(aim) < 0.55): continue
+		if distance < best_distance or (is_equal_approx(distance, best_distance) and npc.id < best):
+			best = npc.id
+			best_distance = distance
+	return best
+
 static func _resolve(sim: RefCounted, action: Dictionary) -> void:
 	var s: Dictionary = sim.state
+	if action.kind == "kick":
+		var target: int = downed_target(s, action.direction)
+		if target == 0:
+			s.player_control.notice = "Nobody on the ground in reach."
+			return
+		var downed: Dictionary = s.residents[str(target)]
+		Brawl.on_player_kick(sim, downed, s.entities[str(target)], action.direction)
+		s.player_control.notice = "Kicked " + str(s.entities[str(target)].name) + (" to death." if downed.health <= 0 else ".")
+		return
 	var origin: Array = s.entities[str(s.player)].cell
 	var direction := Vector2(action.direction[0], action.direction[1]).normalized()
 	var best: int = 0

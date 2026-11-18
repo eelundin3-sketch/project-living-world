@@ -28,11 +28,22 @@ func run() -> void:
 	check(s.shotgun.loaded == 5 and Inventory.amount(s, s.player, "shell") == 5, "Reload loads shells one at a time from inventory")
 	var player: Dictionary = s.entities[str(s.player)]
 	player.cell = [60, 60]
+	# Ground impact needs open ground ahead: the layout of the towns changes, so look for a clear spot.
+	for x in range(40, 120, 3):
+		for y in range(60, 100, 3):
+			var clear := true
+			for step in range(1, 10):
+				if Shotgun.surface_at(s, [x, y + step], s.player) != "": clear = false; break
+			if clear and World.walkable(s, [x, y]):
+				player.cell = [x, y]
+				break
+		if player.cell != [60, 60]: break
 	# Ground impact: nothing in the way.
 	sim.submit("shotgun_fire", {"direction": [0, 1000]}); sim.step()
 	check(s.shotgun.loaded == 4 and s.shotgun.pellets.size() == Shotgun.PELLETS, "A blast fires a spread of pellets")
 	for tick in range(15): sim.step()
 	check(effects(s).has("ground") or s.shotgun.effects.size() == 0, "Pellets that miss raise ground dust")
+	player.cell = [60, 60]   # back to the fixed spot the wall, body and tree checks below are laid out around
 	# Cooldown.
 	sim.step(); 
 	check(not Shotgun.can_fire(s) or s.tick - s.shotgun.last_shot >= Shotgun.COOLDOWN_TICKS, "Fire rate is limited")

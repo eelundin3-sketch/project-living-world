@@ -67,6 +67,13 @@ func _initialize() -> void:
 		sim.step()
 		if not victim.get("brawl", {}).is_empty(): woke = true; break
 	check(woke, "The robbed villager comes after the thief when they wake")
+	# The sheriff may have caught the thief: let that go so walking can be tested on its own.
+	for npc in s.residents.values(): npc.arrest = {}
+	s.law = {"wanted": {}}
+	s.player_control.restrained = false
+	s.player_control.escort = 0
+	s.player_control.knock = {}
+	player.cell = [60, 60]
 	# Double right-click walking: a route is found to a distant square.
 	player.cell = [60, 60]
 	sim.submit("walk_to", {"cell": [70, 64]}); sim.step()

@@ -6,6 +6,8 @@ const World = preload("res://sim/world/world_db.gd")
 const Housing = preload("res://sim/settlement/housing.gd")
 const Planner = preload("res://sim/settlement/planner.gd")
 const Nav = preload("res://sim/movement/navigation.gd")
+const TownLayout = preload("res://sim/world/town_layout.gd")
+const Orient = preload("res://sim/world/orient.gd")
 var failures: int = 0
 func check(value: bool, label: String) -> void:
 	if not value: failures += 1; printerr("FAIL: " + label)
@@ -19,7 +21,6 @@ func _initialize() -> void:
 	check(beds_seen.has(1) and beds_seen.has(2) and beds_seen.has(3) and beds_seen.size() == 3, "Houses have 1 to 3 beds")
 	var sim := Sim.new(); sim.start_game()
 	var s: Dictionary = sim.state
-	var corridors := World.road_corridors(s)
 	var homes: Array = []
 	var singles := 0
 	var families := 0
@@ -40,20 +41,27 @@ func _initialize() -> void:
 	for home in homes:
 		styles[home.house_type] = true
 		var rect := World.building_rect(home)
-		for road in corridors:
-			check(not road.intersects(rect), "%s does not block a road" % home.name)
+		var on_road := false
+		for y in range(rect.position.y, rect.end.y):
+			for x in range(rect.position.x, rect.end.x):
+				if World.building_contains(home, [x, y]) and TownLayout.on_road(s, [x, y]): on_road = true
+		check(not on_road, "%s does not block a road" % home.name)
 		for other in s.entities.values():
 			if other.has("footprint") and other.id != home.id:
 				check(not World.building_rect(other).intersects(rect.grow(1)), "%s stands clear of %s" % [home.name, other.name])
 		var store: Array = s.entities[str(s.settlements[str(home.settlement)].warehouse)].cell
-		check(Nav.request_path(s, [home.door[0], home.door[1] + 1], store).ok, "%s is reachable from the square" % home.name)
+		var out := Orient.outward(int(home.get("door_side", 2)))
+		check(Nav.request_path(s, [home.door[0] + out.x, home.door[1] + out.y], store).ok, "%s is reachable from the square" % home.name)
 	check(styles.size() >= 3, "The towns' houses are of different types (%d)" % styles.size())
 	# A house planned later is a typed house on a clear plot too.
 	var site := Planner.plan(sim, 1, "core:building/home")
 	check(site != 0 and s.entities[str(site)].has("house_type"), "New houses are planned from the catalogue")
 	if site != 0:
 		var plot := World.plot_rect(s.entities[str(site)], "home")
-		for road in corridors: check(not road.intersects(plot), "A planned house keeps off the road")
+		var site_entity: Dictionary = s.entities[str(site)]
+		for y in range(plot.position.y, plot.end.y):
+			for x in range(plot.position.x, plot.end.x):
+				if World.building_contains(site_entity, [x, y], "home"): check(not TownLayout.on_road(s, [x, y]), "A planned house keeps off the road")
 	# The towns are far apart on a much larger map.
 	var a: Array = s.entities[str(s.settlements["1"].warehouse)].cell
 	var b: Array = s.entities[str(s.settlements["2"].warehouse)].cell

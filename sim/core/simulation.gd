@@ -14,7 +14,10 @@ const Sheriff = preload("res://sim/settlement/sheriff.gd")
 const Placement = preload("res://sim/world/placement.gd")
 const Hotbar = preload("res://sim/player/hotbar.gd")
 const Brawl = preload("res://sim/player/brawl.gd")
+const Speech = preload("res://sim/entities/speech.gd")
+const Law = preload("res://sim/settlement/law.gd")
 const Housing = preload("res://sim/settlement/housing.gd")
+const TownLayout = preload("res://sim/world/town_layout.gd")
 const ContextActions = preload("res://sim/player/context_actions.gd")
 const Looting = preload("res://sim/player/looting.gd")
 const Chests = preload("res://sim/entities/chests.gd")
@@ -76,6 +79,7 @@ func start_game(population: int = 5) -> void:
 	Market.install_stalls(self)
 	enable_society()
 	Sheriff.install(self)
+	TownLayout.generate(self)
 	Housing.settle(self)
 	Households.upgrade(self)
 	Chests.ensure_all(self)
@@ -113,6 +117,8 @@ func step() -> void:
 		Weather.update(self)
 		Unarmed.update(self)
 		Brawl.update(self)
+		Law.update(self)
+		Speech.update(self)
 		ContextActions.update(self)
 		LocalCombat.update(self)
 		var travelling: bool = not state.get("player_path", []).is_empty()
@@ -122,6 +128,9 @@ func step() -> void:
 		if run_route: state.player_control.crouching = false
 		var sneaking_route: bool = travelling and bool(state.get("player_control", {}).get("crouching", false))
 		var route_step: bool = (state.tick % 4 != 3 if tired_route else true) if run_route else (state.tick % 3 == 0 if sneaking_route else state.tick % 2 == 0)
+		if travelling and Law.jailed(state) and not Law.inside_cell(state, state.player_path[0]):
+			state.player_path = []
+			travelling = false
 		if travelling and route_step:
 			var next: Array = state.player_path.pop_front()
 			if World.walkable(state, next):
@@ -193,7 +202,7 @@ func _drain(queue_name: String, is_command: bool) -> void:
 
 func apply_command(entry: Dictionary) -> void:
 	# Someone lying on the ground cannot act until they are back on their feet.
-	if state.has("brawl") and entry.kind in ["move_player", "player_strike", "interact", "shotgun_fire", "hotbar_use", "eat", "drink", "treat_body", "context_action", "walk_to", "loot_take", "loot_all", "loot_coins", "loot_strip"] and Brawl.player_down(state):
+	if state.has("brawl") and entry.kind in ["move_player", "player_strike", "interact", "shotgun_fire", "hotbar_use", "eat", "drink", "treat_body", "context_action", "walk_to", "loot_take", "loot_all", "loot_coins", "loot_strip", "loot_give", "wear_item", "take_off", "hold_item", "hotbar_assign", "crouch_toggle", "travel_run", "shotgun_toggle", "shotgun_reload", "person_trade", "take_item", "surrender"] and (Brawl.player_down(state) or Law.restrained(state)):
 		return
 	if entry.kind == "player_strike":
 		Unarmed.begin(state, str(entry.payload.get("kind", "")), entry.payload.get("direction", []))
@@ -218,15 +227,19 @@ func apply_command(entry: Dictionary) -> void:
 			"shotgun_reload": state.player_control.notice = Shotgun.start_reload(state)
 			"shotgun_fire": Shotgun.fire(self, entry.payload.get("direction", []))
 		return
-	if entry.kind in ["loot_take", "loot_all", "loot_coins", "loot_strip", "wear_item", "take_off"] and state.has("player_control"):
+	if entry.kind in ["loot_take", "loot_all", "loot_coins", "loot_strip", "loot_give", "wear_item", "take_off"] and state.has("player_control"):
 		var payload: Dictionary = entry.payload
 		match entry.kind:
 			"loot_take": Looting.take(state, int(payload.get("target", 0)), str(payload.get("item", "")))
+			"loot_give": Looting.give(state, int(payload.get("target", 0)), str(payload.get("item", "")))
 			"loot_all": Looting.take_all(state, int(payload.get("target", 0)))
 			"loot_coins": Looting.take_coins(state, int(payload.get("target", 0)))
 			"loot_strip": Looting.strip(state, int(payload.get("target", 0)), str(payload.get("slot", "")), bool(payload.get("wear", false)))
 			"wear_item": Looting.wear(state, str(payload.get("item", "")))
 			"take_off": Looting.take_off(state, str(payload.get("slot", "")))
+		return
+	if entry.kind == "walk_to" and state.has("player_control") and Law.jailed(state):
+		state.player_control.notice = "You are locked in a cell."
 		return
 	if entry.kind == "walk_to" and state.has("player_control"):
 		# Double right-click on the ground: find a route and walk it (a blocked square goes to the nearest free neighbour).
@@ -251,6 +264,9 @@ func apply_command(entry: Dictionary) -> void:
 		return
 	if entry.kind == "context_action" and state.has("player_control"):
 		ContextActions.request(self, int(entry.payload.get("target", 0)), str(entry.payload.get("action", "")))
+		return
+	if entry.kind=="surrender" and state.has("player_control"):
+		Law.surrender(state)
 		return
 	if entry.kind=="rummage" and state.has("player_control"):
 		# Opening the inventory: kneel and go through the backpack (purely a pose; it ends on any move).
@@ -283,6 +299,7 @@ func apply_command(entry: Dictionary) -> void:
 		if state.has("player_control"):
 			state.player_control.pending = {}  # walking by hand cancels a click-to-act walk
 			state.player_control.rummaging = false
+			state.player_control.surrender = false   # lowering your hands to move
 		if state.has("player_control"):
 			if BodyHealth.incapacitated(state) or state.tick<state.player_control.next_move: return
 		var direction: Array = entry.payload.get("direction", [0, 0])
@@ -292,7 +309,7 @@ func apply_command(entry: Dictionary) -> void:
 			var cell: Array = state.entities[str(state.player)].cell
 			var next: Array = [cell[0] + direction[0], cell[1] + direction[1]]
 			var diagonal: bool = direction[0] != 0 and direction[1] != 0
-			if World.walkable(state, next) and (not diagonal or (World.walkable(state, [cell[0] + direction[0], cell[1]]) and World.walkable(state, [cell[0], cell[1] + direction[1]]))):
+			if Law.inside_cell(state, next) and World.walkable(state, next) and (not diagonal or (World.walkable(state, [cell[0] + direction[0], cell[1]]) and World.walkable(state, [cell[0], cell[1] + direction[1]]))):
 				if state.has("player_control"):
 					var requested_run: bool=bool(entry.payload.get("run",false)) and _stamina_allows_run() and BodyHealth.move_delay(state)==1
 					# Sprinting from a crouch stands you up; otherwise a crouch is a slow, quiet walk.
