@@ -51,7 +51,7 @@ static func fire(sim: RefCounted, direction: Array) -> bool:
 	var s: Dictionary = sim.state
 	if not can_fire(s) or direction.size() != 2: return false
 	var gun: Dictionary = s.shotgun
-	var origin: Array = s.entities[str(s.player)].cell.duplicate()
+	var origin: Array = load("res://sim/player/cover.gd").eye_cell(s).duplicate()   # leaning out of cover, the shot leaves from the corner
 	var base: float = Vector2(direction[0], direction[1]).angle()
 	gun.loaded -= 1
 	gun.reloading = false  # firing interrupts loading, as with a pump gun

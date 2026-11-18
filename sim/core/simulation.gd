@@ -18,6 +18,7 @@ const Speech = preload("res://sim/entities/speech.gd")
 const Law = preload("res://sim/settlement/law.gd")
 const Housing = preload("res://sim/settlement/housing.gd")
 const Limbs = preload("res://sim/player/limbs.gd")
+const Cover = preload("res://sim/player/cover.gd")
 const TownLayout = preload("res://sim/world/town_layout.gd")
 const ContextActions = preload("res://sim/player/context_actions.gd")
 const Looting = preload("res://sim/player/looting.gd")
@@ -168,6 +169,7 @@ func step() -> void:
 				Market.clear_market(state, int(town_id))
 		BodyHealth.update(state)
 		Limbs.update(state)
+		Cover.update(state)
 		PlayerActions.update(self)
 		Needs.update(state)
 		Hotbar.update(state)
@@ -209,6 +211,11 @@ func apply_command(entry: Dictionary) -> void:
 	var limb_problem: String = Limbs.action_problem(state, entry.kind)
 	if not limb_problem.is_empty() and state.has("player_control"):
 		state.player_control.notice = limb_problem
+		return
+	if entry.kind == "peek" and state.has("player_control"):
+		var toward: Array = entry.payload.get("toward", [0, 0])
+		state.player_control.peek_hold = bool(entry.payload.get("on", false)) and not Brawl.player_down(state) and not Law.restrained(state)
+		state.player_control.peek_toward = [int(toward[0]), int(toward[1])] if toward.size() == 2 else [0, 0]
 		return
 	if entry.kind == "player_strike":
 		Unarmed.begin(state, str(entry.payload.get("kind", "")), entry.payload.get("direction", []))

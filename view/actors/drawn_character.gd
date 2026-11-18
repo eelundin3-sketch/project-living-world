@@ -598,6 +598,14 @@ func _build_frame() -> Dictionary:
 		var slide: float = (6.0 if action == "stagger" else 3.0) * flinch
 		right_leg[2] += _joint(0, -slide, 0)
 		right_leg[1] += _joint(0, -slide * 0.55, 0)
+	# Leaning out past a corner: the body shifts towards the corner and the head goes furthest.
+	var lean_v: Vector2 = pose.get("peek_lean", Vector2.ZERO)
+	if lean_v.length() > 0.01:
+		var lean_screen := Vector2(lean_v.x, lean_v.y * 0.48)
+		chest += lean_screen * 5.0
+		head += lean_screen * 10.0
+		for side in [-1, 1]:
+			arms[side] = PackedVector2Array([arms[side][0] + lean_screen * 5.0, arms[side][1] + lean_screen * 7.0, arms[side][2] + lean_screen * 9.0])
 	# A limp: the bad leg drags, the body bobs down on it. An arm that does not work just hangs.
 	if bool(pose.get("limp", false)):
 		var bad_side: int = int(pose.get("limp_side", 1))

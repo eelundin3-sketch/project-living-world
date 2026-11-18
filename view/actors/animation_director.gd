@@ -457,7 +457,23 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 		# Crouching eases down in about a third of a second with a small dip past the final
 		# height, and rises again a little more slowly, so neither is a snap.
 		var wants_sneak: bool = is_player and bool(s.get("player_control", {}).get("crouching", false)) and action not in ["fall", "down", "getup", "treat", "rest"]
-		var sneak_raw: float = move_toward(float(pose.get("sneak_raw", 0.0)), 1.0 if wants_sneak else 0.0, dt * (3.0 if wants_sneak else 2.4))
+		# In cover the body is low against the wall; leaning out lifts it a little and shifts it towards the corner.
+		var in_cover: bool = false
+		var lean_to := Vector2.ZERO
+		if entity.kind == "player":
+			var control: Dictionary = s.get("player_control", {})
+			in_cover = control.has("cover") and not pose.moving
+			if control.has("peek"): lean_to = Vector2(control.peek.to[0] - control.peek.from[0], control.peek.to[1] - control.peek.from[1])
+		else:
+			var cycle: Dictionary = s.get("residents", {}).get(key, {}).get("cover_cycle", {})
+			in_cover = not cycle.is_empty()
+			if str(cycle.get("phase", "")) in ["peek", "fire"] and not cycle.get("peek_to", []).is_empty():
+				lean_to = Vector2(cycle.peek_to[0] - entity.cell[0], cycle.peek_to[1] - entity.cell[1])
+		pose.peek_lean = Vector2(pose.get("peek_lean", Vector2.ZERO)).move_toward(lean_to, dt * 6.0)
+		var cover_target: float = 0.0
+		if in_cover: cover_target = 0.46 if lean_to != Vector2.ZERO else 0.82
+		var sneak_goal: float = 1.0 if wants_sneak else cover_target
+		var sneak_raw: float = move_toward(float(pose.get("sneak_raw", 0.0)), sneak_goal, dt * (3.0 if sneak_goal > float(pose.get("sneak_raw", 0.0)) else 2.4))
 		pose.sneak_raw = sneak_raw
 		var eased: float = smoothstep(0.0, 1.0, sneak_raw)
 		pose.sneak = eased + (0.1 * sin(sneak_raw * PI) * sneak_raw if wants_sneak else 0.0)

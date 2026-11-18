@@ -8,6 +8,7 @@ const Health = preload("res://sim/player/body_health.gd")
 const PlayerActions = preload("res://sim/player/player_actions.gd")
 const Audio = preload("res://view/audio/world_audio.gd")
 const ActionPointer = preload("res://view/ui/action_pointer.gd")
+const Cover = preload("res://sim/player/cover.gd")
 const Moodles = preload("res://view/ui/moodles.gd")
 const BottomBar = preload("res://view/ui/bottom_bar.gd")
 const PerfOverlay = preload("res://view/ui/perf_overlay.gd")
@@ -23,6 +24,10 @@ var simulation := Simulation.new()
 var clock := Clock.new()
 var follow_player: bool = true
 var kick_seen: int = 0
+var right_down_msec: int = 0
+var peek_on: bool = false
+var peek_octant: int = -1
+var lean_offset: Vector2 = Vector2.ZERO
 var kick_offset: Vector2 = Vector2.ZERO
 var last_input_tick: int = -1
 var last_draw_tick: int = -1
@@ -202,8 +207,8 @@ func _process(delta: float) -> void:
 	$WorldView.motion.player_aiming = (aiming or (pointer_held and not shotgun_equipped)) and not player_panels.visible and not map_mode
 	$WorldView.motion.player_ready = pointer_held and not player_panels.visible
 	$WorldView.motion.player_aim_position = get_global_mouse_position()
-	action_pointer.active = pointer_held and not player_panels.visible
-	action_pointer.queue_redraw()
+	_update_peek()
+	_update_pointer()
 	$WorldView.animate(delta, clock.paused, clock.speed)
 	if follow_player:
 		var cell: Array = simulation.state.entities[str(simulation.state.player)].cell
@@ -335,6 +340,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			last_right_press = now
 			last_right_position = event.position
 		aiming = event.pressed
+		if event.pressed: right_down_msec = Time.get_ticks_msec()
 		return
 	if event is InputEventKey and event.pressed and event.keycode == KEY_F8:
 		$DebugHUD.toggle_details()
@@ -490,4 +496,55 @@ func _update_camera_kick(delta: float) -> void:
 			kick_offset = -aim * (7.0 + 5.0 * float(gun.get("bloom", 0)) / 900.0) / maxf(0.5, $ObserverCamera.zoom.x)
 		kick_seen = kicks
 	kick_offset = kick_offset.move_toward(Vector2.ZERO, (60.0 + kick_offset.length() * 9.0) * delta)
-	$ObserverCamera.offset = kick_offset
+	# Leaning out of cover: the view slides towards the corner so you can see past it.
+	var pc: Dictionary = simulation.state.player_control
+	var lean_target := Vector2.ZERO
+	if pc.has("peek"):
+		lean_target = Vector2(pc.peek.to[0] - pc.peek.from[0], pc.peek.to[1] - pc.peek.from[1]) * CELL * 2.2
+	lean_offset = lean_offset.lerp(lean_target, clampf(delta * 7.0, 0.0, 1.0))
+	$ObserverCamera.offset = kick_offset + lean_offset
+
+## Holding the right button for a moment at a corner leans the player out; releasing returns them.
+func _update_peek() -> void:
+	var holding: bool = aiming and not player_panels.visible and not map_mode and not clock.paused and Time.get_ticks_msec() - right_down_msec > 150
+	var player_pos: Vector2 = $WorldView.motion.actors.get(str(simulation.state.player), {}).get("position", Vector2.ZERO)
+	var toward: Vector2 = get_global_mouse_position() - player_pos
+	var octant: int = roundi(toward.angle() / (PI / 4.0)) if holding else -1
+	if holding != peek_on or (holding and octant != peek_octant):
+		peek_on = holding
+		peek_octant = octant
+		var unit: Vector2 = toward.normalized() if toward.length() > 1.0 else Vector2.ZERO
+		simulation.submit("peek", {"on": holding, "toward": [roundi(unit.x * 1000.0), roundi(unit.y * 1000.0)]})
+
+## The pointer: a reticle for fists, an eye when leaning out unarmed, a crosshair and aim line with the gun.
+func _update_pointer() -> void:
+	var s: Dictionary = simulation.state
+	var armed: bool = s.get("shotgun", {}).get("equipped", false)
+	var show: bool = (pointer_held or aiming) and not player_panels.visible and not map_mode
+	action_pointer.active = show
+	if not show:
+		if Input.mouse_mode != Input.MOUSE_MODE_VISIBLE: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		action_pointer.queue_redraw()
+		return
+	if Input.mouse_mode != Input.MOUSE_MODE_HIDDEN: Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
+	var player_pos: Vector2 = $WorldView.motion.actors.get(str(s.player), {}).get("position", Vector2.ZERO)
+	var transform: Transform2D = get_viewport().get_canvas_transform()
+	var muzzle_world: Vector2 = player_pos + Vector2(0, -22)
+	action_pointer.muzzle = transform * muzzle_world
+	action_pointer.peeking = s.player_control.has("peek")
+	if armed and aiming:
+		action_pointer.mode = "aim"
+		action_pointer.bloom = float(s.shotgun.get("bloom", 0)) / 900.0
+		var from_cell: Array = Cover.eye_cell(s)
+		var mouse_world: Vector2 = get_global_mouse_position()
+		var to_cell: Array = [roundi(mouse_world.x / CELL), roundi(mouse_world.y / CELL)]
+		var hit: Array = Cover.first_block(s, from_cell, to_cell)
+		action_pointer.blocked = not hit.is_empty()
+		if not hit.is_empty(): action_pointer.line_end = transform * (Vector2(hit[0], hit[1]) * CELL)
+	elif aiming and not armed:
+		action_pointer.mode = "look" if (s.player_control.has("cover") or s.player_control.has("peek")) else "fist"
+		action_pointer.blocked = false
+	else:
+		action_pointer.mode = "fist"
+		action_pointer.blocked = false
+	action_pointer.queue_redraw()
