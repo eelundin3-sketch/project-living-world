@@ -72,6 +72,15 @@ static func action_for(s: Dictionary, entity: Dictionary, aim_held: bool = false
 				result.phase = clampf(float(s.tick - int(arrest.since)) / 30.0, 0.0, 1.0)
 			"escort": result.action = "escort"
 			"book": result.action = "search" if s.tick - int(arrest.since) < 50 else "idle"   # the pat-down, then the paperwork
+			"engage":
+				# Hide behind cover, lean out and aim, fire, and reload while hidden.
+				var cycle: Dictionary = npc.get("cover_cycle", {})
+				match str(cycle.get("phase", "hide")):
+					"peek": result.action = "aim"
+					"fire":
+						result.action = "shoot"
+						result.phase = clampf(float(s.tick - int(cycle.get("since", s.tick))) / 8.0, 0.0, 1.0)
+					_: result.action = "reload" if int(cycle.get("ammo", 1)) <= 0 else "gun_carry"
 			"pursue": result.action = "combat_idle"
 			_: result.action = "idle"
 		return result
@@ -408,7 +417,7 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 			action = pose.handling
 			state_action.phase = pose.handling_age / 0.5
 		# An armed upper-body pose can play over the walking or running legs.
-		var lawman_armed: bool = str(s.get("residents", {}).get(key, {}).get("arrest", {}).get("phase", "")) in ["standoff", "approach"]
+		var lawman_armed: bool = str(s.get("residents", {}).get(key, {}).get("arrest", {}).get("phase", "")) in ["standoff", "approach", "engage"]
 		var gun_pose := (gun_equipped or lawman_armed) and action in ["gun_carry", "aim", "reload", "shoot"]
 		if pose.moving and not gun_pose and action not in ["punch", "shove", "kick", "hit", "stagger", "down", "fall", "getup", "rest", "cuffed", "escort", "surrender", "cuff", "search", "crawl"]:
 			action = "run" if sprinting else ("carry" if quantity > 0 else "walk")
@@ -466,7 +475,7 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 			if control.has("peek"): lean_to = Vector2(control.peek.to[0] - control.peek.from[0], control.peek.to[1] - control.peek.from[1])
 		else:
 			var cycle: Dictionary = s.get("residents", {}).get(key, {}).get("cover_cycle", {})
-			in_cover = not cycle.is_empty()
+			in_cover = not cycle.is_empty() or bool(s.get("residents", {}).get(key, {}).get("fear", {}).get("arrived", false))
 			if str(cycle.get("phase", "")) in ["peek", "fire"] and not cycle.get("peek_to", []).is_empty():
 				lean_to = Vector2(cycle.peek_to[0] - entity.cell[0], cycle.peek_to[1] - entity.cell[1])
 		pose.peek_lean = Vector2(pose.get("peek_lean", Vector2.ZERO)).move_toward(lean_to, dt * 6.0)

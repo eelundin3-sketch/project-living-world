@@ -60,6 +60,7 @@ static func fire(sim: RefCounted, direction: Array) -> bool:
 	gun.bloom = mini(BLOOM_MAX, int(gun.get("bloom", 0)) + BLOOM_PER_SHOT)
 	gun.last_dir = [int(direction[0]), int(direction[1])]
 	Brawl.event(s, "gunshot", origin, gun.last_dir)
+	load("res://sim/player/gunfire.gd").on_player_shot(sim, origin)
 	for index in range(PELLETS):
 		var spread: float = (float(sim.random_int("shotgun", -1000, 1000)) / 1000.0) * SPREAD * (1.0 + 1.5 * float(gun.get("bloom", 0)) / 1000.0)
 		var angle: float = base + spread
@@ -127,6 +128,7 @@ static func _strike(sim: RefCounted, surface: String, cell: Array, pellet: Dicti
 			var key := str(entity.id)
 			var was_alive: bool = not s.residents.has(key) or s.residents[key].health > 0
 			if s.residents.has(key) or entity.kind == "player":
+				if pellet.owner == s.player and s.residents.has(key): load("res://sim/player/gunfire.gd").on_player_hit(sim, s.residents[key])
 				Wounds.shoot(sim, int(entity.id), cell, dir)
 			var fighters: Dictionary = s.get("local_combat", {}).get("fighters", {})
 			if fighters.has(key):

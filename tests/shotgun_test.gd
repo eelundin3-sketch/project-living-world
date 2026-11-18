@@ -20,6 +20,8 @@ func run() -> void:
 		if entity.kind == "office" and entity.settlement == 1: office = entity.id
 	check(office != 0 and Inventory.amount(s, office, "shotgun") >= 1 and Inventory.amount(s, office, "shell") >= 10, "Sheriff office rack stores shotguns and shells")
 	check(Inventory.transfer(s, office, s.player, "shotgun", 1).ok and Inventory.transfer(s, office, s.player, "shell", 10).ok, "Player can take a shotgun and shells from the rack")
+	for npc in s.residents.values():
+		if npc.occupation == "Sheriff": npc.occupation = "Gatherer"   # no law in this test: it is only about pellets
 	sim.submit("shotgun_toggle"); sim.step()
 	check(s.shotgun.equipped, "Shotgun can be readied")
 	check(not Shotgun.can_fire(s), "Cannot fire unloaded")

@@ -42,6 +42,7 @@ static func update(sim: RefCounted) -> void:
 		if Brawl.busy(s, npc): continue
 		if not npc.get("migration", {}).is_empty():
 			continue
+		if not npc.get("fear", {}).is_empty(): continue   # running for cover or crouched behind it (fear.gd)
 		if not npc.get("arrest", {}).is_empty():
 			if npc.has("sitting"): Sheriff.stand_up(s, npc)
 			continue   # making an arrest (law.gd)

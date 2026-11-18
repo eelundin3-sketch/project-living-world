@@ -16,8 +16,8 @@ const Outfits = preload("res://sim/entities/outfits.gd")
 const Nav = preload("res://sim/movement/navigation.gd")
 const World = preload("res://sim/world/world_db.gd")
 const HOUR := 600                     # ticks in an in-game hour
-const SENTENCE := {"assault": 2, "assault_sheriff": 4, "kick": 3, "theft": 3, "murder": 24}
-const CRIME_NAMES := {"assault": "assault", "assault_sheriff": "assaulting the sheriff", "kick": "kicking a man when he's down", "theft": "theft", "murder": "murder"}
+const SENTENCE := {"assault": 2, "assault_sheriff": 4, "kick": 3, "theft": 3, "murder": 24, "discharge": 2, "shooting": 6}
+const CRIME_NAMES := {"assault": "assault", "assault_sheriff": "assaulting the sheriff", "kick": "kicking a man when he's down", "theft": "theft", "murder": "murder", "discharge": "firing a gun in town", "shooting": "shooting someone"}
 const MAX_HOURS := 48
 const WITNESS_RANGE := 24.0           # a sheriff this close sees a crime happen
 const SEE_RANGE := 14.0               # a sheriff this close recognises a wanted player
@@ -88,18 +88,21 @@ static func crime(s: Dictionary, town: int, kind: String, victim: int) -> void:
 	if not s.has("player_control") or not SENTENCE.has(kind): return
 	var player: Array = s.entities[str(s.player)].cell
 	var witness: Dictionary = {}
+	var nearest := 1.0e9
 	for sheriff in sheriffs(s, town):
 		var cell: Array = s.entities[str(sheriff.id)].cell
-		if sheriff.id == victim or Vector2(cell[0] - player[0], cell[1] - player[1]).length() <= WITNESS_RANGE:
-			witness = sheriff
-			break
+		var d: float = Vector2(cell[0] - player[0], cell[1] - player[1]).length()
+		if (sheriff.id == victim or d <= WITNESS_RANGE) and d < nearest:
+			witness = sheriff   # the nearest sheriff who saw it takes the case
+			nearest = d
 	# Murder and theft get reported; other crimes count only if the sheriff saw them or was the victim.
 	if witness.is_empty() and kind not in ["murder", "theft"]: return
 	var record: Dictionary = _law(s).wanted.get(str(town), {"hours": 0, "crimes": [], "since": s.tick})
 	record.hours = mini(MAX_HOURS, int(record.hours) + int(SENTENCE[kind]))
 	record.crimes.append(kind)
 	_law(s).wanted[str(town)] = record
-	if not witness.is_empty() and witness.get("arrest", {}).is_empty() and not in_custody(s):
+	# Gunfire is answered by the gunfight (gunfire.gd), not by a chase.
+	if not witness.is_empty() and witness.get("arrest", {}).is_empty() and not in_custody(s) and kind not in ["discharge", "shooting"]:
 		witness.arrest = {"phase": "pursue", "since": s.tick, "path_tick": -100, "announce": "Stop! You're under arrest!"}
 		witness.brawl = {}
 		witness.goal = ""
@@ -108,7 +111,8 @@ static func crime(s: Dictionary, town: int, kind: String, victim: int) -> void:
 
 static func surrender(s: Dictionary) -> void:
 	var pc: Dictionary = s.player_control
-	if standoff_sheriff(s) == 0 and not _approaching(s):
+	var under_fire: bool = not s.get("law", {}).get("alert", {}).is_empty()
+	if standoff_sheriff(s) == 0 and not _approaching(s) and not under_fire:
 		pc.notice = "Nobody is asking you to surrender."
 		return
 	pc.surrender = true
@@ -154,6 +158,7 @@ static func update(sim: RefCounted) -> void:
 				pc.notice = "%s draws his gun on you. Press F to surrender, or run." % s.entities[key].name
 			continue
 		match str(arrest.phase):
+			"engage": load("res://sim/player/gunfire.gd").engage(sim, npc, arrest, cell, player, gap)
 			"pursue": _pursue(sim, npc, arrest, cell, player, gap)
 			"standoff": _standoff(sim, npc, arrest, cell, player, gap)
 			"approach": _approach(sim, npc, arrest, cell, player, gap)
