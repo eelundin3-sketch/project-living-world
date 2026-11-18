@@ -1,5 +1,97 @@
 # Changelog
 
+## Booking and release, four town layouts, curved roads, houses of many shapes with doors on any side — 2026-11-18
+
+**Prison: arrest, booking, jail, release** (inspired by Prison Architect)
+- The sheriff now walks you to a **booking desk** in the office first. He searches you, everything you
+  carry (items, coins, the gun's load, your clothes) goes into the office's keeping, a camera flash
+  takes the mugshot (with a booking card showing the charge and what is held), and you are issued an
+  **orange prison uniform**. Only then are you walked to the cell and locked in.
+- The office gained a booking desk (with a box camera), a steel locker and a toilet in the cell.
+  The cell door opens for escorts and release.
+- In jail your hunger and thirst hold (meals provided). The banner shows the stage: booking, your
+  sentence, or release.
+- **Release:** when time is served a free sheriff unlocks the cell, walks you (hands free) back to the
+  desk, hands over your belongings and clothes exactly as taken, and lets you go. If no sheriff can,
+  you are let out in place and still get your things back.
+- New animation: the sheriff's pat-down search. Tests: `law_test` covers the whole sequence,
+  including belongings, coins, outfit and invariants.
+
+**Towns and roads** (`sim/world/town_layout.gd`)
+- Roads are now simulation data (`world.roads`, polylines) shared by the keep-out zones, the tree
+  planner, the ground art and the door paths. Before, two formulas drew and blocked the roads, and
+  they disagreed.
+- Each town draws a **layout** from a seeded stream, and neighbouring towns never match: *crossroads*,
+  a *winding* lane system, a *ring road* around a green, or *hamlets* on spur tracks. Roads curve and
+  wander; there is a real road between every pair of towns (Reedbank–Dustvale is new).
+- Houses are placed on **lots along the roads** with the door facing the road, instead of scattered
+  randomly on an ellipse. Old saves keep their old roads (converted on load).
+
+**Houses**
+- 21 house types (8 new: offset cabin, L-shaped shack, wing house, longhouse, courtyard cottage,
+  T-shaped, courtyard (U) and cross-gabled houses). Footprints are real shapes, not just rectangles.
+- A house can be turned any of four ways, so the **door faces north, east, south or west** (stoop, sill,
+  door path, construction pile and clearance all follow). Furniture is placed so every bed and every
+  part of the house stays reachable from the door.
+- Tests: `layout_test` (5 seeds), `house_shapes_test` (21 types x 4 door sides).
+- Test fixes: `loot_test` and `unarmed_test` (a downed target now makes Space a kick),
+  `construction_stages_test` (no more Gatherers), road checks in `housing`, `depth_order`, `forest_groves`
+  and `crouch_forest_sun` now read the road data.
+
+## The law: sheriff's office, arrests, surrender and jail — 2026-11-18
+
+- **Shoved bodies no longer slide.** A villager knocked over used to keep gliding at walking
+  pace while falling, because the drawn body lagged behind the simulation. Knocked bodies now
+  settle onto their cell at once.
+- **Chasers last longer.** They give up only when they are 110 cells from their town square or
+  60 cells behind you (was 45 / 30).
+- **NPC running matches the player's.** Chasers step on the player's exact cadence (a cell per
+  tick running, one per two ticks walking, +1 tick diagonally), face the way they run, and
+  their sprint animation no longer flickers.
+- **Every town has a sheriff's office** with the sheriff's own bed, a desk, a gun rack and a
+  barred prison cell with a cot. Sheriffs now sleep in the office.
+- **Crimes and sentences** (`sim/settlement/law.gd`): assault 2 h, assaulting the sheriff 4 h,
+  kicking someone down 3 h, theft 3 h, murder 24 h (up to 48 h). A sheriff must witness an
+  assault (or be its victim); theft and murder are reported anyway.
+- **Arrest.** Shove the sheriff and he chases you, tackles you to the ground, cuffs you, and
+  marches you to the cell. Run off and he remembers: next time he sees you he draws his
+  revolver and orders you to put your hands up.
+- **Surrender with F.** You raise your hands; he walks slowly up, cuffs you and escorts you to
+  the cell. Running instead starts a chase.
+- **Jail.** A banner shows the charges and time left, with "Wait it out" to fast-forward. You
+  can walk around the cell but not leave it until released.
+- **New animations:** hands up (trembling), cuffed hands behind the back (standing and walking),
+  sheriff aiming, the sheriff cuffing, and the sheriff gripping your arm on the walk to jail.
+- Tests: `tests/law_test.gd` (pursuit → tackle → cuff → escort → jail → release, standoff →
+  surrender, standoff → run, restore mid-arrest). Captures: `tests/arrest_capture.gd`.
+
+## Fair chases, speech, kicks, death, knockout screen, loot grid, plain health window — 2026-11-18
+
+- **Same speeds for everyone.** Villagers now walk at the player's pace and run only
+  while they have stamina: they tire, get winded below 20 (heavy breathing, back to a
+  walk) and recover to 50, exactly like the player. A chaser runs while far behind and
+  rested; a running player outpaces a tired chaser, and their run cycle now matches.
+- **Chasers give up.** Nobody follows a grudge more than 45 cells from their own town
+  square (or 30 behind you): they shout something like "Forget it, not worth it!" and
+  walk home. A third offence makes them want you dead (they keep kicking you once down).
+- **Speech bubbles.** Villagers shout when angry, grumble when knocked down or robbed,
+  warn you (the sheriff), greet you, and make small talk with each other, in bubbles
+  above their heads. Lines are deterministic and saved with the game.
+- **Kick (Space on someone on the ground)** does 1.5x a punch to a person lying
+  unconscious or merely shoved down, with a kick animation. Health 0 means death for
+  villagers and for you: bodies stay on the ground and can be searched; your death
+  ends the game.
+- **Knocked out:** everything goes black except a pool of light on your body, with
+  "You have been knocked out" and a button to skip ahead until you wake. The old
+  notice no longer lingers after you get up. **Death screen:** Load last save / New
+  game / Quit to title.
+- **Looting is a second inventory window** next to yours: drag goods, coins or worn
+  clothes across (onto your grid, or a clothing square to put them on), or double-click.
+  Chests also accept goods dragged in. Esc closes both.
+- **Health window redone** to be plain: a bar and three numbers, your figure with a dot
+  on each injured part, one list of injuries that opens in place with only the
+  treatments you can do now.
+
 ## Walking traders and market tents — 2026-11-16
 
 - The abstract wooden cart between the towns is gone. Trade is now carried by a

@@ -22,9 +22,39 @@ graphical display, for example `godot --path . --script res://tests/menu_capture
 
 | | |
 |---|---|
-| [![Alder Hollow](screenshots/town-alder-hollow.png)](screenshots/town-alder-hollow.png) **Alder Hollow: houses scattered around the square** | [![Reedbank](screenshots/town-reedbank.png)](screenshots/town-reedbank.png) **Reedbank, far to the east** |
-| [![House types](screenshots/house-types.png)](screenshots/house-types.png) **The 13 house types** | [![Market tents](screenshots/market-tents.png)](screenshots/market-tents.png) **A tent for every seller** |
+| [![Alder Hollow](screenshots/town-alder-hollow.png)](screenshots/town-alder-hollow.png) **Alder Hollow: a hamlet layout, houses facing the lanes** | [![Reedbank](screenshots/town-reedbank.png)](screenshots/town-reedbank.png) **Reedbank, far to the east** |
+| [![House types](screenshots/house-types.png)](screenshots/house-types.png) **21 house types, turned every way (L, T, courtyard, wings…)** | [![Market tents](screenshots/market-tents.png)](screenshots/market-tents.png) **A tent for every seller** |
 | [![The trader](screenshots/trader-on-the-road.png)](screenshots/trader-on-the-road.png) **Ruth the trader, back at the square** | [![The big map](screenshots/world-big-map.png)](screenshots/world-big-map.png) **The whole region: three towns and the roads between them** |
+
+## Town layouts and roads
+
+Every town draws its own layout (crossroads, winding lanes, a ring road or hamlets) and the three
+neighbours never match. These are top-down plans of three seeds: roads (brown), lot doors (blue dots),
+buildings (orange), door cells (red). Reproduce with `godot --headless --path . --script res://tests/layout_map_capture.gd`.
+
+| Seed 741 | Seed 5 | Seed 99 |
+|---|---|---|
+| [![Layouts, seed 741](screenshots/layout-seed-741.png)](screenshots/layout-seed-741.png) | [![Layouts, seed 5](screenshots/layout-seed-5.png)](screenshots/layout-seed-5.png) | [![Layouts, seed 99](screenshots/layout-seed-99.png)](screenshots/layout-seed-99.png) |
+
+## Law, arrest, booking and release
+
+| | |
+|---|---|
+| [![Standoff](screenshots/arrest-standoff.png)](screenshots/arrest-standoff.png) **A wanted player is held at gunpoint: F surrenders** | [![Surrender](screenshots/arrest-surrender.png)](screenshots/arrest-surrender.png) **Hands up; he walks up slowly** |
+| [![Escort](screenshots/arrest-escort.png)](screenshots/arrest-escort.png) **Cuffed and walked to the office** | [![Search](screenshots/booking-search.png)](screenshots/booking-search.png) **Booking: the pat-down at the desk** |
+| [![Property](screenshots/booking-property.png)](screenshots/booking-property.png) **Belongings go in the locker; booking card shows the charge** | [![Mugshot](screenshots/booking-flash.png)](screenshots/booking-flash.png) **The mugshot flash; the uniform goes on** |
+| [![Cell](screenshots/jail-cell.png)](screenshots/jail-cell.png) **Locked in, in orange, with the sentence running** | [![Unlock](screenshots/release-unlock.png)](screenshots/release-unlock.png) **Sentence served: the cell door is opened** |
+| [![Desk](screenshots/release-desk.png)](screenshots/release-desk.png) **Back at the desk to collect belongings** | [![Free](screenshots/release-free.png)](screenshots/release-free.png) **Released, clothes and things returned** |
+
+[Arrest animation sheet](screenshots/animation-arrest.png): hands up, cuffed, aiming, cuffing, escort and search poses.
+
+## Fights, speech and the new windows
+
+| | |
+|---|---|
+| [![Speech bubbles](screenshots/speech-bubbles.png)](screenshots/speech-bubbles.png) **Villagers speak: warnings, small talk, greetings** | [![Kick](screenshots/kick.png)](screenshots/kick.png) **Space on someone who is down kicks them (1.5× a punch)** |
+| [![Knocked out](screenshots/knocked-out.png)](screenshots/knocked-out.png) **Knocked out: stage light on the body, skip ahead** | [![Death](screenshots/death-screen.png)](screenshots/death-screen.png) **Death screen: load, new game, or title** |
+| [![Loot grid](screenshots/loot-grid.png)](screenshots/loot-grid.png) **Looting works like your inventory, with drag and drop** | [![Health](screenshots/health-minimal.png)](screenshots/health-minimal.png) **The plainer health window** |
 
 ## People and animation
 
