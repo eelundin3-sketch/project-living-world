@@ -519,3 +519,45 @@ static func vegetation(c: Node2D, bounds: Rect2, buildings: Array, wind_phase: f
 			var sway: float = sin(wind_phase + float(x) * 0.19 + float(y) * 0.13) * wind_strength * 2.0
 			c.draw_line(base, base + Vector2(-2 + sway, -6), shade, 1.4, true)
 			c.draw_line(base + Vector2(1, 0), base + Vector2(3 + sway, -8), shade.lightened(0.12), 1.4, true)
+
+## A door leaf (or a pair) in a doorway. `data`: a and b are the two ends of the gap, in the node's own
+## coordinates; `inward` is the unit vector the door swings towards; `style` is "plank" or "heavy";
+## `double` hangs two half-width leaves. `openness` is 0 (shut) to 1 (swung about 100 degrees).
+static func door(c: Node2D, data: Dictionary, openness: float) -> void:
+	var a: Vector2 = data.a
+	var b: Vector2 = data.b
+	var along: Vector2 = (b - a).normalized()
+	var length: float = a.distance_to(b)
+	var inward: Vector2 = data.inward
+	var angle: float = openness * deg_to_rad(100.0)
+	var heavy: bool = str(data.get("style", "plank")) == "heavy"
+	var wood: Color = Color("5f4636") if heavy else Color("8c6340")
+	var light: Color = Color("7a6048") if heavy else Color("a97b4d")
+	# Posts either side of the opening.
+	for end in [a, b]:
+		c.draw_rect(Rect2(end - Vector2(3, 3), Vector2(6, 6)), Color("4a3524"))
+		c.draw_rect(Rect2(end - Vector2(2, 2), Vector2(4, 4)), Color("6d4e34"))
+	var leaves: Array = []
+	if bool(data.get("double", false)):
+		leaves.append([a, along, length * 0.5, 1.0])
+		leaves.append([b, -along, length * 0.5, 1.0])
+	else:
+		leaves.append([a, along, length, 1.0])
+	for leaf in leaves:
+		var hinge: Vector2 = leaf[0]
+		var u: Vector2 = leaf[1]
+		var size: float = leaf[2]
+		var direction: Vector2 = (u * cos(angle) + inward * sin(angle)).normalized()
+		var tip: Vector2 = hinge + direction * (size - 1.0)
+		var normal := Vector2(-direction.y, direction.x) * 2.6
+		var polygon := PackedVector2Array([hinge + normal, tip + normal, tip - normal, hinge - normal])
+		c.draw_colored_polygon(polygon, wood)
+		c.draw_polyline(PackedVector2Array([hinge + normal, tip + normal, tip - normal, hinge - normal, hinge + normal]), Color("30291e"), 1.2, true)
+		c.draw_line(hinge + direction * 2.0, tip - direction * 2.0, light, 1.4, true)
+		var planks: int = 3 if size > 14.0 else 1
+		for index in range(1, planks + 1):
+			var at: Vector2 = hinge + direction * (size * float(index) / float(planks + 1))
+			c.draw_line(at + normal * 0.8, at - normal * 0.8, Color("3d2d1f"), 0.9)
+		c.draw_circle(tip - direction * 3.0, 1.1, Color("2d2d2f") if not heavy else Color("c4b37a"))   # the latch
+		if heavy:
+			for index in range(3): c.draw_circle(hinge + direction * (size * (0.25 + 0.25 * index)), 0.9, Color("34353a"))

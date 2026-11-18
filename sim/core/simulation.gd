@@ -21,6 +21,7 @@ const Limbs = preload("res://sim/player/limbs.gd")
 const Cover = preload("res://sim/player/cover.gd")
 const Gunfire = preload("res://sim/player/gunfire.gd")
 const Fear = preload("res://sim/entities/fear.gd")
+const DoorAssist = preload("res://sim/player/door_assist.gd")
 const TownLayout = preload("res://sim/world/town_layout.gd")
 const ContextActions = preload("res://sim/player/context_actions.gd")
 const Looting = preload("res://sim/player/looting.gd")
@@ -325,6 +326,7 @@ func apply_command(entry: Dictionary) -> void:
 		# blocked corner, so both neighbouring orthogonal cells must be walkable.
 		if direction.size() == 2 and abs(direction[0]) <= 1 and abs(direction[1]) <= 1 and abs(direction[0]) + abs(direction[1]) >= 1:
 			var cell: Array = state.entities[str(state.player)].cell
+			if state.has("player_control"): direction = DoorAssist.adjust(state, cell, direction)   # help into a doorway after repeated tries
 			var next: Array = [cell[0] + direction[0], cell[1] + direction[1]]
 			var diagonal: bool = direction[0] != 0 and direction[1] != 0
 			if Law.inside_cell(state, next) and World.walkable(state, next) and (not diagonal or (World.walkable(state, [cell[0] + direction[0], cell[1]]) and World.walkable(state, [cell[0], cell[1] + direction[1]]))):
