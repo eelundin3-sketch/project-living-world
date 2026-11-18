@@ -48,7 +48,7 @@ the game from the source with the free engine, **Godot 4.6**.
    right-click → Open no longer gets past it.) The same applies to Godot itself the first time you open it.
 
 Prefer a standalone app that needs no Godot? Download **`Project-Solo-macOS.zip`** from the repository's **Releases** page
-(or from **Actions → Build → the latest run → Artifacts**), unzip it and run `ProjectSolo.app`, with the same first-launch step as above.
+(or from **Actions → Build → the latest run → Artifacts**), unzip it and open `Project Solo.app` inside it, with the same first-launch step as above.
 
 ### Windows 11: no Godot needed
 
@@ -70,24 +70,6 @@ Prefer a standalone app that needs no Godot? Download **`Project-Solo-macOS.zip`
 
 Then **start a new game** from the title screen. You arrive in Alder Hollow with a backpack, a shotgun (lowered) and not much else.
 The controls are below.
-
-### Play on Windows 11 (no Godot needed)
-
-A ready-to-run Windows build is a single `LivingWorld.exe` (64-bit).
-
-1. Download **`LivingWorld-Windows.zip`**:
-   - from the repository's **Releases** page, when a release has been published; or
-   - from **Actions → Windows build → the latest run → Artifacts** (you must be signed in to GitHub); or
-   - build it yourself (below).
-2. **Unzip** it anywhere. Do not run it from inside the zip.
-3. Double-click **`LivingWorld.exe`**. The game is not code-signed, so Windows shows
-   "Windows protected your PC": click **More info**, then **Run anyway**.
-4. Click **Start Game**. Saves go to `%APPDATA%\Godot\app_userdata\Project Living World\`.
-
-To build the zip yourself on macOS or Linux, with Godot 4.6 and its export templates installed
-(`scripts/prepare_exports.sh`): `GODOT_BIN=/path/to/Godot scripts/package_windows.sh`
-writes `dist/LivingWorld-Windows.zip`. To run from source on Windows instead, follow the steps
-above with the Windows build of Godot 4.6 and press **F5**.
 
 | Control | Action |
 |---|---|

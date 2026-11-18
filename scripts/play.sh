@@ -1,5 +1,5 @@
 #!/bin/sh
-# Starts Project Living World from this checkout with Godot 4.6 stable.
+# Starts Project Solo from this checkout with Godot 4.6 stable.
 #   scripts/play.sh            find Godot 4.6 and run the game
 #   scripts/play.sh --check    only report which Godot it would use
 # Set GODOT_BIN to a specific Godot 4.6 program to skip the search.
@@ -19,7 +19,7 @@ find_godot() {
     "/Applications/Godot.app/Contents/MacOS/Godot" \
     "$HOME/Applications/Godot.app/Contents/MacOS/Godot" \
     "$HOME/Downloads/Godot.app/Contents/MacOS/Godot" \
-    "/private/tmp/living-world-engine/Godot.app/Contents/MacOS/Godot" \
+    "$HOME/Applications/Godot 4.6/Godot.app/Contents/MacOS/Godot" \
     "$(command -v godot 2>/dev/null)" \
     "$(command -v godot4 2>/dev/null)"; do
     if [ -n "$candidate" ] && is_46 "$candidate"; then echo "$candidate"; return 0; fi
