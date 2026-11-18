@@ -26,6 +26,7 @@ var view_cells: Rect2i = Rect2i()
 var tree_pass: int = 0
 var tree_pass_view: Rect2i = Rect2i(0, 0, -1, -1)
 var tree_pass_tick: int = -1
+var tree_serial: int = 0   # bumps whenever a tracked tree falls, empties or dies (shadows repaint)
 
 func reset() -> void:
 	actors.clear()
@@ -549,6 +550,8 @@ func _track_tree(s: Dictionary, entity: Dictionary, first: bool) -> void:
 	var tree: Dictionary = trees.get(key, {})
 	if tree.is_empty() or int(tree.get("pass", -1)) != tree_pass - 1:
 		tree = {"logs": logs, "fall": float(tree.get("fall", -1.0)) if not tree.is_empty() else -1.0, "hit": float(tree.get("hit", -10.0)) if not tree.is_empty() else -10.0, "felled": felled}
+	if tree.has("pass") and (bool(tree.get("felled", false)) != felled or (int(tree.get("logs", 0)) > 0) != (logs > 0) or bool(tree.get("dead", false)) != bool(entity.get("dead", false))):
+		tree_serial += 1
 	if felled and not tree.get("felled", false) and not first:
 		tree.fall = time
 		cues.append({"kind": "fall", "position": Vector2(entity.cell[0], entity.cell[1]) * CELL})

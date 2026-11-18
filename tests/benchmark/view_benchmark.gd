@@ -17,6 +17,9 @@ func run() -> void:
 	main = load("res://app/main.tscn").instantiate()
 	root.add_child(main)
 	var perf: Control = main.perf
+	# SOLO_BENCH_HOUR moves the clock (default 12:00): at night there are no sun shadows to draw.
+	var hour := int(OS.get_environment("SOLO_BENCH_HOUR")) if OS.get_environment("SOLO_BENCH_HOUR") != "" else 12
+	main.simulation.state.tick = hour * 600
 	var camera: Camera2D = main.get_node("ObserverCamera")
 	for warm in range(90): await process_frame
 	var rows: Array = []

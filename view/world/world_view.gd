@@ -28,6 +28,7 @@ var motion := Director.new()
 var fixture_motion := Fixtures.new()
 var background: Node2D
 var shadows: Node2D
+var actor_shadows: Node2D
 var speech_layer: Node2D
 var sun_overcast: float = 0.0
 var roofs: Array[Rect2] = []
@@ -69,10 +70,12 @@ class Background extends Node2D:
 ## below trees and people.
 class ShadowLayer extends Node2D:
 	var projector: Node2D
+	var people: bool = false   # false: trees, buildings and rocks (kept); true: people (every frame)
 	func _draw() -> void:
 		var t := Time.get_ticks_usec()
-		projector.draw_shadows(self)
-		Probe.add("d:shadows", Time.get_ticks_usec() - t)
+		if people: projector.draw_actor_shadows(self)
+		else: projector.draw_static_shadows(self)
+		Probe.add("d:shadows_people" if people else "d:shadows_static", Time.get_ticks_usec() - t)
 
 ## Speech bubbles over the speakers' heads, above every character.
 class SpeechLayer extends Node2D:
@@ -199,6 +202,11 @@ func _ready() -> void:
 	shadows.projector = self
 	shadows.z_index = -1
 	add_child(shadows)
+	actor_shadows = ShadowLayer.new()
+	actor_shadows.projector = self
+	actor_shadows.people = true
+	actor_shadows.z_index = -1
+	add_child(actor_shadows)
 	speech_layer = SpeechLayer.new()
 	speech_layer.projector = self
 	speech_layer.z_index = 20
@@ -230,7 +238,7 @@ func animate(delta: float, paused: bool, speed: int) -> void:
 	var overcast: float = _weather_amount(weather, "rain") * 0.17 + _weather_amount(weather, "snow") * 0.10 + _weather_amount(weather, "fog") * 0.13
 	daylight.color = Color("8797b0").lerp(Color("fff1d5"), light).darkened(overcast)
 	sun_overcast = overcast
-	shadows.queue_redraw()
+	_update_shadow_layers()
 	speech_layer.queue_redraw()
 	refresh_age += delta
 	var camera := get_viewport().get_camera_2d()
@@ -990,6 +998,17 @@ func _shadow_blob(canvas: Node2D, center: Vector2, along: Vector2, length: float
 	_shadow_polygon(canvas, points, color)
 
 ## Fills a shadow shape, cutting away any part that lies on a building's floor.
+func _batch_polygon(polygon: PackedVector2Array, color: Color) -> void:
+	var triangles := Geometry2D.triangulate_polygon(polygon)
+	if triangles.is_empty(): return
+	var base := batch_points.size()
+	batch_points.append_array(polygon)
+	var shades := PackedColorArray()
+	shades.resize(polygon.size())
+	shades.fill(color)
+	batch_colors.append_array(shades)
+	for index in triangles: batch_indices.append(base + index)
+
 func _shadow_polygon(canvas: Node2D, points: PackedVector2Array, color: Color) -> void:
 	var pieces: Array = [points]
 	var extent := Rect2(points[0], Vector2.ZERO)
@@ -1004,9 +1023,52 @@ func _shadow_polygon(canvas: Node2D, points: PackedVector2Array, color: Color) -
 	for piece in pieces:
 		# Holes come back wound the other way round; skip them.
 		if (piece as PackedVector2Array).size() >= 3 and (pieces.size() == 1 or Geometry2D.is_polygon_clockwise(piece) == Geometry2D.is_polygon_clockwise(points)):
-			canvas.draw_colored_polygon(piece, color)
+			if shadow_batch: _batch_polygon(piece, color)
+			else: canvas.draw_colored_polygon(piece, color)
 
-func draw_shadows(canvas: Node2D) -> void:
+## Every roof in the world (building floors get no sun), rebuilt when buildings change.
+var all_roofs: Array[Rect2] = []
+var all_roofs_signature: Array = []
+## Static shadows (trees, buildings, rocks) are painted for an area larger than the screen and
+## kept until the sun, that area or the trees change; people's shadows are redrawn every frame.
+var shadow_area := Rect2()
+var static_shadow_signature: Array = []
+var shadow_batch: bool = false
+var batch_points := PackedVector2Array()
+var batch_colors := PackedColorArray()
+var batch_indices := PackedInt32Array()
+
+func _roofs_for(s: Dictionary, bounds: Rect2) -> void:
+	var signature := [s.entities.size(), s.get("completed_buildings", 0)]
+	if signature != all_roofs_signature:
+		all_roofs_signature = signature
+		all_roofs.clear()
+		for entity in s.entities.values():
+			if entity.has("footprint"):
+				var fp := World.building_rect(entity)
+				all_roofs.append(Rect2(Vector2(fp.position) * CELL - Vector2.ONE * CELL / 2, Vector2(fp.size) * CELL))
+	roofs.clear()
+	for area in all_roofs:
+		if bounds.intersects(area): roofs.append(area)
+
+## Called every frame: repaints the static shadow layer only when what it shows has changed.
+func _update_shadow_layers() -> void:
+	actor_shadows.queue_redraw()
+	if simulation == null: return
+	var s: Dictionary = simulation.state
+	var sun := sun_shadow(int(s.tick))
+	var vector: Vector2 = sun.vector
+	# Quantised so the layer repaints when a crown's shadow (64 px along the sun line) would move
+	# by about a third of a pixel, or the shade changes by a quarter of a percent.
+	var signature := [roundi(vector.x * 200.0), roundi(vector.y * 200.0), roundi(float(sun.strength) * 400.0), is_far(),
+		s.entities.size(), s.get("completed_buildings", 0), motion.tree_serial, depth_index_signature]
+	var needed := view_bounds().grow(220)
+	if signature != static_shadow_signature or not shadow_area.encloses(needed):
+		static_shadow_signature = signature
+		shadow_area = view_bounds().grow(560)
+		shadows.queue_redraw()
+
+func draw_static_shadows(canvas: Node2D) -> void:
 	if simulation == null or is_far(): return
 	var s: Dictionary = simulation.state
 	var sun := sun_shadow(int(s.tick))
@@ -1015,19 +1077,34 @@ func draw_shadows(canvas: Node2D) -> void:
 	var cast: Vector2 = sun.vector
 	var tone := Color(0.08, 0.10, 0.14, strength)
 	var soft := Color(0.08, 0.10, 0.14, strength * 0.55)
-	var bounds := view_bounds().grow(220)
+	var bounds := shadow_area
 	# Interiors are under a roof: no sunlight, so no sun shadows fall on building floors.
-	roofs.clear()
-	for entity in s.entities.values():
-		if entity.has("footprint"):
-			var fp := World.building_rect(entity)
-			var area := Rect2(Vector2(fp.position) * CELL - Vector2.ONE * CELL / 2, Vector2(fp.size) * CELL)
-			if bounds.intersects(area): roofs.append(area)
-	# Trees: only the ones on screen (they have depth nodes); everything else from a short cached list.
-	var casters: Array = []
-	for key in depth_objects:
-		var node: DepthObject = depth_objects[key]
-		if node.object_kind == "tree" and s.entities.has(str(node.entity_id)): casters.append(s.entities[str(node.entity_id)])
+	_roofs_for(s, bounds)
+	# Everything goes into one triangle list, one draw call; triangles keep their order, so the
+	# overlaps darken exactly as separate shapes did.
+	shadow_batch = true
+	batch_points.clear()
+	batch_colors.clear()
+	batch_indices.clear()
+	var across := cast.orthogonal().normalized()
+	var low := Vector2i(floori(bounds.position.x / CELL / DEPTH_CHUNK), floori(bounds.position.y / CELL / DEPTH_CHUNK))
+	var high := Vector2i(floori(bounds.end.x / CELL / DEPTH_CHUNK), floori(bounds.end.y / CELL / DEPTH_CHUNK))
+	for cy in range(low.y, high.y + 1):
+		for cx in range(low.x, high.x + 1):
+			for entry in depth_index.get("%d,%d" % [cx, cy], []):
+				if entry[1] != "tree" or not bounds.has_point(entry[2]): continue
+				var entity: Dictionary = s.entities.get(str(entry[3]), {})
+				if entity.is_empty(): continue
+				var logs: int = int(s.inventories.get(str(entity.id), {}).get("items", {}).get("log", 0))
+				if logs <= 0 or entity.get("felled", false): continue
+				var dead: bool = entity.get("dead", false)
+				# Trunk, then the crown's shadow thrown out along the sun line.
+				var foot: Vector2 = entry[2] + Vector2(0, -2)
+				_shadow_polygon(canvas, PackedVector2Array([foot + across * 3.0, foot - across * 3.0, foot + cast * 46.0 - across * 1.6, foot + cast * 46.0 + across * 1.6]), tone)
+				var crown := foot + cast * 64.0
+				var spread: float = 15.0 if dead else 27.0
+				_shadow_blob(canvas, crown, cast, spread + 7.0 * cast.length(), spread * 0.82, tone)
+				_shadow_blob(canvas, crown + cast * 6.0, cast, (spread + 7.0 * cast.length()) * 0.7, spread * 0.6, soft)
 	if shadow_list_age <= 0 or s.entities.size() != shadow_list_count:
 		shadow_list.clear()
 		for entity in s.entities.values():
@@ -1036,33 +1113,34 @@ func draw_shadows(canvas: Node2D) -> void:
 		shadow_list_age = 90
 	shadow_list_age -= 1
 	for id in shadow_list:
-		if s.entities.has(str(id)): casters.append(s.entities[str(id)])
-	for entity in casters:
-		if not entity.has("cell"): continue
-		var p := Vector2(entity.cell[0], entity.cell[1]) * CELL
-		match entity.get("kind", ""):
-			"tree":
-				if not bounds.has_point(p): continue
-				var logs: int = int(s.inventories.get(str(entity.id), {}).get("items", {}).get("log", 0))
-				if logs <= 0 or entity.get("felled", false):
-					continue
-				var dead: bool = entity.get("dead", false)
-				# Trunk, then the crown's shadow thrown out along the sun line.
-				var foot := p + Vector2(0, -2)
-				_shadow_polygon(canvas, PackedVector2Array([foot + cast.orthogonal().normalized() * 3.0, foot - cast.orthogonal().normalized() * 3.0, foot + cast * 46.0 - cast.orthogonal().normalized() * 1.6, foot + cast * 46.0 + cast.orthogonal().normalized() * 1.6]), tone)
-				var crown := foot + cast * 64.0
-				var spread: float = 15.0 if dead else 27.0
-				_shadow_blob(canvas, crown, cast, spread + 7.0 * cast.length(), spread * 0.82, tone)
-				_shadow_blob(canvas, crown + cast * 6.0, cast, (spread + 7.0 * cast.length()) * 0.7, spread * 0.6, soft)
-			"ore":
-				if entity.has("rock_rect"):
-					var r: Array = entity.rock_rect
-					_building_shadow(canvas, Rect2(Vector2(r[0], r[1]) * CELL - Vector2(12, 12), Vector2(r[2], r[3]) * CELL), 34.0, cast, tone, bounds)
-			"caravan":
-				if bounds.has_point(p): _shadow_blob(canvas, p + cast * 14.0, cast, 20.0 + 9.0 * cast.length(), 12.0, tone)
+		var entity: Dictionary = s.entities.get(str(id), {})
+		if entity.is_empty() or not entity.has("cell"): continue
+		if entity.get("kind", "") == "ore" and entity.has("rock_rect"):
+			var r: Array = entity.rock_rect
+			_building_shadow(canvas, Rect2(Vector2(r[0], r[1]) * CELL - Vector2(12, 12), Vector2(r[2], r[3]) * CELL), 34.0, cast, tone, bounds)
 		if entity.has("footprint"):
 			var fp := World.building_rect(entity)
 			_building_shadow(canvas, Rect2(Vector2(fp.position) * CELL - Vector2.ONE * CELL / 2, Vector2(fp.size) * CELL), 46.0, cast, tone, bounds)
+	shadow_batch = false
+	if not batch_indices.is_empty():
+		RenderingServer.canvas_item_add_triangle_array(canvas.get_canvas_item(), batch_indices, batch_points, batch_colors)
+
+## People and moving carts: redrawn every frame, on top of the static shadows.
+func draw_actor_shadows(canvas: Node2D) -> void:
+	if simulation == null or is_far(): return
+	var s: Dictionary = simulation.state
+	var sun := sun_shadow(int(s.tick))
+	var strength: float = sun.strength
+	if strength < 0.01: return
+	var cast: Vector2 = sun.vector
+	var tone := Color(0.08, 0.10, 0.14, strength)
+	var bounds := view_bounds().grow(220)
+	_roofs_for(s, bounds)
+	for id in shadow_list:
+		var entity: Dictionary = s.entities.get(str(id), {})
+		if entity.get("kind", "") != "caravan" or not entity.has("cell"): continue
+		var p := Vector2(entity.cell[0], entity.cell[1]) * CELL
+		if bounds.has_point(p): _shadow_blob(canvas, p + cast * 14.0, cast, 20.0 + 9.0 * cast.length(), 12.0, tone)
 	# People: a body-long shadow from the feet, plus a small dark contact patch.
 	for key in motion.actors:
 		var pose: Dictionary = motion.actors[key]
