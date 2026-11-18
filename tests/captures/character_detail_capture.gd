@@ -27,7 +27,7 @@ func run() -> void:
 	_figure(Vector2(1080, 645), PI / 4, "chop", 2.9, "Villager / work", 2)
 	await process_frame
 	await RenderingServer.frame_post_draw
-	var path := OS.get_environment("LW_CHARACTER_DETAIL")
+	var path := OS.get_environment("SOLO_CHARACTER_DETAIL")
 	if path.is_empty(): path = "res://docs/screenshots/character-detail.png"
 	var result := root.get_texture().get_image().save_png(path)
 	if result != OK:

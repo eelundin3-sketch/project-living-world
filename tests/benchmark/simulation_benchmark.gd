@@ -17,9 +17,9 @@ func _initialize() -> void:
 			samples.append(float(Time.get_ticks_usec() - start) / 1000.0)
 		samples.sort()
 		var save_start := Time.get_ticks_usec()
-		Save.save_state(sim, OS.get_temp_dir().path_join("lw-benchmark.save"))
+		Save.save_state(sim, OS.get_temp_dir().path_join("solo-benchmark.save"))
 		var save_ms := float(Time.get_ticks_usec() - save_start) / 1000.0
-		var file := FileAccess.open(OS.get_temp_dir().path_join("lw-benchmark.save"), FileAccess.READ)
+		var file := FileAccess.open(OS.get_temp_dir().path_join("solo-benchmark.save"), FileAccess.READ)
 		var size := file.get_length()
 		file.close()
 		var row := {"population": population, "ticks": 6000, "p50_ms": samples[3000], "p95_ms": samples[5700], "p99_ms": samples[5940], "max_ms": samples[-1], "save_ms": save_ms, "save_bytes": size, "memory_bytes": OS.get_static_memory_usage(), "invariants": Checks.validate(sim.state)}

@@ -17,13 +17,13 @@ func _initialize() -> void:
 		a.step()
 		if tick % 1000 == 0:
 			validate(a)
-	var saved := Save.save_state(a, OS.get_temp_dir().path_join("lw-full-soak.save"))
+	var saved := Save.save_state(a, OS.get_temp_dir().path_join("solo-full-soak.save"))
 	if not saved.ok:
 		printerr(saved)
 		quit(1)
 		return
 	var b := Sim.new()
-	if not Save.load_into(b, OS.get_temp_dir().path_join("lw-full-soak.save")).ok:
+	if not Save.load_into(b, OS.get_temp_dir().path_join("solo-full-soak.save")).ok:
 		quit(1)
 		return
 	for tick in range(50800):

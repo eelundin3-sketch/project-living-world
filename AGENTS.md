@@ -1,4 +1,4 @@
-# Project Living World — Contributor Rules
+# Project Solo — Contributor Rules
 
 - Target: Godot 4.x (version pinned in README), GDScript, 2D desktop, single-player.
 - Read docs/design/01_GAME_FOUNDATION.md, docs/design/02_TECHNICAL_LAYERS.md and docs/design/03_BUILD_ROADMAP.md before implementing systems.

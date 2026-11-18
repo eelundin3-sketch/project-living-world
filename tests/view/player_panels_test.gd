@@ -21,17 +21,17 @@ func run() -> void:
 	check(Outfits.worn(s, s.player).pack == "pack:0", "The player starts wearing a backpack")
 	var pack_square: Vector2 = grid._slot_rect(4).get_center()
 	var into_grid: Vector2 = grid._cell_rect(20).get_center()
-	var off_data := {"type": "lw_item", "item": "pack:0", "from": "slot", "slot": "pack"}
+	var off_data := {"type": "solo_item", "item": "pack:0", "from": "slot", "slot": "pack"}
 	check(grid._can_drop_data(into_grid, off_data) and not grid._can_drop_data(pack_square, off_data), "A worn backpack can be dropped into the grid")
 	grid._drop_data(into_grid, off_data); main.simulation.step()
 	check(Outfits.worn(s, s.player).pack == "" and int(s.inventories[str(s.player)].items.get("pack:0", 0)) == 1, "Dragging the backpack off puts it in the inventory")
-	var on_data := {"type": "lw_item", "item": "pack:0", "from": "grid", "slot": ""}
+	var on_data := {"type": "solo_item", "item": "pack:0", "from": "grid", "slot": ""}
 	check(grid._can_drop_data(pack_square, on_data) and not grid._can_drop_data(grid._slot_rect(0).get_center(), on_data), "The backpack only fits its own square")
 	grid._drop_data(pack_square, on_data); main.simulation.step()
 	check(Outfits.worn(s, s.player).pack == "pack:0", "Dragging it onto the backpack square puts it back on")
 	var bar = main.bottom_bar
-	check(bar.drop_zones[2]._can_drop_data(Vector2.ZERO, {"type": "lw_item", "item": "bandage", "from": "grid", "slot": ""}), "Items can be dropped onto a hotbar slot")
-	bar.drop_zones[2]._drop_data(Vector2.ZERO, {"type": "lw_item", "item": "bandage", "from": "grid", "slot": ""}); main.simulation.step()
+	check(bar.drop_zones[2]._can_drop_data(Vector2.ZERO, {"type": "solo_item", "item": "bandage", "from": "grid", "slot": ""}), "Items can be dropped onto a hotbar slot")
+	bar.drop_zones[2]._drop_data(Vector2.ZERO, {"type": "solo_item", "item": "bandage", "from": "grid", "slot": ""}); main.simulation.step()
 	check(s.hotbar.slots[2] == "bandage", "Dropping on the hotbar assigns the slot")
 	press(main,KEY_H)
 	var panels = main.player_panels
@@ -95,16 +95,16 @@ func run() -> void:
 	var theirs = panels.loot_window.grid
 	var mine = panels.inventory_window.grid
 	check(theirs.foreign and theirs.owner_id == other.id and theirs.stacks.has("rye") and theirs.stacks.has("coins"), "The loot grid shows their goods and coins")
-	var rye_data := {"type": "lw_item", "item": "rye", "from": "grid", "slot": "", "owner": other.id}
+	var rye_data := {"type": "solo_item", "item": "rye", "from": "grid", "slot": "", "owner": other.id}
 	check(mine._can_drop_data(mine._cell_rect(30).get_center(), rye_data) and not theirs._can_drop_data(theirs._cell_rect(30).get_center(), rye_data), "Goods can be dragged from theirs into yours, not back")
 	var rye_before: int = Inv.amount(st, st.player, "rye")
 	mine._drop_data(mine._cell_rect(30).get_center(), rye_data); main.simulation.step()
 	check(Inv.amount(st, st.player, "rye") == rye_before + 4, "Dragging a stack across takes it")
 	var coins_before: int = int(st.accounts[str(st.player)])
-	mine._drop_data(mine._cell_rect(31).get_center(), {"type": "lw_item", "item": "coins", "from": "grid", "slot": "", "owner": other.id}); main.simulation.step()
+	mine._drop_data(mine._cell_rect(31).get_center(), {"type": "solo_item", "item": "coins", "from": "grid", "slot": "", "owner": other.id}); main.simulation.step()
 	check(int(st.accounts[str(st.player)]) == coins_before + 55, "Dragging the coins across takes them")
 	var shirt_slot: Vector2 = mine._slot_rect(1).get_center()
-	var shirt_data := {"type": "lw_item", "item": str(Outfits.worn(st, other.id).shirt), "from": "slot", "slot": "shirt", "owner": other.id}
+	var shirt_data := {"type": "solo_item", "item": str(Outfits.worn(st, other.id).shirt), "from": "slot", "slot": "shirt", "owner": other.id}
 	check(mine._can_drop_data(shirt_slot, shirt_data) and not mine._can_drop_data(mine._slot_rect(2).get_center(), shirt_data), "Their shirt can only be dragged onto your shirt square or into the grid")
 	mine._drop_data(shirt_slot, shirt_data); main.simulation.step()
 	check(str(Outfits.worn(st, st.player).shirt) == shirt_data.item and str(Outfits.worn(st, other.id).shirt).is_empty(), "Dragging their shirt onto your square puts it on you")
@@ -114,7 +114,7 @@ func run() -> void:
 	Looting.open(st, chest.id)
 	main.simulation.step(); panels.refresh()
 	check(not panels.loot_window.show_slots, "A chest has no clothing squares")
-	var give_data := {"type": "lw_item", "item": "bandage", "from": "grid", "slot": "", "owner": st.player}
+	var give_data := {"type": "solo_item", "item": "bandage", "from": "grid", "slot": "", "owner": st.player}
 	var in_chest: int = Inv.amount(st, chest.id, "bandage")
 	check(panels.loot_window.grid._can_drop_data(panels.loot_window.grid._cell_rect(3).get_center(), give_data), "Goods can be dragged into a chest")
 	panels.loot_window.grid._drop_data(panels.loot_window.grid._cell_rect(3).get_center(), give_data); main.simulation.step()

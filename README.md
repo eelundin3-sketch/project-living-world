@@ -1,4 +1,4 @@
-# Project Living World
+# Project Solo
 
 A single-player frontier life sandbox built in Godot 4.6. Three towns (Alder
 Hollow, Reedbank and dusty Dustvale) live far apart on one large, forested map: villagers farm rye, fell
@@ -29,20 +29,47 @@ your character when you start.
 
 [Full screenshot gallery](docs/SCREENSHOTS.md) · [Changelog](docs/status/CHANGELOG.md) · [Character animations (GIF)](docs/screenshots/character-motion.gif)
 
-## Start the game
+## Download and play
 
-Clone or download this repository, then open [project.godot](project.godot)
-in **Godot 4.6 stable**, standard edition, and press **F5** in the editor. The
-pinned build is `4.6.stable.official.89cea1439`. If you have already exported the
-Mac app locally, open `builds/macos/LivingWorld-release.app`. See the export
-instructions below to build it from a fresh checkout.
+Pick the way that suits you. Windows and Mac players can get a ready-to-run build; everyone can run
+the game from the source with the free engine, **Godot 4.6**.
 
-If the portable engine is present on this Mac, run from the project folder:
+### macOS: double-click `Project Solo.app`
 
-```sh
-GODOT_BIN=/private/tmp/living-world-engine/Godot.app/Contents/MacOS/Godot
-"$GODOT_BIN" --path .
-```
+1. Get the game: `git clone https://github.com/eelundin3-sketch/project-solo.git`, or **Code → Download ZIP** on GitHub, then unzip.
+2. Install **Godot 4.6 stable** (standard edition, not ".NET") from the
+   [Godot 4.6 archive](https://godotengine.org/download/archive/4.6-stable/), and put `Godot.app` in your Applications folder.
+   Newer versions (4.7 and later) can upgrade the project files, so use 4.6.
+3. Open **`Project Solo.app`**, which is at the top of the project folder. It finds Godot 4.6 and starts the game from this
+   folder, so it is always the current version. If Godot is missing it tells you where to get it.
+4. **First launch from a ZIP download:** macOS blocks apps it cannot check. Either run
+   `xattr -cr "Project Solo.app"` once in Terminal (in this folder), or try to open it, then go to
+   **System Settings → Privacy & Security → Open Anyway**. (A plain `git clone` has no such prompt. On macOS 15 and later,
+   right-click → Open no longer gets past it.) The same applies to Godot itself the first time you open it.
+
+Prefer a standalone app that needs no Godot? Download **`Project-Solo-macOS.zip`** from the repository's **Releases** page
+(or from **Actions → Build → the latest run → Artifacts**), unzip it and open `Project Solo.app` inside it, with the same first-launch step as above.
+
+### Windows 11: no Godot needed
+
+1. Download **`Project-Solo-Windows.zip`** from the repository's **Releases** page (or **Actions → Build → the latest run → Artifacts**).
+2. **Unzip** it anywhere (don't run it from inside the zip) and double-click **`ProjectSolo.exe`**.
+3. The game is not code-signed, so Windows shows *"Windows protected your PC"*: click **More info**, then **Run anyway**.
+4. Saves go to `%APPDATA%\Godot\app_userdata\Project Solo\`.
+
+### From source (any platform)
+
+1. Get the repository (clone or ZIP) and **Godot 4.6** as above (on Windows and Linux the download is a single program, no installer).
+2. **From the editor:** start Godot, choose **Import**, pick `project.godot`, open it and press **F5**.
+3. **From a terminal**, in the project folder:
+   ```sh
+   scripts/play.sh                               # finds Godot 4.6 for you (macOS and Linux)
+   GODOT_BIN=/path/to/Godot scripts/play.sh      # or say where it is
+   /path/to/Godot --path .                       # any platform, without the script
+   ```
+
+Then **start a new game** from the title screen. You arrive in Alder Hollow with a backpack, a shotgun (lowered) and not much else.
+The controls are below.
 
 | Control | Action |
 |---|---|
@@ -87,8 +114,8 @@ village square and press **F**. Start there to see actual stall stock and prices
 ## Save and back up
 
 On this Mac, Godot saves to
-`~/Library/Application Support/Godot/app_userdata/Project Living World/`.
-Copy `living_world.save`, `living_world.save.bak`, and `controls.cfg` if present.
+`~/Library/Application Support/Godot/app_userdata/Project Solo/`.
+Copy `project_solo.save`, `project_solo.save.bak`, and `controls.cfg` if present.
 Source, documentation, and saved games are separate. See the
 [backup instructions](docs/status/CURRENT_GAME.md#what-is-stored-and-where).
 
@@ -108,8 +135,9 @@ tools/prepare_exports.sh /path/to/Godot_v4.6-stable_export_templates.tpz
 GODOT_BIN=/path/to/Godot scripts/export.sh
 ```
 
-For only the Mac release, run:
+A Mac build is only a snapshot. If you export one, rebuild it after every change, and do not
+use it to judge the current game; run from the project instead (see above).
 
 ```sh
-"$GODOT_BIN" --headless --path . --export-release macOS builds/macos/LivingWorld-release.app
+"$GODOT_BIN" --headless --path . --export-release macOS builds/macos/ProjectSolo-release.app
 ```

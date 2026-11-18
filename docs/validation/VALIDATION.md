@@ -30,7 +30,7 @@ at the step boundaries. Player mobility, live animation and shotgun controls
 also passed in Godot 4.6.
 
 Reviewed side and diagonal walk cycles with `tests/captures/anim_sheet_capture.gd`
-using `LW_HEADING=0` and `LW_HEADING=45`. Regenerated the
+using `SOLO_HEADING=0` and `SOLO_HEADING=45`. Regenerated the
 [motion preview](../screenshots/character-motion.gif) with
 `tests/captures/character_motion_capture.gd` and rebuilt both Mac apps.
 
@@ -58,10 +58,10 @@ continuous foot positions at lift-off/recovery/cycle wrap, and selectable neck h
 region. Side and diagonal sprint contact sheets and the revised detail sheet were
 visually reviewed. The motion, turnaround, gameplay and health captures were refreshed.
 
-Run this for the side sheet; use `LW_HEADING=45` for the diagonal:
+Run this for the side sheet; use `SOLO_HEADING=45` for the diagonal:
 
 ```sh
-LW_HEADING=0 LW_SHEET_DIR=/tmp/lw-running "$GODOT_BIN" --path . --script res://tests/captures/run_sheet_capture.gd
+SOLO_HEADING=0 SOLO_SHEET_DIR=/tmp/solo-running "$GODOT_BIN" --path . --script res://tests/captures/run_sheet_capture.gd
 ```
 
 ## Drawn character redesign — 2026-11-16
@@ -117,7 +117,7 @@ The checks below cover the updated furniture, workshop, and marketplace.
 Focused checks use `--headless --path . --script res://tests/<name>.gd`.
 The complete runner is `scripts/test.sh`. Some sandboxed Mac sessions report a
 system CA or editor-settings error before tests run. A focused test with
-`--log-file /tmp/lw-test.log` can run without writing a log to the app data folder.
+`--log-file /tmp/solo-test.log` can run without writing a log to the app data folder.
 The earlier entries below are dated observations and may describe retired
 graphics, controls, or scenario sizes.
 
@@ -126,7 +126,7 @@ graphics, controls, or scenario sizes.
 Executed from the repository root:
 
 ```sh
-GODOT_BIN=/private/tmp/living-world-engine/Godot.app/Contents/MacOS/Godot scripts/test.sh
+GODOT_BIN="$HOME/Applications/Godot 4.6/Godot.app/Contents/MacOS/Godot" scripts/test.sh
 ```
 
 Exit status **0**. Headless import completed without parser errors. All 11 suites
@@ -201,7 +201,7 @@ visually checked for the world, stores, completed homes, player, inspector,
 trading controls and event history.
 
 ```sh
-GODOT_BIN=/private/tmp/living-world-engine/Godot.app/Contents/MacOS/Godot scripts/export.sh
+GODOT_BIN="$HOME/Applications/Godot 4.6/Godot.app/Contents/MacOS/Godot" scripts/export.sh
 ```
 
 Debug and release exports were generated for Windows x86_64, Linux x86_64 and

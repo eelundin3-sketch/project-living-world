@@ -38,9 +38,9 @@ func _initialize() -> void:
 	check(s.inventories == inventories, "LOD roundtrip preserves exact goods")
 	for key in residents:
 		check(s.residents[key].id == residents[key].id and s.residents[key].hunger == residents[key].hunger, "LOD preserves identity and needs")
-	Save.save_state(sim, OS.get_temp_dir().path_join("lw-region.save"))
+	Save.save_state(sim, OS.get_temp_dir().path_join("solo-region.save"))
 	var replay := Sim.new()
-	check(Save.load_into(replay, OS.get_temp_dir().path_join("lw-region.save")).ok, "Regional save loads")
+	check(Save.load_into(replay, OS.get_temp_dir().path_join("solo-region.save")).ok, "Regional save loads")
 	for tick in range(10000):
 		sim.step()
 		replay.step()

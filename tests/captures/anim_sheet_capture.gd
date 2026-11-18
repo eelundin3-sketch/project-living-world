@@ -6,9 +6,9 @@ var heading: float = PI / 4.0
 func _initialize() -> void: call_deferred("run")
 func run() -> void:
 	root.size = Vector2i(1280, 720)
-	var out := OS.get_environment("LW_SHEET_DIR")
+	var out := OS.get_environment("SOLO_SHEET_DIR")
 	if out.is_empty(): out = "/private/tmp/claude-501"
-	heading = deg_to_rad(float(OS.get_environment("LW_HEADING"))) if OS.get_environment("LW_HEADING") != "" else PI / 4.0
+	heading = deg_to_rad(float(OS.get_environment("SOLO_HEADING"))) if OS.get_environment("SOLO_HEADING") != "" else PI / 4.0
 	for batch_index in range(BATCHES.size()):
 		var holder := Node2D.new(); root.add_child(holder)
 		var bg := ColorRect.new(); bg.color = Color("bd9e69"); bg.size = Vector2(1280, 720); holder.add_child(bg)

@@ -35,10 +35,10 @@ func _initialize() -> void:
 		a.step()
 		if tick % 1000 == 0:
 			check(Checks.validate(a.state).is_empty(), "Soak invariants at %d: %s" % [tick, Checks.validate(a.state)])
-	var saved := Save.save_state(a, OS.get_temp_dir().path_join("lw-test-save.dat"))
+	var saved := Save.save_state(a, OS.get_temp_dir().path_join("solo-test-save.dat"))
 	check(saved.ok, "Save succeeds")
 	var b := Sim.new()
-	check(Save.load_into(b, OS.get_temp_dir().path_join("lw-test-save.dat")).ok, "Load succeeds")
+	check(Save.load_into(b, OS.get_temp_dir().path_join("solo-test-save.dat")).ok, "Load succeeds")
 	check(a.state_hash() == b.state_hash(), "Snapshot identity, needs, jobs and inventories")
 	for tick in range(50800):
 		a.step()
