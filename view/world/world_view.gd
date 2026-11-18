@@ -622,6 +622,7 @@ func _draw_map_labels(s: Dictionary) -> void:
 	if camera == null or camera.zoom.x >= 0.6: return
 	var inverse: float = 1.0 / camera.zoom.x
 	for town in s.get("settlements", {}).values():
+		if overlay_labels: break   # the map overlay draws the town names itself, clear of the hotbar
 		var store: Array = s.entities[str(town.warehouse)].cell
 		var at := Vector2(store[0], store[1] - 16) * CELL
 		var size: Vector2 = font.get_string_size(town.name, HORIZONTAL_ALIGNMENT_LEFT, -1, int(22 * inverse))
@@ -971,6 +972,7 @@ func is_far() -> bool:
 var decor_nodes: Dictionary = {}
 var decor_signatures: Dictionary = {}
 var door_hold: Dictionary = {}
+var overlay_labels: bool = false      # set by the controller while the map overlay is up
 var decor_clock: float = 99.0
 
 ## Creates, refreshes and removes the cached ground layers; checked twice a second.

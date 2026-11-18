@@ -9,6 +9,7 @@ const PlayerActions = preload("res://sim/player/player_actions.gd")
 const Audio = preload("res://view/audio/world_audio.gd")
 const ActionPointer = preload("res://view/ui/action_pointer.gd")
 const Cover = preload("res://sim/player/cover.gd")
+const MapOverlay = preload("res://view/ui/map_overlay.gd")
 const Moodles = preload("res://view/ui/moodles.gd")
 const BottomBar = preload("res://view/ui/bottom_bar.gd")
 const PerfOverlay = preload("res://view/ui/perf_overlay.gd")
@@ -44,6 +45,7 @@ var save_path: String = "user://living_world.save"
 var aiming: bool = false
 var pointer_held: bool = false
 var action_pointer: Control
+var map_overlay: Control
 var moodles: Control
 var bottom_bar: Control
 var perf: Control
@@ -69,6 +71,11 @@ func _ready() -> void:
 	add_child(pointer_layer)
 	action_pointer = ActionPointer.new()
 	pointer_layer.add_child(action_pointer)
+	map_overlay = MapOverlay.new()
+	var map_layer := CanvasLayer.new()
+	map_layer.layer = 8
+	add_child(map_layer)
+	map_layer.add_child(map_overlay)
 	var moodle_layer := CanvasLayer.new()
 	moodle_layer.layer = 5
 	add_child(moodle_layer)
@@ -209,6 +216,12 @@ func _process(delta: float) -> void:
 	$WorldView.motion.player_aim_position = get_global_mouse_position()
 	_update_peek()
 	_update_pointer()
+	map_overlay.state = simulation.state
+	map_overlay.active = map_mode
+	$WorldView.overlay_labels = map_mode
+	map_overlay.zoom = $ObserverCamera.zoom.x
+	map_overlay.player_world = $WorldView.motion.actors.get(str(simulation.state.player), {}).get("position", Vector2.ZERO)
+	map_overlay.queue_redraw()
 	$WorldView.animate(delta, clock.paused, clock.speed)
 	if follow_player:
 		var cell: Array = simulation.state.entities[str(simulation.state.player)].cell
@@ -352,6 +365,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		pending_binding = ""
 		get_viewport().set_input_as_handled()
 		return
+	if map_mode and event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			map_overlay.set_waypoint(get_global_mouse_position())
+			$DebugHUD.notice.text = "Waypoint set: %s" % MapOverlay.bearing_text(map_overlay.player_world, map_overlay.waypoint)
+			return
+		if event.button_index == MOUSE_BUTTON_RIGHT:
+			map_overlay.clear_waypoint()
+			return
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		pointer_held = true
 		if aiming and not player_panels.visible and not clock.paused and not map_mode:
@@ -462,7 +483,7 @@ func toggle_map() -> void:
 		var fit: float = minf(get_viewport().get_visible_rect().size.x / span.x, get_viewport().get_visible_rect().size.y / span.y)
 		camera.position = (low + high) * 0.5 * CELL
 		camera.zoom = Vector2.ONE * clampf(fit, camera.MIN_ZOOM, camera.MAX_ZOOM)
-		$DebugHUD.notice.text = "Map: WASD to move, wheel to zoom, M to return."
+		$DebugHUD.notice.text = "Map: WASD to move, wheel to zoom, click to set a waypoint (right-click clears), M to return."
 	else:
 		follow_player = map_return_follow
 		camera.zoom = map_return_zoom
