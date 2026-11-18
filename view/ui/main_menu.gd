@@ -47,7 +47,7 @@ func _ready() -> void:
 	menu_column.add_theme_constant_override("separation", 14)
 	root_control.add_child(menu_column)
 	var title := Label.new()
-	title.text = "LIVING WORLD"
+	title.text = "PROJECT SOLO"
 	title.add_theme_font_size_override("font_size", 54)
 	title.add_theme_color_override("font_color", INK)
 	title.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
@@ -72,7 +72,7 @@ func _ready() -> void:
 		menu_column.add_child(button)
 		buttons.append(button)
 	var footer := Label.new()
-	footer.text = "Project Living World · early build"
+	footer.text = "Project Solo · early build"
 	footer.add_theme_font_size_override("font_size", 12)
 	footer.add_theme_color_override("font_color", Color(MUTED, 0.6))
 	footer.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)

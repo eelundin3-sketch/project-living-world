@@ -1,4 +1,4 @@
-# Project Living World — Codex Hand-off and First Task
+# Project Solo — Codex Hand-off and First Task
 
 ## Instructions for using this pack
 
@@ -11,7 +11,7 @@
 ## Codex project rules (`AGENTS.md` starting text)
 
 ```markdown
-# Project Living World — Contributor Rules
+# Project Solo — Contributor Rules
 
 - Target: Godot 4.x (version pinned in README), GDScript, 2D desktop, single-player.
 - Read docs/design/01_GAME_FOUNDATION.md, docs/design/02_TECHNICAL_LAYERS.md and docs/design/03_BUILD_ROADMAP.md before implementing systems.
@@ -31,8 +31,8 @@
 ## Exact prompt for Codex — Task 001
 
 ```text
-You are building Project Living World, an original top-down 2D desktop
-single-player living-world sandbox in Godot 4 with GDScript.
+You are building Project Solo, an original top-down 2D desktop
+single-player frontier sandbox in Godot 4 with GDScript.
 
 Read all files in docs/, especially the foundation, technical architecture,
 and roadmap. Implement ONLY milestone M0 (Task 001): runnable project

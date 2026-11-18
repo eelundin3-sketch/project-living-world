@@ -22,7 +22,7 @@ func run() -> void:
 		_add_figure(anchor, 0.0 if i % 2 == 0 else 0.6, actions[i], actions[i].capitalize())
 	await RenderingServer.frame_post_draw
 	await RenderingServer.frame_post_draw
-	var path := OS.get_environment("LW_CHARACTER_CAPTURE")
+	var path := OS.get_environment("SOLO_CHARACTER_CAPTURE")
 	if path.is_empty():
 		path = "res://docs/screenshots/character-design.png"
 	quit(root.get_texture().get_image().save_png(path))

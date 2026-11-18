@@ -1,4 +1,4 @@
-# Project Living World
+# Project Solo
 
 A single-player frontier life sandbox built in Godot 4.6. Three towns (Alder
 Hollow, Reedbank and dusty Dustvale) live far apart on one large, forested map: villagers farm rye, fell
@@ -34,13 +34,13 @@ your character when you start.
 Clone or download this repository, then open [project.godot](project.godot)
 in **Godot 4.6 stable**, standard edition, and press **F5** in the editor. The
 pinned build is `4.6.stable.official.89cea1439`. If you have already exported the
-Mac app locally, open `builds/macos/LivingWorld-release.app`. See the export
+Mac app locally, open `builds/macos/ProjectSolo-release.app`. See the export
 instructions below to build it from a fresh checkout.
 
 If the portable engine is present on this Mac, run from the project folder:
 
 ```sh
-GODOT_BIN=/private/tmp/living-world-engine/Godot.app/Contents/MacOS/Godot
+GODOT_BIN="$HOME/Applications/Godot 4.6/Godot.app/Contents/MacOS/Godot"
 "$GODOT_BIN" --path .
 ```
 
@@ -87,8 +87,8 @@ village square and press **F**. Start there to see actual stall stock and prices
 ## Save and back up
 
 On this Mac, Godot saves to
-`~/Library/Application Support/Godot/app_userdata/Project Living World/`.
-Copy `living_world.save`, `living_world.save.bak`, and `controls.cfg` if present.
+`~/Library/Application Support/Godot/app_userdata/Project Solo/`.
+Copy `project_solo.save`, `project_solo.save.bak`, and `controls.cfg` if present.
 Source, documentation, and saved games are separate. See the
 [backup instructions](docs/status/CURRENT_GAME.md#what-is-stored-and-where).
 
@@ -111,5 +111,5 @@ GODOT_BIN=/path/to/Godot scripts/export.sh
 For only the Mac release, run:
 
 ```sh
-"$GODOT_BIN" --headless --path . --export-release macOS builds/macos/LivingWorld-release.app
+"$GODOT_BIN" --headless --path . --export-release macOS builds/macos/ProjectSolo-release.app
 ```

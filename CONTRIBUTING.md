@@ -1,4 +1,4 @@
-# Contributing to Project Living World
+# Contributing to Project Solo
 
 Use the standard edition of Godot 4.6 stable. Import `project.godot` and use
 the [current game guide](docs/status/CURRENT_GAME.md) for controls, data locations and

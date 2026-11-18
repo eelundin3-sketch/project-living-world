@@ -1,4 +1,4 @@
-# Project Living World — Game Foundation v0.1
+# Project Solo — Game Foundation v0.1
 
 **Status:** Proposed baseline; deliberate design choices, not claims about *Another Dead World's* undisclosed implementation.  
 **Target:** Single-player 2D top-down desktop sandbox (Windows first; Linux/macOS later).  

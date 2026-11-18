@@ -10,6 +10,7 @@ const Audio = preload("res://view/audio/world_audio.gd")
 const ActionPointer = preload("res://view/ui/action_pointer.gd")
 const Cover = preload("res://sim/combat/cover.gd")
 const MapOverlay = preload("res://view/ui/map_overlay.gd")
+const SaveMigration = preload("res://app/save_migration.gd")
 const Moodles = preload("res://view/ui/moodles.gd")
 const BottomBar = preload("res://view/ui/bottom_bar.gd")
 const PerfOverlay = preload("res://view/ui/perf_overlay.gd")
@@ -41,7 +42,7 @@ var map_return_follow: bool = true
 var pending_binding: String = ""
 var last_left_press: int = -10000
 var last_left_position: Vector2 = Vector2.ZERO
-var save_path: String = "user://living_world.save"
+var save_path: String = "user://project_solo.save"
 var aiming: bool = false
 var pointer_held: bool = false
 var action_pointer: Control
@@ -61,6 +62,7 @@ var last_right_press: int = -10000
 var last_right_position: Vector2 = Vector2.ZERO
 
 func _ready() -> void:
+	SaveMigration.migrate()   # saves from before the game was renamed come across once
 	Settings.setup()
 	simulation.start_game()
 	player_panels=PlayerPanels.new()

@@ -32,7 +32,7 @@ func _initialize() -> void:
 			if action in ["shoot", "melee", "hit", "down"]: saw_animation = true
 			if s.entities.has(str(fighter.id)): check(World.walkable(s, s.entities[str(fighter.id)].cell), "Fighters do not enter walls")
 		if tick == 60:
-			var path := OS.get_temp_dir().path_join("lw-combat-test.save")
+			var path := OS.get_temp_dir().path_join("solo-combat-test.save")
 			check(Save.save_state(sim, path).ok, "Encounter can be saved")
 			var restored := Sim.new()
 			check(Save.load_into(restored, path).ok and restored.state_hash() == sim.state_hash(), "Encounter resumes from the same simulation state")

@@ -11,7 +11,7 @@ func check(ok: bool, message: String) -> void:
 func _initialize() -> void:
 	var sim := Sim.new()
 	sim.start_game()
-	var path := OS.get_temp_dir().path_join("lw-recovery.save")
+	var path := OS.get_temp_dir().path_join("solo-recovery.save")
 	check(Save.save_state(sim, path).ok, "First atomic save")
 	var original := sim.state_hash()
 	sim.step()
@@ -25,10 +25,10 @@ func _initialize() -> void:
 	check(recovered.state_hash() == original, "Backup state is exact")
 	var old: Dictionary = sim.snapshot()
 	old.format_version = 1
-	file = FileAccess.open(OS.get_temp_dir().path_join("lw-legacy.save"), FileAccess.WRITE)
+	file = FileAccess.open(OS.get_temp_dir().path_join("solo-legacy.save"), FileAccess.WRITE)
 	file.store_var({"format": 1, "engine": Engine.get_version_info().string, "hash": Canonical.hash_state(old), "state": old}, false)
 	file.close()
-	var migrated := Save.read_state(OS.get_temp_dir().path_join("lw-legacy.save"))
+	var migrated := Save.read_state(OS.get_temp_dir().path_join("solo-legacy.save"))
 	check(migrated.ok and migrated.state.format_version == 2 and migrated.state.tick == old.tick, "V1 migration preserves gameplay state")
 	var valid := Content.read_recipe("res://content/recipes/example_mod.json")
 	check(valid.ok and valid.recipe.output_quantity == 8, "External data recipe accepted")

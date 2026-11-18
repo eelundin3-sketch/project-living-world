@@ -32,7 +32,7 @@ func run() -> void:
 	main.handle_action("pause")
 	main.clock.advance(0.1, main.simulation)
 	check(main.simulation.state.tick >= 3, "3x simulation ticks")
-	main.save_path = OS.get_temp_dir().path_join("lw-ui-save.dat")
+	main.save_path = OS.get_temp_dir().path_join("solo-ui-save.dat")
 	main.handle_action("save")
 	var saved_hash: String = main.simulation.state_hash()
 	main.simulation.step()
