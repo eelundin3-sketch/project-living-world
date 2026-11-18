@@ -1,0 +1,28 @@
+#!/bin/sh
+# Project Solo launcher: runs the game from this folder with Godot 4.6.
+# It lives at the top of the downloaded project folder, finds Godot 4.6 (never a newer version, which
+# can upgrade the project files), and starts the game from the source next to it, so it is never stale.
+HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
+is_46() { [ -x "$1" ] && "$1" --version 2>/dev/null | grep -q '^4\.6\.'; }
+find_godot() {
+  if [ -n "$GODOT_BIN" ]; then is_46 "$GODOT_BIN" && echo "$GODOT_BIN" && return 0; fi
+  for candidate in \
+    "$HOME/Applications/Godot 4.6/Godot.app/Contents/MacOS/Godot" \
+    "/Applications/Godot.app/Contents/MacOS/Godot" \
+    "$HOME/Applications/Godot.app/Contents/MacOS/Godot" \
+    "$HOME/Downloads/Godot.app/Contents/MacOS/Godot" \
+    "$(command -v godot 2>/dev/null)" "$(command -v godot4 2>/dev/null)"; do
+    if [ -n "$candidate" ] && is_46 "$candidate"; then echo "$candidate"; return 0; fi
+  done
+  return 1
+}
+GODOT="$(find_godot)" || {
+  osascript <<'APPLESCRIPT' 2>/dev/null
+set answer to button returned of (display dialog "Project Solo needs Godot 4.6 (the free game engine), and I could not find it on this Mac." & return & return & "Download Godot 4.6 stable (the standard edition, not .NET), put Godot.app in your Applications folder, then open Project Solo again." buttons {"Cancel", "Open the download page"} default button "Open the download page" with title "Project Solo" with icon note)
+if answer is "Open the download page" then open location "https://godotengine.org/download/archive/4.6-stable/"
+APPLESCRIPT
+  exit 1
+}
+cd "$HERE" || exit 1
+[ -n "$SOLO_DRY_RUN" ] && { echo "would run: $GODOT --path $HERE"; exit 0; }
+exec "$GODOT" --path "$HERE"
