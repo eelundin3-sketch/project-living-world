@@ -133,6 +133,7 @@ static func action_for(s: Dictionary, entity: Dictionary, aim_held: bool = false
 		var unarmed: Dictionary = s.get("player_control", {}).get("unarmed", {})
 		if not unarmed.is_empty() and s.tick < int(unarmed.end):
 			result.action = unarmed.kind
+			result.style = str(unarmed.get("style", "straight"))
 			result.phase = clampf(float(s.tick - unarmed.start) / maxf(1.0, float(unarmed.end - unarmed.start)), 0.0, 1.0)
 			return result
 	if entity.kind == "player" and not s.get("player_health", {}).get("treatment", {}).is_empty():
@@ -432,6 +433,7 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 		if action in ["punch", "shove", "kick", "stagger", "cuff", "shoot", "reload", "melee", "hit", "fall", "getup", "treat"] and state_action.phase >= 0:
 			var duration: float = 1.0
 			match action:
+				"punch": duration = {"hook": 1.1, "uppercut": 1.2, "haymaker": 1.6}.get(str(state_action.get("style", "straight")), 1.0)
 				"stagger": duration = 1.2
 				"cuff": duration = 3.0
 				"fall": duration = float(state_action.get("duration", Brawl.FALL_TICKS / 10.0))
@@ -493,6 +495,7 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 		pose.breath = clampf(1.0 - float(stamina_now - 20) / 40.0, 0.35, 1.0) if bool(stamina_state.get("winded", false)) else 0.0
 		pose.gun_equipped = gun_equipped
 		pose.treat_part = state_action.get("treat_part", "")
+		pose.punch_style = str(state_action.get("style", "straight")) if action == "punch" else "straight"
 		pose.treat_kind = state_action.get("treat_kind", "")
 		pose.fall_style = state_action.get("style", "back")
 		pose.rest_rot = state_action.get("rest_rot", -1)

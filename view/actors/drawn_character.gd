@@ -325,6 +325,11 @@ func _build_frame() -> Dictionary:
 		crouch = maxf(crouch, 0.85 * sitting)
 		fold -= 3.0 * sitting
 	if action in ["chop", "mine", "punch", "shove"]: fold += impact * 5.0
+	if action == "punch":
+		var punch_style: String = str(pose.get("punch_style", "straight"))
+		if punch_style == "haymaker": fold += 8.0 * smoothstep(0.5, 0.68, phase) * (1.0 - smoothstep(0.8, 1.0, phase)) - 5.0 * smoothstep(0.0, 0.5, phase) * (1.0 - smoothstep(0.5, 0.68, phase))
+		elif punch_style == "uppercut": crouch = maxf(crouch, 0.45 * smoothstep(0.0, 0.3, phase) * (1.0 - smoothstep(0.5, 0.9, phase)))
+		elif punch_style == "hook": fold += 2.5 * impact
 	if action == "kick": fold -= impact * 4.0   # lean back onto the standing leg
 	if action == "surrender": fold -= 1.5        # hands up, leaning away from the gun
 	if action == "cuffed": fold += 2.5           # head bowed
@@ -487,6 +492,33 @@ func _build_frame() -> Dictionary:
 			# Arms out for balance while the leg swings.
 			hand = shoulder + _joint(side * (9.0 + 5.0 * impact), 1.0, -7.0 + 4.0 * impact)
 			elbow = shoulder.lerp(hand, 0.5) + _joint(side * 2.0, 0, -3)
+		elif action == "punch" and str(pose.get("punch_style", "straight")) != "straight":
+			# The chain: cross (rear hand), hook (a wide side swing), uppercut (from low), haymaker (big overhand).
+			var style_name: String = str(pose.punch_style)
+			var striker: int = -1 if style_name == "cross" else 1
+			var wind := smoothstep(0.0, 0.5, phase)
+			var swing := smoothstep(0.5, 0.68, phase) * (1.0 - smoothstep(0.8, 1.0, phase))
+			if side != striker:
+				hand = chest + _joint(side * 5, 8, 3)                       # the other hand guards the chin
+				elbow = shoulder.lerp(hand, 0.5) + _joint(side * 3, 0, -8)
+			else:
+				match style_name:
+					"cross":
+						hand = chest + _joint(side * 4, 9 + impact * 25, 1.5 - impact * 3)
+						elbow = shoulder.lerp(hand, 0.5) + _joint(side * 2.5, 0, -7)
+					"hook":
+						var arc: float = impact
+						hand = chest + _joint(side * (7.0 + 13.0 * sin(arc * PI * 0.9)), 5.0 + 9.0 * arc, 2.0)
+						elbow = shoulder + _joint(side * (9.0 + 5.0 * arc), 2.0 + 3.0 * arc, -2.0)
+					"uppercut":
+						hand = chest + _joint(side * 3.0, 6.0 + 10.0 * impact, -11.0 + 21.0 * impact)
+						elbow = shoulder + _joint(side * 5.0, 5.0 + 4.0 * impact, -9.0 + 5.0 * impact)
+					_:
+						# Haymaker: the fist goes back and up, then swings over and down through the target.
+						var back := _joint(side * 7.0, -5.0, 9.0)
+						var through := _joint(side * 4.0, 15.0, -3.0)
+						hand = chest + back.lerp(through, swing) * (1.0 if phase > 0.45 else wind) + _joint(0, 0, 4.0 * (1.0 - swing) * wind)
+						elbow = shoulder + _joint(side * 8.0, -3.0 + 8.0 * swing, 3.0 - 7.0 * swing)
 		elif action in ["punch", "shove", "melee", "ready", "combat_idle"] or pose.get("ready", false):
 			var extension := impact if side > 0 or action == "shove" else 0.0
 			hand = chest + _joint(side * 5, 9 + extension * 23, 1 - extension * 3)

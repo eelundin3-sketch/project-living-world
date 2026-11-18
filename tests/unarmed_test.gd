@@ -80,5 +80,21 @@ func run() -> void:
 	main._unhandled_input(pause_key)
 	check(main.clock.paused, "P pauses the game")
 	main.queue_free(); await process_frame
+	# The punch chain: five quick presses run straight, cross, hook, uppercut, haymaker; a pause starts over.
+	var chain_sim := Sim.new(); chain_sim.start_game(); var cs: Dictionary = chain_sim.state
+	var seen: Array = []
+	for press in range(7):
+		cs.player_control.unarmed_cooldown = cs.tick   # ready for the next
+		Unarmed.begin(cs, "punch", [1000, 0])
+		seen.append(cs.player_control.unarmed.style)
+		for i in range(cs.player_control.unarmed.end - cs.tick - 1): cs.tick += 1
+	check(seen.slice(0, 5) == ["straight", "cross", "hook", "uppercut", "haymaker"], "Five quick punches run the whole chain: " + str(seen))
+	check(seen[5] == "straight", "After the finisher the chain starts over")
+	cs.tick += 60
+	cs.player_control.unarmed_cooldown = 0
+	Unarmed.begin(cs, "punch", [1000, 0])
+	check(cs.player_control.unarmed.style == "straight", "A pause also starts over")
+	check(Unarmed.STYLE_DATA.haymaker.damage > Unarmed.STYLE_DATA.uppercut.damage and Unarmed.STYLE_DATA.uppercut.damage > Unarmed.STYLE_DATA.straight.damage, "Later punches hit harder")
+	check(Unarmed.STYLE_DATA.hook.cone < Unarmed.STYLE_DATA.straight.cone, "The hook swings wider than the straight punch")
 	print("Unarmed controls: %s" % ("PASS" if failures == 0 else "FAIL"))
 	quit(0 if failures == 0 else 1)

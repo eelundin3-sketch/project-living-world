@@ -53,6 +53,7 @@ func _initialize() -> void:
 	while punches < 20 and v2.get("knock", {}).is_empty():
 		s2.entities[str(v2.id)].cell = [61, 60]
 		v2.brawl = {}
+		s2.player_control.punch_end = -1000   # plain straight punches: the combo chain has its own test
 		sim2.submit("player_strike", {"kind": "punch", "direction": [1000, 0]})
 		for t in range(12): sim2.step()
 		punches += 1

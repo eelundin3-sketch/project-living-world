@@ -124,7 +124,7 @@ static func knockdown(s: Dictionary, holder: Dictionary, cell: Array, kind: Stri
 		s.player_health.notice = "Treatment interrupted."
 
 ## The player's blow lands on a resident.
-static func on_player_hit(sim: RefCounted, npc: Dictionary, victim: Dictionary, kind: String, direction: Array) -> void:
+static func on_player_hit(sim: RefCounted, npc: Dictionary, victim: Dictionary, kind: String, direction: Array, style: String = "straight") -> void:
 	var s: Dictionary = sim.state
 	Households.wake(s, npc)
 	if npc.job != 0: Jobs.release(s, npc.job, "INTERRUPTED_BY_FIGHT")
@@ -139,9 +139,10 @@ static func on_player_hit(sim: RefCounted, npc: Dictionary, victim: Dictionary, 
 	var was_down: bool = knocked(s, npc)
 	npc.anger = mini(100, int(npc.get("anger", 0)) + (ANGER_PUNCH if kind == "punch" else ANGER_SHOVE))
 	if kind == "punch":
-		npc.health = maxi(0, int(npc.health) - PUNCH_DAMAGE)
+		npc.health = maxi(0, int(npc.health) - roundi(PUNCH_DAMAGE * float(load("res://sim/player/unarmed.gd").STYLE_DATA.get(style, {"damage": 1.0}).damage)))
 		# Blunt damage: a bruise where the blow lands. A punch to the face can split a lip or bloody a nose.
 		var landed: String = NPC_PARTS[sim.random_int("brawl", 0, NPC_PARTS.size() - 1)]
+		if style == "uppercut": landed = "head"   # driven up under the chin
 		var bruises: Dictionary = npc.get("bruises", {})
 		bruises[landed] = int(bruises.get(landed, 0)) + 1
 		npc.bruises = bruises
@@ -159,8 +160,14 @@ static func on_player_hit(sim: RefCounted, npc: Dictionary, victim: Dictionary, 
 			npc.brawl = {}
 			npc.anger = 40
 			add_blood(s, victim.cell, direction, 2)
+		elif not was_down and style == "haymaker":
+			knockdown(s, npc, victim.cell, "fall", direction)   # the finisher puts them on the ground
+			_say(sim, npc.id, "knocked_down")
+			npc.status = "Flattened by a haymaker"
+			event(s, "shove_hit", victim.cell, direction)
 		elif not was_down:
 			npc.status = "Staggered by a punch"
+			npc.impact_kind = "uppercut" if style == "uppercut" else ("hook" if style == "hook" else npc.get("impact_kind", "punch"))
 	else:
 		if not was_down:
 			knockdown(s, npc, victim.cell, "fall", direction)
