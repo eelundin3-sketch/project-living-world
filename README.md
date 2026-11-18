@@ -29,20 +29,39 @@ your character when you start.
 
 [Full screenshot gallery](docs/SCREENSHOTS.md) · [Changelog](docs/CHANGELOG.md) · [Character animations (GIF)](docs/screenshots/character-motion.gif)
 
-## Start the game
+## Download and play
 
-Clone or download this repository, then open [project.godot](project.godot)
-in **Godot 4.6 stable**, standard edition, and press **F5** in the editor. The
-pinned build is `4.6.stable.official.89cea1439`. If you have already exported the
-Mac app locally, open `builds/macos/LivingWorld-release.app`. See the export
-instructions below to build it from a fresh checkout.
+You need two things: this repository and **Godot 4.6 stable** (the free game engine the project runs on).
+No installer or build step is needed.
 
-If the portable engine is present on this Mac, run from the project folder:
+1. **Get the game.** Clone the repository, or use **Code → Download ZIP** on GitHub and unzip it.
+   The repository is private, so you need to be added as a collaborator first.
+   ```sh
+   git clone https://github.com/eelundin3-sketch/project-living-world.git
+   cd project-living-world
+   ```
+2. **Get Godot 4.6.** Download the standard edition (not ".NET") of **4.6 stable** from the
+   [Godot 4.6 archive](https://godotengine.org/download/archive/4.6-stable/) for macOS, Windows or Linux.
+   The pinned build is `4.6.stable.official.89cea1439`. Newer versions (4.7 and later) may upgrade the
+   project files, so use 4.6.
+   - **macOS:** unzip and drag `Godot.app` to Applications. Godot is unsigned, so the first time,
+     right-click it and choose **Open**.
+   - **Windows / Linux:** unzip; the download is a single program, with no installer.
+3. **Play.** Either:
+   - **From the editor:** start Godot, choose **Import**, pick this folder's `project.godot`, open it and
+     press **F5** (or the ▶ button).
+   - **From a terminal**, in the project folder:
+     ```sh
+     scripts/play.sh                       # finds Godot 4.6 for you (macOS and Linux)
+     GODOT_BIN=/path/to/Godot scripts/play.sh   # or tell it where Godot is
+     /path/to/Godot --path .               # any platform, without the script
+     ```
+4. **Start a new game** from the title screen. You arrive in Alder Hollow with a backpack and nothing else.
+   The controls are listed below.
 
-```sh
-GODOT_BIN=/private/tmp/living-world-engine/Godot.app/Contents/MacOS/Godot
-"$GODOT_BIN" --path .
-```
+> Always run the game this way, from the project folder. Exported `.app`, `.exe` or Linux builds are
+> snapshots of the day they were exported and do not update when the source does, so there are none
+> in the repository.
 
 | Control | Action |
 |---|---|
@@ -97,7 +116,8 @@ scripts/prepare_exports.sh /path/to/Godot_v4.6-stable_export_templates.tpz
 GODOT_BIN=/path/to/Godot scripts/export.sh
 ```
 
-For only the Mac release, run:
+A Mac build is only a snapshot. If you export one, rebuild it after every change, and do not
+use it to judge the current game; run from the project instead (see above).
 
 ```sh
 "$GODOT_BIN" --headless --path . --export-release macOS builds/macos/LivingWorld-release.app
