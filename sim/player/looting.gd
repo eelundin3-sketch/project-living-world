@@ -2,7 +2,7 @@ extends RefCounted
 ## Searching chests and the knocked-out or sleeping: take goods, coins and worn clothes.
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const Outfits = preload("res://sim/entities/outfits.gd")
-const Brawl = preload("res://sim/player/brawl.gd")
+const Brawl = preload("res://sim/combat/brawl.gd")
 const Actions = preload("res://sim/player/player_actions.gd")
 const Society = preload("res://sim/factions/society.gd")
 
@@ -51,13 +51,13 @@ static func _victim_robbed(s: Dictionary, id: int) -> void:
 			s.player_control.notice += " They sleep on."
 			return
 		var Households = load("res://sim/entities/households.gd")
-		var Brawl = load("res://sim/player/brawl.gd")
+		var Brawl = load("res://sim/combat/brawl.gd")
 		Households.wake(s, npc)
 		npc.anger = 75
 		npc.offences = 2
 		npc.last_offence = s.tick
 		Brawl.engage(s, npc, "beat")
-		load("res://sim/settlement/law.gd").crime(s, npc.settlement, "theft", npc.id)
+		load("res://sim/law/law.gd").crime(s, npc.settlement, "theft", npc.id)
 		s.player_control.notice = "%s wakes up and catches you stealing!" % s.entities[str(id)].name
 		if s.has("factions"): Society.remember(s, id, "robbed", s.player, "The traveller went through my things.", -20)
 		return

@@ -1,6 +1,6 @@
 extends RefCounted
 const PlayerActions = preload("res://sim/player/player_actions.gd")
-const BodyHealth = preload("res://sim/player/body_health.gd")
+const BodyHealth = preload("res://sim/combat/body_health.gd")
 const Canonical = preload("res://sim/core/canonical.gd")
 const Invariants = preload("res://sim/diagnostics/invariants.gd")
 const FORMAT_VERSION: int = 2

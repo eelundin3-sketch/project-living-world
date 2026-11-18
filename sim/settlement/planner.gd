@@ -5,7 +5,7 @@ const Work = preload("res://sim/production/recipe_system.gd")
 const Nav = preload("res://sim/movement/navigation.gd")
 const Households = preload("res://sim/entities/households.gd")
 const Chests = preload("res://sim/entities/chests.gd")
-const Brawl = preload("res://sim/player/brawl.gd")
+const Brawl = preload("res://sim/combat/brawl.gd")
 const Housing = preload("res://sim/settlement/housing.gd")
 const WORK_PER_TILE: int = 16
 

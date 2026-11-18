@@ -87,7 +87,7 @@ static func assign(s: Dictionary, settlement: int) -> void:
 		if best == "~": break
 		s.residents[str(free.pop_front())].occupation = best
 	if s.has("settlements"):
-		load("res://sim/settlement/sheriff.gd").dress(s)
+		load("res://sim/law/sheriff.gd").dress(s)
 		load("res://sim/economy/traders.gd").ensure(s)
 
 static func gathers(npc: Dictionary, target_kind: String) -> bool:

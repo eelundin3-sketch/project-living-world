@@ -2,8 +2,8 @@ extends RefCounted
 ## Villagers who see a gun go off run for cover: behind the nearest tree or the corner of the
 ## nearest building, out of the shooter's sight, and crouch there until things have been quiet for
 ## a while. Only people in the shooter's town, or close by, who can actually see it are affected.
-const Cover = preload("res://sim/player/cover.gd")
-const Limbs = preload("res://sim/player/limbs.gd")
+const Cover = preload("res://sim/combat/cover.gd")
+const Limbs = preload("res://sim/combat/limbs.gd")
 const World = preload("res://sim/world/world_db.gd")
 const Nav = preload("res://sim/movement/navigation.gd")
 const SEE_RANGE := 26.0
@@ -24,7 +24,7 @@ static func on_gunshot(sim: RefCounted, town: int, origin: Array) -> void:
 		if npc.settlement != town or npc.occupation == "Sheriff" or npc.health <= 0: continue
 		if npc.get("fidelity", "detailed") != "detailed": continue   # far from the player: not simulated closely
 		if not npc.get("sleeping", {}).is_empty() or not npc.get("migration", {}).is_empty() or not npc.get("arrest", {}).is_empty(): continue
-		if load("res://sim/player/brawl.gd").busy(s, npc) or not npc.get("brawl", {}).is_empty(): continue
+		if load("res://sim/combat/brawl.gd").busy(s, npc) or not npc.get("brawl", {}).is_empty(): continue
 		if npc.occupation == "Trader" and load("res://sim/economy/traders.gd").away(s, npc): continue
 		var cell: Array = s.entities[key].cell
 		if Vector2(cell[0] - origin[0], cell[1] - origin[1]).length() > SEE_RANGE: continue
@@ -86,7 +86,7 @@ static func update(sim: RefCounted) -> void:
 			npc.status = "Calming down"
 			npc.work_pause_until = s.tick + 60
 			continue
-		var load_brawl = load("res://sim/player/brawl.gd")
+		var load_brawl = load("res://sim/combat/brawl.gd")
 		if load_brawl.knocked(s, npc): continue
 		var cell: Array = s.entities[key].cell
 		var spot: Array = fear.cover

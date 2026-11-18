@@ -27,7 +27,7 @@ indicators, stamina with fatigue and collapse, a map view, a performance tab,
 furniture you can rotate and rearrange, and a title screen that flies down to
 your character when you start.
 
-[Full screenshot gallery](docs/SCREENSHOTS.md) · [Changelog](docs/CHANGELOG.md) · [Character animations (GIF)](docs/screenshots/character-motion.gif)
+[Full screenshot gallery](docs/SCREENSHOTS.md) · [Changelog](docs/status/CHANGELOG.md) · [Character animations (GIF)](docs/screenshots/character-motion.gif)
 
 ## Start the game
 
@@ -61,17 +61,28 @@ GODOT_BIN=/private/tmp/living-world-engine/Godot.app/Contents/MacOS/Godot
 To trade, walk to the front of a **Timber** or **Provisions** stall near the
 village square and press **F**. Start there to see actual stall stock and prices.
 
+## Project layout
+
+| Folder | What is in it |
+|---|---|
+| `sim/` | The simulation (authoritative, headless): world, residents, law, combat, economy |
+| `view/`, `app/` | Everything drawn, heard and clicked, and the controller that wires it to the simulation |
+| `content/` | Art, audio and data definitions |
+| `tests/` | `sim/` and `view/` tests, `captures/` screenshot scripts, `soak/`, `benchmark/` |
+| `tools/`, `scripts/` | Asset generators and the layout checker; the test runner, exports and play script |
+| `docs/` | `design/` (the blueprint), `status/` (changelog, current game), `validation/`, `screenshots/` |
+
 ## Documentation
 
 | File | Use it for |
 |---|---|
-| [Current game guide](docs/CURRENT_GAME.md) | Current controls, village workflows, where files live, and how to back up a save |
-| [Implementation status](docs/IMPLEMENTATION_STATUS.md) | Shipped blueprint milestones and scope limits |
+| [Current game guide](docs/status/CURRENT_GAME.md) | Current controls, village workflows, where files live, and how to back up a save |
+| [Implementation status](docs/status/IMPLEMENTATION_STATUS.md) | Shipped blueprint milestones and scope limits |
 | [Contributing](CONTRIBUTING.md) | Project setup, test expectations, and where to report a problem |
-| [Decisions](docs/DECISIONS.md) | Technical and design decisions, including later changes that supersede earlier ones |
-| [Changelog](docs/CHANGELOG.md) | What changed and when |
-| [Validation](docs/VALIDATION.md) | Checks, screenshots, benchmarks and their dates |
-| [Blueprint](docs/01_GAME_FOUNDATION.md) · [Technical layers](docs/02_TECHNICAL_LAYERS.md) · [Roadmap](docs/03_BUILD_ROADMAP.md) · [Contributor brief](docs/04_CODEX_START_HERE.md) | Original project intent and implementation plan |
+| [Decisions](docs/design/DECISIONS.md) | Technical and design decisions, including later changes that supersede earlier ones |
+| [Changelog](docs/status/CHANGELOG.md) | What changed and when |
+| [Validation](docs/validation/VALIDATION.md) | Checks, screenshots, benchmarks and their dates |
+| [Blueprint](docs/design/01_GAME_FOUNDATION.md) · [Technical layers](docs/design/02_TECHNICAL_LAYERS.md) · [Roadmap](docs/design/03_BUILD_ROADMAP.md) · [Contributor brief](docs/design/04_CODEX_START_HERE.md) | Original project intent and implementation plan |
 
 ## Save and back up
 
@@ -79,21 +90,21 @@ On this Mac, Godot saves to
 `~/Library/Application Support/Godot/app_userdata/Project Living World/`.
 Copy `living_world.save`, `living_world.save.bak`, and `controls.cfg` if present.
 Source, documentation, and saved games are separate. See the
-[backup instructions](docs/CURRENT_GAME.md#what-is-stored-and-where).
+[backup instructions](docs/status/CURRENT_GAME.md#what-is-stored-and-where).
 
 ## Test and export
 
 ```sh
 GODOT_BIN=/path/to/Godot scripts/test.sh
-"$GODOT_BIN" --headless --path . --script res://tests/production_test.gd
-"$GODOT_BIN" --path . --script res://tests/market_capture.gd
+"$GODOT_BIN" --headless --path . --script res://tests/sim/production_test.gd
+"$GODOT_BIN" --path . --script res://tests/captures/market_capture.gd
 ```
 
 Install the Godot **4.6 stable** export templates to export desktop builds. The
 scripts write local artifacts to the ignored `builds/` folder.
 
 ```sh
-scripts/prepare_exports.sh /path/to/Godot_v4.6-stable_export_templates.tpz
+tools/prepare_exports.sh /path/to/Godot_v4.6-stable_export_templates.tpz
 GODOT_BIN=/path/to/Godot scripts/export.sh
 ```
 

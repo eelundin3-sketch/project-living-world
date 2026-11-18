@@ -26,7 +26,7 @@ func _initialize() -> void:
 		rows.append(row)
 		print(JSON.stringify(row))
 		failed = failed or not row.invariants.is_empty() or row.p99_ms > 100.0
-	var output := FileAccess.open("res://docs/simulation_benchmark.json", FileAccess.WRITE)
+	var output := FileAccess.open("res://docs/validation/simulation_benchmark.json", FileAccess.WRITE)
 	output.store_string(JSON.stringify({"engine": Engine.get_version_info().string, "cpu": OS.get_processor_name(), "os": OS.get_name(), "rows": rows}, "  "))
 	output.close()
 	quit(1 if failed else 0)

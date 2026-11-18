@@ -1,7 +1,7 @@
 extends RefCounted
 ## Physical and emotional condition model shared by the player and residents.
 ## Everything is derived from authoritative state; the HUD only reads `levels()`.
-const BodyHealth = preload("res://sim/player/body_health.gd")
+const BodyHealth = preload("res://sim/combat/body_health.gd")
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
 
 ## Severity thresholds (levels 1..4) for 0-100 gauges.
