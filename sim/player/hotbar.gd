@@ -3,7 +3,7 @@ extends RefCounted
 ## that item: the shotgun is carried, anything else is taken in hand. Using the active
 ## slot again puts the item away.
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
-const Shotgun = preload("res://sim/player/shotgun.gd")
+const Shotgun = preload("res://sim/combat/shotgun.gd")
 const PlayerActions = preload("res://sim/player/player_actions.gd")
 const SLOTS := 4
 const ITEMS: Array[String] = ["shotgun", "shell", "tool", "bandage", "antiseptic", "food", "rye", "log", "plank", "ore"]

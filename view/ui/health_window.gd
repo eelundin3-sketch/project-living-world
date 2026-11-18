@@ -3,7 +3,7 @@ extends Control
 ## figure with a dot on every injured part, and one list of injuries. Pick an injury and it opens in
 ## place with the treatments you can do right now; while one runs, a progress line replaces them.
 ## Everything here only reads the simulation and submits commands.
-const Health = preload("res://sim/player/body_health.gd")
+const Health = preload("res://sim/combat/body_health.gd")
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const Outfits = preload("res://sim/entities/outfits.gd")
 const BodyDiagram = preload("res://view/ui/body_diagram.gd")

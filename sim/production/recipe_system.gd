@@ -2,7 +2,7 @@ extends RefCounted
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const World = preload("res://sim/world/world_db.gd")
 const Nav = preload("res://sim/movement/navigation.gd")
-const Brawl = preload("res://sim/player/brawl.gd")
+const Brawl = preload("res://sim/combat/brawl.gd")
 
 static func initialize(sim: RefCounted) -> void:
 	var s: Dictionary = sim.state

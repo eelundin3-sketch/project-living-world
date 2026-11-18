@@ -22,7 +22,7 @@ func run() -> void:
 	samples.sort()
 	sim_samples.sort()
 	var results := {"engine": Engine.get_version_info().string, "cpu": OS.get_processor_name(), "gpu": RenderingServer.get_video_adapter_name(), "viewport": [1280, 720], "duration_seconds": 30, "frames": samples.size(), "p50_ms": percentile(samples, 0.5), "p95_ms": percentile(samples, 0.95), "p99_ms": percentile(samples, 0.99), "max_ms": samples[-1], "sim_p95_ms": percentile(sim_samples, 0.95), "memory_bytes": OS.get_static_memory_usage(), "nodes": get_node_count(), "chunks": main.simulation.state.world.chunks.size()}
-	var file := FileAccess.open("res://docs/animation_frame_benchmark.json", FileAccess.WRITE)
+	var file := FileAccess.open("res://docs/validation/animation_frame_benchmark.json", FileAccess.WRITE)
 	file.store_string(JSON.stringify(results, "  "))
 	file.close()
 	print(JSON.stringify(results))

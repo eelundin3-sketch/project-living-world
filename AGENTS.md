@@ -1,7 +1,7 @@
 # Project Living World — Contributor Rules
 
 - Target: Godot 4.x (version pinned in README), GDScript, 2D desktop, single-player.
-- Read docs/01_GAME_FOUNDATION.md, docs/02_TECHNICAL_LAYERS.md and docs/03_BUILD_ROADMAP.md before implementing systems.
+- Read docs/design/01_GAME_FOUNDATION.md, docs/design/02_TECHNICAL_LAYERS.md and docs/design/03_BUILD_ROADMAP.md before implementing systems.
 - The simulation is authoritative and must run headlessly without rendering.
 - Views read simulation data and submit commands; views never own authoritative NPC inventory, money, needs or world state.
 - Prefer typed GDScript, small files, stable IDs, explicit dependencies and deterministic iteration.

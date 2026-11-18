@@ -2,7 +2,7 @@ extends RefCounted
 ## What villagers say. Lines are chosen deterministically from the "speech" random stream and kept
 ## in `state.speech` (a short rolling list) for the view to draw as speech bubbles.
 ## Ambient chatter: idle neighbours make small talk, and now and then someone greets the player.
-const Brawl = preload("res://sim/player/brawl.gd")
+const Brawl = preload("res://sim/combat/brawl.gd")
 const LIFETIME := 45          # ticks a bubble stays up
 const MAX_LINES := 30
 

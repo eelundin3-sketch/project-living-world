@@ -1,5 +1,5 @@
 extends CanvasLayer
-const Health = preload("res://sim/player/body_health.gd")
+const Health = preload("res://sim/combat/body_health.gd")
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const Market = preload("res://sim/economy/market.gd")
 const BodyDiagram = preload("res://view/ui/body_diagram.gd")
