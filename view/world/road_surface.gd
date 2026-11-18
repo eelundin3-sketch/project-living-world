@@ -1,6 +1,7 @@
 extends RefCounted
 ## A feathered mask for sand and gravel in the terrain material. No collision.
 const World = preload("res://sim/world/world_db.gd")
+const TownLayout = preload("res://sim/world/town_layout.gd")
 const CELL := 24.0
 const SAMPLE := 4.0
 const ROAD_Y := 48.0 * CELL
@@ -12,30 +13,11 @@ func bake(state: Dictionary, extent: Rect2) -> ImageTexture:
 	region = extent
 	var resolution := Vector2i(extent.size / SAMPLE)
 	mask = Image.create_empty(resolution.x, resolution.y, false, Image.FORMAT_L8)
-	if state.has("routes"):
-		var route := PackedVector2Array()
-		var east: int = 216
-		if state.get("settlements", {}).has("2"): east = int(state.entities[str(state.settlements["2"].warehouse)].cell[0]) + 36
-		for x in range(36, east, 2):
-			var bend := sin(float(x) * 0.27) * 5.2 + sin(float(x) * 0.61) * 2.6
-			route.append(Vector2(x * CELL, ROAD_Y + bend))
-		_track(route, 17.0)
-	if state.get("settlements", {}).has("3"):
-		# The south road from Alder Hollow's square down to Dustvale, and Dustvale's own street.
-		var south := PackedVector2Array()
-		var from_cell := Vector2(70, 50)
-		var dust_store: Array = state.entities[str(state.settlements["3"].warehouse)].cell
-		var to_cell := Vector2(dust_store[0], dust_store[1] - 2)
-		for step in range(0, 121):
-			var t := float(step) / 120.0
-			var along := from_cell.lerp(to_cell, t)
-			south.append(Vector2(along.x + sin(t * 9.0) * 3.2 + sin(t * 23.0) * 1.2, along.y) * CELL)
-		_track(south, 16.0)
-		var store3: Array = state.entities[str(state.settlements["3"].warehouse)].cell
-		var street := PackedVector2Array()
-		for x in range(store3[0] - 42, store3[0] + 36, 2):
-			street.append(Vector2(x * CELL, (store3[1] + 2) * CELL + sin(float(x) * 0.31) * 6.0))
-		_track(street, 16.0)
+	# Every road is a polyline in the simulation (town_layout.gd): the streets, the lanes and the links.
+	for segment in TownLayout.segments(state):
+		var line := PackedVector2Array()
+		for point in segment.points: line.append(Vector2(float(point[0]), float(point[1])) * CELL)
+		_track(line, float(segment.radius))
 	for town in state.get("settlements", {}).values():
 		var store: Dictionary = state.entities[str(town.warehouse)]
 		var square := Vector2(store.cell[0], store.cell[1] + 3) * CELL
@@ -43,16 +25,14 @@ func bake(state: Dictionary, extent: Rect2) -> ImageTexture:
 			_stamp(square + offset, 39.0)
 	for entity in state.entities.values():
 		if entity.has("footprint"):
+			# A path from the door, straight out the way it faces, then to the nearest road.
 			var door := Vector2(entity.cell[0], entity.cell[1]) * CELL
-			var road_y := _road_y(state, entity)
-			if door.y <= road_y:
-				_track(PackedVector2Array([door, Vector2(door.x, road_y)]), 14.0)
-			else:
-				var edge := float(World.building_rect(entity).end.x + 1) * CELL
-				_track(PackedVector2Array([
-					door, door + Vector2(0, 32), Vector2(edge - 14, door.y + 34),
-					Vector2(edge, door.y + 18), Vector2(edge, road_y),
-				]), 13.0)
+			var facing := Vector2(TownLayout.facing_vector(int(entity.get("door_side", 2))))
+			var near: Dictionary = TownLayout.nearest_road_point(state, Vector2(entity.cell[0], entity.cell[1]) + facing * 2.0)
+			if not near.is_empty():
+				var target: Vector2 = near.point * CELL
+				var out: Vector2 = door + facing * 1.5 * CELL
+				_track(PackedVector2Array([door, out, target]) if out.distance_to(target) > 6.0 else PackedVector2Array([door, target]), 13.0)
 		elif entity.kind == "market_stall":
 			var counter := Vector2(entity.cell[0], entity.cell[1] + 1) * CELL
 			_track(PackedVector2Array([Vector2(counter.x, _road_y(state, entity)), counter]), 11)

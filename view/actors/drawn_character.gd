@@ -277,7 +277,7 @@ func _segment(a: Vector2, b: Vector2, width: float, color: Color) -> void:
 func _build_frame() -> Dictionary:
 	var action: String = pose.get("action", "idle")
 	var phase: float = pose.get("phase", 0.0)
-	if action in ["fall", "down", "getup"]: return _fall_frame(action, phase)
+	if action in ["fall", "down", "getup", "crawl"]: return _fall_frame(action, phase)
 	var gait: float = float(pose.get("gait_phase", 0.0)) * TAU
 	var moving: bool = pose.get("moving", false)
 	# 0 = walking pace .. 1 = full sprint. It ramps up when sprinting starts and back down after
@@ -325,8 +325,18 @@ func _build_frame() -> Dictionary:
 		crouch = maxf(crouch, 0.85 * sitting)
 		fold -= 3.0 * sitting
 	if action in ["chop", "mine", "punch", "shove"]: fold += impact * 5.0
+	if action == "punch":
+		var punch_style: String = str(pose.get("punch_style", "straight"))
+		if punch_style == "haymaker": fold += 8.0 * smoothstep(0.5, 0.68, phase) * (1.0 - smoothstep(0.8, 1.0, phase)) - 5.0 * smoothstep(0.0, 0.5, phase) * (1.0 - smoothstep(0.5, 0.68, phase))
+		elif punch_style == "uppercut": crouch = maxf(crouch, 0.45 * smoothstep(0.0, 0.3, phase) * (1.0 - smoothstep(0.5, 0.9, phase)))
+		elif punch_style == "hook": fold += 2.5 * impact
+	if action == "kick": fold -= impact * 4.0   # lean back onto the standing leg
+	if action == "surrender": fold -= 1.5        # hands up, leaning away from the gun
+	if action == "cuffed": fold += 2.5           # head bowed
+	if action == "cuff": fold += 4.0             # leaning in to fit the cuffs
+	if action == "search": fold += 3.5           # bending to pat the prisoner down
 	if action == "build": fold += build.hit * 5.0 + build.raise * 1.5 - build.check * 1.5  # lean into each blow
-	if action == "shoot": fold -= 4.0 * smoothstep(0.0, 0.08, phase) * (1.0 - smoothstep(0.1, 0.55, phase))
+	if action == "shoot": fold -= (4.0 + 3.0 * float(pose.get("bloom", 0)) / 900.0) * smoothstep(0.0, 0.08, phase) * (1.0 - smoothstep(0.1, 0.55, phase))
 	if action == "build" and pose.get("build_kind", "") == "floor":
 		crouch = 0.55 + impact * 0.32
 		fold += 7.0
@@ -389,7 +399,7 @@ func _build_frame() -> Dictionary:
 	if quantity == 0 and action == "drop":
 		item = pose.get("last_item", "")
 		quantity = pose.get("last_quantity", 0)
-	var carrying := quantity > 0 and action not in ["build", "hit", "down", "rest", "punch", "shove", "stagger"]
+	var carrying := quantity > 0 and action not in ["build", "hit", "down", "rest", "punch", "shove", "kick", "stagger", "surrender", "cuffed", "cuff", "search"]
 	var lift := 1.0
 	if action == "pickup": lift = smoothstep(0.33, 0.91, phase)
 	elif action == "drop": lift = smoothstep(0.33, 0.91, 1.0 - phase)
@@ -398,7 +408,7 @@ func _build_frame() -> Dictionary:
 	if action == "pickup" and pose.get("cargo_quantity", 0) == 0: show_cargo = carrying and phase >= 0.33
 	if action == "drop" and pose.get("cargo_quantity", 0) == 0: show_cargo = carrying and phase < 0.67
 	var armed := action in ["gun_carry", "aim", "shoot", "reload"]
-	var recoil := 7.0 * smoothstep(0.0, 0.08, phase) * (1.0 - smoothstep(0.1, 0.55, phase)) if action == "shoot" else 0.0
+	var recoil := (7.0 + 4.0 * float(pose.get("bloom", 0)) / 900.0) * smoothstep(0.0, 0.08, phase) * (1.0 - smoothstep(0.1, 0.55, phase)) if action == "shoot" else 0.0
 	# The barrel follows the cursor between the drawn body's eight directions.
 	var sight := Vector2.from_angle(float(pose.get("heading", heading))) if pose.get("aiming", false) else forward
 	var projected_sight := Vector2(sight.x, sight.y * 0.48)
@@ -455,6 +465,60 @@ func _build_frame() -> Dictionary:
 			var flare := flinch
 			hand = shoulder + _joint(side * (5.0 + 8.0 * flare), 1.0 - 4.0 * flare, -8.0 + 13.0 * flare)
 			elbow = shoulder.lerp(hand, 0.5) + _joint(side * 2.5, 0, -4)
+		elif action == "surrender":
+			# Hands up, palms out, trembling a little.
+			var shake := sin(float(pose.get("age", 0.0)) * 9.0) * 0.45
+			elbow = shoulder + _joint(side * 8.5, 0.5, 7.5)
+			hand = shoulder + _joint(side * 6.0, 1.0, 17.5 + shake)
+		elif action == "cuffed":
+			# Wrists cuffed together behind the back.
+			elbow = shoulder + _joint(side * 5.5, -3.5, -8.5)
+			hand = hip + _joint(side * 1.6, -4.5, 3.5)
+		elif action == "cuff":
+			# Both hands low and forward, working the cuffs onto the prisoner's wrists.
+			var fiddle := sin(phase * TAU * 4.0) * 1.2
+			elbow = shoulder + _joint(side * 6.0, 6.0, -7.0)
+			hand = chest + _joint(side * 2.5, 11.5, -13.0 + fiddle)
+		elif action == "search":
+			# Patting the prisoner down: both hands low in front, sweeping across the body.
+			var sweep := sin(phase * TAU * 3.0 + (0.0 if side > 0 else PI))
+			elbow = shoulder + _joint(side * 6.5, 5.5, -7.0)
+			hand = chest + _joint(side * (2.0 + 3.5 * sweep), 11.0, -11.0 + 2.5 * sweep)
+		elif action == "escort" and side > 0:
+			# A firm grip on the prisoner's arm, a step behind.
+			elbow = shoulder + _joint(side * 8.0, -3.0, -8.0)
+			hand = shoulder + _joint(side * 9.5, -7.5, -14.0)
+		elif action == "kick":
+			# Arms out for balance while the leg swings.
+			hand = shoulder + _joint(side * (9.0 + 5.0 * impact), 1.0, -7.0 + 4.0 * impact)
+			elbow = shoulder.lerp(hand, 0.5) + _joint(side * 2.0, 0, -3)
+		elif action == "punch" and str(pose.get("punch_style", "straight")) != "straight":
+			# The chain: cross (rear hand), hook (a wide side swing), uppercut (from low), haymaker (big overhand).
+			var style_name: String = str(pose.punch_style)
+			var striker: int = -1 if style_name == "cross" else 1
+			var wind := smoothstep(0.0, 0.5, phase)
+			var swing := smoothstep(0.5, 0.68, phase) * (1.0 - smoothstep(0.8, 1.0, phase))
+			if side != striker:
+				hand = chest + _joint(side * 5, 8, 3)                       # the other hand guards the chin
+				elbow = shoulder.lerp(hand, 0.5) + _joint(side * 3, 0, -8)
+			else:
+				match style_name:
+					"cross":
+						hand = chest + _joint(side * 4, 9 + impact * 25, 1.5 - impact * 3)
+						elbow = shoulder.lerp(hand, 0.5) + _joint(side * 2.5, 0, -7)
+					"hook":
+						var arc: float = impact
+						hand = chest + _joint(side * (7.0 + 13.0 * sin(arc * PI * 0.9)), 5.0 + 9.0 * arc, 2.0)
+						elbow = shoulder + _joint(side * (9.0 + 5.0 * arc), 2.0 + 3.0 * arc, -2.0)
+					"uppercut":
+						hand = chest + _joint(side * 3.0, 6.0 + 10.0 * impact, -11.0 + 21.0 * impact)
+						elbow = shoulder + _joint(side * 5.0, 5.0 + 4.0 * impact, -9.0 + 5.0 * impact)
+					_:
+						# Haymaker: the fist goes back and up, then swings over and down through the target.
+						var back := _joint(side * 7.0, -5.0, 9.0)
+						var through := _joint(side * 4.0, 15.0, -3.0)
+						hand = chest + back.lerp(through, swing) * (1.0 if phase > 0.45 else wind) + _joint(0, 0, 4.0 * (1.0 - swing) * wind)
+						elbow = shoulder + _joint(side * 8.0, -3.0 + 8.0 * swing, 3.0 - 7.0 * swing)
 		elif action in ["punch", "shove", "melee", "ready", "combat_idle"] or pose.get("ready", false):
 			var extension := impact if side > 0 or action == "shove" else 0.0
 			hand = chest + _joint(side * 5, 9 + extension * 23, 1 - extension * 3)
@@ -494,6 +558,11 @@ func _build_frame() -> Dictionary:
 	var leg_run: float = run_amount * (1.0 - 0.3 * tired)
 	var left_leg := leg_joints(-1, hip, gait, moving, leg_run, HIP_HEIGHT + bob - crouch * 5.0 - sneak * 10.0 - kneel * 12.5)
 	var right_leg := leg_joints(1, hip, gait, moving, leg_run, HIP_HEIGHT + bob - crouch * 5.0 - sneak * 10.0 - kneel * 12.5)
+	if action == "kick":
+		# The right leg swings forward and down through the downed person; the left takes the weight.
+		var kick_foot := hip + _joint(5.3, 4.0 + 13.0 * impact, 5.0 + 4.0 * impact * (1.0 - impact))
+		var kick_knee := hip.lerp(kick_foot, 0.5) + _joint(0, 3.0 * impact, -2.0)
+		right_leg = PackedVector2Array([right_leg[0], right_leg[1].lerp(kick_knee, impact), right_leg[2].lerp(kick_foot, impact)])
 	var pack_center := Vector2.ZERO
 	if kneel > 0.0:
 		# Down on the right knee, left foot planted ahead.
@@ -561,6 +630,28 @@ func _build_frame() -> Dictionary:
 		var slide: float = (6.0 if action == "stagger" else 3.0) * flinch
 		right_leg[2] += _joint(0, -slide, 0)
 		right_leg[1] += _joint(0, -slide * 0.55, 0)
+	# Leaning out past a corner: the body shifts towards the corner and the head goes furthest.
+	var lean_v: Vector2 = pose.get("peek_lean", Vector2.ZERO)
+	if lean_v.length() > 0.01:
+		var lean_screen := Vector2(lean_v.x, lean_v.y * 0.48)
+		chest += lean_screen * 5.0
+		head += lean_screen * 10.0
+		for side in [-1, 1]:
+			arms[side] = PackedVector2Array([arms[side][0] + lean_screen * 5.0, arms[side][1] + lean_screen * 7.0, arms[side][2] + lean_screen * 9.0])
+	# A limp: the bad leg drags, the body bobs down on it. An arm that does not work just hangs.
+	if bool(pose.get("limp", false)):
+		var bad_side: int = int(pose.get("limp_side", 1))
+		var bad_leg: PackedVector2Array = left_leg if bad_side < 0 else right_leg
+		bad_leg[2] = bad_leg[0].lerp(bad_leg[2], 0.88)
+		bad_leg[1] = bad_leg[0].lerp(bad_leg[1], 0.9)
+		var dip: float = 1.6 * absf(sin(gait)) if moving else 0.0
+		hip += _joint(0, 0, -dip)
+		chest += _joint(0, 0, -dip) + _joint(float(bad_side) * 1.0, 0, 0)
+		head += _joint(0, 0, -dip)
+	for dead_side in pose.get("dead_arms", []):
+		var limp_arm: PackedVector2Array = arms[int(dead_side)]
+		var dangling_elbow: Vector2 = limp_arm[0] + _joint(float(dead_side) * 2.6, 0.5, -8.5)
+		arms[int(dead_side)] = PackedVector2Array([limp_arm[0], dangling_elbow, dangling_elbow + _joint(float(dead_side) * 1.0, 0.8, -8.0)])
 	return {
 		"hip": hip, "chest": chest, "head": head, "cargo": cargo_center, "stock": stock, "muzzle": muzzle,
 		"left_arm": arms[-1], "right_arm": arms[1],
@@ -604,6 +695,23 @@ func _fall_frame(action: String, phase: float) -> Dictionary:
 	var joints: Dictionary
 	if action == "fall": joints = _sample_keys(FALL_KEYS + [[1.0, LYING_FORWARD]], phase)
 	elif action == "getup": joints = _sample_keys([[0.0, LYING_FORWARD]] + GETUP_KEYS, phase)
+	elif action == "crawl":
+		# Propped on the forearms, the hands reaching one after the other, the legs dragged behind.
+		joints = LYING_FORWARD.duplicate()
+		var g: float = float(pose.get("gait_phase", 0.0)) * TAU
+		var moving_now: bool = bool(pose.get("moving", false))
+		var pull: float = sin(g) if moving_now else sin(float(pose.get("age", 0.0)) * 1.6) * 0.25
+		joints.hip = Vector3(0, 8, 6)
+		joints.chest = Vector3(0, 27, 13.5)
+		joints.head = Vector3(0, 37.5, 21)
+		joints.R_elbow = Vector3(10, 33, 6 + 2.0 * maxf(0.0, pull))
+		joints.L_elbow = Vector3(-10, 33, 6 + 2.0 * maxf(0.0, -pull))
+		joints.R_hand = Vector3(8.5, 44 + 7.0 * pull, 2.5 + 4.0 * maxf(0.0, pull))
+		joints.L_hand = Vector3(-8.5, 44 - 7.0 * pull, 2.5 + 4.0 * maxf(0.0, -pull))
+		joints.R_knee = Vector3(5.4, -4 + 2.0 * pull, 4.5)
+		joints.L_knee = Vector3(-5.4, -4 - 2.0 * pull, 4.5)
+		joints.R_foot = Vector3(5.6, -17 - 2.5 * pull, 3.5)
+		joints.L_foot = Vector3(-5.6, -17 + 2.5 * pull, 3.5)
 	else:
 		joints = LYING_FORWARD.duplicate()
 		# Slow breathing while lying there.
@@ -803,6 +911,13 @@ func _draw() -> void:
 		_draw_arm(arms[near_side], shirt, skin)
 	if frame.get("backpack", false) and not pack_drawn:
 		_draw_pack(frame.pack_center, float(frame.pack_open), float(frame.pack_move))
+	if action == "cuffed":
+		# Iron cuffs on the crossed wrists.
+		var left_hand: Vector2 = arms[-1][2]
+		var right_hand: Vector2 = arms[1][2]
+		draw_line(left_hand, right_hand, Color("3a3b3e"), 1.4, true)
+		for wrist in [left_hand, right_hand]:
+			draw_arc(wrist, 2.2, 0.0, TAU, 12, Color("9a9ca0"), 1.2, true)
 	if action == "treat" and float(frame.get("treat_reach", 0.0)) > 0.3:
 		var roll: Vector2 = frame.treat_hand
 		var wound: Vector2 = frame.treat_center

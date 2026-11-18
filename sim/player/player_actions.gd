@@ -3,7 +3,7 @@ const World = preload("res://sim/world/world_db.gd")
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const Recipes = preload("res://sim/production/recipe_system.gd")
 const Market = preload("res://sim/economy/market.gd")
-const Health = preload("res://sim/player/body_health.gd")
+const Health = preload("res://sim/combat/body_health.gd")
 const Crops = preload("res://sim/farming/crops.gd")
 const Looting = preload("res://sim/player/looting.gd")
 static func initialize(s: Dictionary) -> void:
@@ -213,6 +213,10 @@ static func update(sim: RefCounted) -> void:
 static func prompt(s: Dictionary,preferred: int = 0) -> String:
 	if not s.has("player_control"): return ""
 	var pc: Dictionary=s.player_control
+	for npc in s.get("residents",{}).values():
+		if npc.get("arrest",{}).get("phase","")=="standoff" and not pc.get("surrender",false): return "F: SURRENDER (raise your hands) · or run"
+	if pc.get("restrained",false): return "You are under arrest."
+	if pc.get("escorted",false): return "The sheriff is seeing you out."
 	var warning: String=""
 	for part in s.player_health.parts.values():
 		if part.bleeding: warning="BLEEDING · Press H.  "; break

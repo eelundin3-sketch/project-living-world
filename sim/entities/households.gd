@@ -158,6 +158,7 @@ static func daily(sim: RefCounted) -> void:
 			sim.record(s.entities[str(npc.id)].name + " has grown up and is ready to work.")
 	for town in s.settlements.values():
 		Professions.assign(s, town.id)
+		load("res://sim/law/sheriff.gd").ensure(sim)
 		_pair_up(sim, town)
 		_births(sim, town)
 
@@ -248,16 +249,28 @@ static func on_home_built(sim: RefCounted, home_id: int) -> void:
 ## Returns {"lie": cell, "approach": cell, "rot": orientation} or {} when the home has no bed.
 static func bed_info(s: Dictionary, npc: Dictionary) -> Dictionary:
 	var household: Dictionary = household_of(s, npc)
-	if household.is_empty() or not s.entities.has(str(household.home)): return {}
-	var home: Dictionary = s.entities[str(household.home)]
+	var home: Dictionary = {}
 	var beds: Array = []
-	for item in home.get("furniture", []):
-		if item.kind == "bed": beds.append(item)
+	# The sheriff sleeps at his office, in his own bed (never on the prisoner's cot).
+	var office: Dictionary = s.entities.get(str(s.get("settlements", {}).get(str(npc.settlement), {}).get("office", 0)), {})
+	if npc.occupation == "Sheriff" and not office.is_empty():
+		for item in office.get("furniture", []):
+			if item.kind == "bed" and item.get("for", "") == "sheriff": beds.append(item)
+		if not beds.is_empty():
+			home = office
+	if home.is_empty():
+		if household.is_empty() or not s.entities.has(str(household.home)): return {}
+		home = s.entities[str(household.home)]
+		for item in home.get("furniture", []):
+			if item.kind == "bed" and item.get("for", "") != "prisoner": beds.append(item)
 	if beds.is_empty(): return {}
 	var members: Array = []
-	for other in s.households.values():
-		if other.home == household.home: members.append_array(other.members)
+	if home == office: members = [npc.id]
+	else:
+		for other in s.households.values():
+			if other.home == household.home: members.append_array(other.members)
 	members.sort()
+	if home == office: members = load("res://sim/law/sheriff.gd").roster(s, int(npc.settlement))   # each sheriff has his own bunk
 	var bed: Dictionary = beds[maxi(0, members.find(npc.id)) % beds.size()]
 	var rect: Array = bed.rect
 	var lie: Array = [rect[0] + rect[2] / 2, rect[1] + rect[3] / 2]

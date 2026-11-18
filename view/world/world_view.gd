@@ -6,6 +6,7 @@ const MarketArt = preload("res://view/world/market_art.gd")
 const Crops = preload("res://sim/farming/crops.gd")
 const Planner = preload("res://sim/settlement/planner.gd")
 const World = preload("res://sim/world/world_db.gd")
+const Orient = preload("res://sim/world/orient.gd")
 const FixtureArt = preload("res://view/world/fixture_art.gd")
 const Fixtures = preload("res://view/world/fixture_director.gd")
 const Director = preload("res://view/actors/animation_director.gd")
@@ -26,6 +27,7 @@ var motion := Director.new()
 var fixture_motion := Fixtures.new()
 var background: Node2D
 var shadows: Node2D
+var speech_layer: Node2D
 var sun_overcast: float = 0.0
 var roofs: Array[Rect2] = []
 var shadow_list: Array = []
@@ -65,6 +67,12 @@ class ShadowLayer extends Node2D:
 	var projector: Node2D
 	func _draw() -> void:
 		projector.draw_shadows(self)
+
+## Speech bubbles over the speakers' heads, above every character.
+class SpeechLayer extends Node2D:
+	var projector: Node2D
+	func _draw() -> void:
+		projector.draw_speech(self)
 
 ## Large, slow-changing ground art (the market plaza, one crop plot) is painted once into a
 ## texture and shown as a sprite. Thousands of small shapes cost real time to submit every
@@ -123,11 +131,15 @@ class DepthObject extends Node2D:
 	var furniture_data: Dictionary = {}
 	var construction_tile: Dictionary = {}
 	var wall_neighbours: Dictionary = {}
+	var door_data: Dictionary = {}
+	var door_open: float = 0.0
 	func _draw() -> void:
 		if projector.simulation == null: return
 		var s: Dictionary = projector.simulation.state
 		if object_kind == "wall":
 			MapArt.cutaway_wall(self, wall_neighbours)
+		elif object_kind == "door":
+			MapArt.door(self, door_data, door_open)
 		elif object_kind == "construction_tile":
 			MapArt.build_piece(self, construction_tile.kind, construction_tile.progress, construction_tile.cell)
 		elif object_kind == "tree":
@@ -172,6 +184,10 @@ func _ready() -> void:
 	shadows.projector = self
 	shadows.z_index = -1
 	add_child(shadows)
+	speech_layer = SpeechLayer.new()
+	speech_layer.projector = self
+	speech_layer.z_index = 20
+	add_child(speech_layer)
 
 func animate(delta: float, paused: bool, speed: int) -> void:
 	if simulation == null:
@@ -183,6 +199,7 @@ func animate(delta: float, paused: bool, speed: int) -> void:
 	if not paused: atmosphere_time += minf(delta, 0.1) * speed
 	fixture_motion.update(simulation.state,delta,paused,speed)
 	_sync_depth_objects()
+	_update_doors(minf(delta, 0.1))
 	# Lighting follows the authoritative 24-hour clock and freezes on pause.
 	var sun: float = sin((float(simulation.state.tick % 14400) / 14400.0 - 0.25) * TAU)
 	var light: float = smoothstep(-0.35, 0.25, sun)
@@ -191,6 +208,7 @@ func animate(delta: float, paused: bool, speed: int) -> void:
 	daylight.color = Color("8797b0").lerp(Color("fff1d5"), light).darkened(overcast)
 	sun_overcast = overcast
 	shadows.queue_redraw()
+	speech_layer.queue_redraw()
 	refresh_age += delta
 	var camera := get_viewport().get_camera_2d()
 	if camera != null and (camera.position.distance_to(last_camera) > BACKGROUND_MARGIN * 0.4 or camera.zoom != last_zoom or refresh_age > 1.0):
@@ -279,7 +297,7 @@ func _depth_node(key: String, kind: String, pos: Vector2, entity_id: int = 0) ->
 		item.queue_redraw()
 		return
 	match kind:
-		"wall", "rock", "furniture": pass
+		"wall", "rock", "furniture", "door": pass
 		"tree":
 			# Trees sway slowly, so a third of them per frame is invisible; stumps and falling trees animate every frame.
 			var logs: int = simulation.state.inventories.get(str(entity_id), {}).get("items", {}).get("log", 0)
@@ -391,10 +409,69 @@ func _sync_depth_objects() -> void:
 				if depth_objects[key].furniture_data != entry:
 					depth_objects[key].furniture_data = entry
 					depth_objects[key].queue_redraw()
+	# Doors: one in every outside doorway and one in every passage between rooms.
+	for entity in s.entities.values():
+		if not entity.has("footprint") or not entity.has("door"): continue
+		var doors: Array = []
+		var outer_door: Array = entity.door
+		var out := Vector2(Orient.outward(int(entity.get("door_side", 2))))
+		doors.append({"suffix": "out", "cells": [outer_door], "axis": "h" if absf(out.y) > 0.5 else "v", "inward": -out, "style": "heavy" if entity.kind in ["office", "warehouse", "market", "sawmill", "bakery", "forge"] else "plank", "double": false})
+		var index := 0
+		for gap in World.interior_doorways(entity):
+			var cells: Array = gap.cells
+			var inward_dir: Vector2 = Vector2(1, 0) if gap.axis == "v" else Vector2(0, -1)
+			doors.append({"suffix": "in%d" % index, "cells": cells, "axis": gap.axis, "inward": inward_dir, "style": "plank", "double": cells.size() >= 3})
+			index += 1
+		for entry in doors:
+			var cells: Array = entry.cells
+			var first: Array = cells[0]
+			var last: Array = cells[cells.size() - 1]
+			var pos := Vector2(first[0] * CELL, first[1] * CELL + CELL / 2)
+			if not bounds.has_point(pos): continue
+			var key := "door:%d:%s" % [entity.id, entry.suffix]
+			keep[key] = true
+			_depth_node(key, "door", pos)
+			var local_first := Vector2(0, -CELL / 2)
+			var local_last: Vector2 = Vector2((last[0] - first[0]) * CELL, (last[1] - first[1]) * CELL) + local_first
+			var a: Vector2
+			var b: Vector2
+			if entry.axis == "h":
+				a = local_first - Vector2(CELL / 2, 0)
+				b = local_last + Vector2(CELL / 2, 0)
+			else:
+				a = local_first - Vector2(0, CELL / 2)
+				b = local_last + Vector2(0, CELL / 2)
+			var node: DepthObject = depth_objects[key]
+			var data := {"a": a, "b": b, "inward": entry.inward, "style": entry.style, "double": entry.double}
+			if node.door_data.is_empty(): node.queue_redraw()
+			node.door_data = data
 	for key in depth_objects.keys():
 		if not keep.has(key):
 			depth_objects[key].queue_free()
 			depth_objects.erase(key)
+
+## Every frame: a door swings open when anyone is near it and shuts about a second after they leave.
+## Only art: the doorway stays walkable whatever the door is doing.
+func _update_doors(delta: float) -> void:
+	var near_sq: float = pow(CELL * 1.7, 2.0)
+	var opened_now: Array = []
+	for key in depth_objects.keys():
+		var node: DepthObject = depth_objects[key]
+		if node.object_kind != "door" or node.door_data.is_empty(): continue
+		var centre: Vector2 = node.position + (node.door_data.a + node.door_data.b) * 0.5
+		var someone: bool = false
+		for pose in motion.actors.values():
+			if (pose.position - centre).length_squared() < near_sq: someone = true; break
+		var hold: float = float(door_hold.get(key, 0.0))
+		hold = 1.0 if someone else maxf(0.0, hold - delta)
+		door_hold[key] = hold
+		var target: float = 1.0 if hold > 0.0 else 0.0
+		var before: float = node.door_open
+		node.door_open = move_toward(before, target, delta / 0.25)
+		if before < 0.04 and node.door_open >= 0.04: opened_now.append(centre)
+		if absf(node.door_open - before) > 0.001: node.queue_redraw()
+	for centre in opened_now:
+		motion.cues.append({"kind": "door", "position": centre})
 
 func view_bounds() -> Rect2:
 	var camera := get_viewport().get_camera_2d()
@@ -545,6 +622,7 @@ func _draw_map_labels(s: Dictionary) -> void:
 	if camera == null or camera.zoom.x >= 0.6: return
 	var inverse: float = 1.0 / camera.zoom.x
 	for town in s.get("settlements", {}).values():
+		if overlay_labels: break   # the map overlay draws the town names itself, clear of the hotbar
 		var store: Array = s.entities[str(town.warehouse)].cell
 		var at := Vector2(store[0], store[1] - 16) * CELL
 		var size: Vector2 = font.get_string_size(town.name, HORIZONTAL_ALIGNMENT_LEFT, -1, int(22 * inverse))
@@ -739,6 +817,34 @@ func draw_decor(node: Node2D, decor: Decor) -> void:
 ## Below this zoom the view is a map: per-object nodes are dropped and trees are simple canopies.
 const FAR_ZOOM: float = 0.35
 
+func draw_speech(canvas: Node2D) -> void:
+	if simulation == null or is_far(): return
+	var s: Dictionary = simulation.state
+	var font: Font = ThemeDB.fallback_font
+	var bounds := view_bounds().grow(80)
+	for line in s.get("speech", []):
+		if int(line.until) < s.tick: continue
+		var pose: Dictionary = motion.actors.get(str(line.speaker), {})
+		if pose.is_empty() or not bounds.has_point(pose.position): continue
+		var fade: float = clampf(float(int(line.until) - s.tick) / 10.0, 0.0, 1.0)
+		var wrap := 150.0
+		var text: String = line.text
+		var measured: Vector2 = font.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, wrap, 12)
+		var box := Rect2(pose.position + Vector2(-measured.x * 0.5 - 8, -68 - measured.y - 12), measured + Vector2(16, 12))
+		var anchor: Vector2 = pose.position + Vector2(0, -58)
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color(0.98, 0.95, 0.86, 0.96 * fade)
+		style.border_color = Color(0.23, 0.17, 0.11, fade)
+		style.set_border_width_all(1)
+		style.set_corner_radius_all(7)
+		style.anti_aliasing = true
+		style.shadow_color = Color(0, 0, 0, 0.25 * fade)
+		style.shadow_size = 4
+		canvas.draw_style_box(style, box)
+		canvas.draw_colored_polygon(PackedVector2Array([anchor + Vector2(-5, -6), anchor + Vector2(5, -6), anchor]), Color(0.98, 0.95, 0.86, 0.96 * fade))
+		canvas.draw_polyline(PackedVector2Array([anchor + Vector2(-5, -6), anchor, anchor + Vector2(5, -6)]), Color(0.23, 0.17, 0.11, fade), 1.0)
+		canvas.draw_multiline_string(font, box.position + Vector2(8, 16), text, HORIZONTAL_ALIGNMENT_LEFT, wrap, 12, -1, Color(0.16, 0.11, 0.07, fade))
+
 ## The sun's shadow for a point one pixel tall, in screen pixels, and how dark shadows are.
 ## Morning sun in the east throws long shadows to the left; they shorten and swing north (up the
 ## screen) towards noon, then lengthen to the right through the afternoon and fade at dusk.
@@ -865,6 +971,8 @@ func is_far() -> bool:
 
 var decor_nodes: Dictionary = {}
 var decor_signatures: Dictionary = {}
+var door_hold: Dictionary = {}
+var overlay_labels: bool = false      # set by the controller while the map overlay is up
 var decor_clock: float = 99.0
 
 ## Creates, refreshes and removes the cached ground layers; checked twice a second.
@@ -881,7 +989,7 @@ func _sync_decor(delta: float) -> void:
 		if entity.has("footprint") and entity.kind in ["warehouse", "home", "sawmill", "bakery", "forge", "office", "market"]:
 			var fp := World.building_rect(entity)
 			var rect := Rect2(Vector2(fp.position) * CELL - Vector2.ONE * CELL / 2, Vector2(fp.size) * CELL)
-			wanted["building:%d" % entity.id] = ["building", int(entity.id), "%s:%s:%s" % [entity.kind, str(entity.footprint), str(entity.get("door", []))], rect.grow(48)]
+			wanted["building:%d" % entity.id] = ["building", int(entity.id), "%s:%s:%s:%s" % [entity.kind, str(entity.footprint), str(entity.get("door", [])), str(entity.get("cell_open", false))], rect.grow(48)]
 	for plot in s.get("crops", {}).values():
 		# One redraw per 1% of growth keeps the crop visibly changing without per-frame cost.
 		var field_area: Rect2 = plot_area(plot)

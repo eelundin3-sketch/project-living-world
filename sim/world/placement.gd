@@ -2,6 +2,7 @@ extends RefCounted
 ## Furniture placement with four orientations and wall-aware auto arrangement.
 ## Orientation `rot` is the direction an object faces: 0 up, 1 right, 2 down, 3 left.
 ## For a bed it is the side the head (pillow) is on.
+const Orient = preload("res://sim/world/orient.gd")
 # World and navigation are loaded lazily: world_db.gd (through fixtures.gd) depends on this file.
 static func _world() -> GDScript:
 	return load("res://sim/world/world_db.gd")
@@ -36,7 +37,11 @@ static func is_wall(s: Dictionary, building: Dictionary, x: int, y: int) -> bool
 ## The doorway and a short approach inside it must stay clear.
 static func door_clearance(building: Dictionary, x: int, y: int) -> bool:
 	var door: Array = building.get("door", building.cell)
-	return absi(x - door[0]) <= 1 and y >= door[1] - 3
+	var out := Orient.outward(int(building.get("door_side", 2)))
+	var rel := Vector2i(x - door[0], y - door[1])
+	var inward: int = -(rel.x * out.x + rel.y * out.y)        # how far inside the door, along the way in
+	var lateral: int = absi(rel.x * out.y - rel.y * out.x)    # how far to either side of the way in
+	return lateral <= 1 and inward <= 3
 
 static func can_place(s: Dictionary, building: Dictionary, kind: String, rect: Array, ignore: Dictionary = {}) -> bool:
 	for y in range(rect[1], rect[1] + rect[3]):
@@ -70,12 +75,51 @@ static func wall_score(s: Dictionary, building: Dictionary, kind: String, rect: 
 		score += roundi(weight * fraction)
 	return score
 
+## How many walkable floor cells of the building cannot be reached on foot from just inside the door,
+## plus how many pieces of furniture (and `extra`, a rectangle about to be added) have no reachable
+## free cell beside them.
+static func unreachable_cells(s: Dictionary, building: Dictionary, extra: Array = []) -> int:
+	var world: GDScript = _world()
+	var door: Array = building.get("door", building.cell)
+	var out := Orient.outward(int(building.get("door_side", 2)))
+	var start: Array = [door[0] - out.x, door[1] - out.y]
+	var rect: Rect2i = world.building_rect(building)
+	var seen: Dictionary = {}
+	if world.walkable(s, start) and world.building_contains(building, start):
+		seen[world.cell_key(start)] = true
+		var queue: Array = [start]
+		while not queue.is_empty():
+			var here: Array = queue.pop_back()
+			for direction in DIRS:
+				var next: Array = [here[0] + direction.x, here[1] + direction.y]
+				var key: String = world.cell_key(next)
+				if seen.has(key) or not world.building_contains(building, next) or not world.walkable(s, next): continue
+				seen[key] = true
+				queue.append(next)
+	var total := 0
+	for y in range(rect.position.y, rect.end.y):
+		for x in range(rect.position.x, rect.end.x):
+			if [x, y] != door and world.building_contains(building, [x, y]) and world.walkable(s, [x, y]): total += 1
+	var boxed := 0
+	var pieces: Array = []
+	for item in building.get("furniture", []): pieces.append(item.rect)
+	if not extra.is_empty(): pieces.append(extra)
+	for piece in pieces:
+		var reachable_side := false
+		for dy in range(-1, int(piece[3]) + 1):
+			for dx in range(-1, int(piece[2]) + 1):
+				var edge: bool = (dx == -1 or dx == int(piece[2])) != (dy == -1 or dy == int(piece[3]))   # beside it, not diagonal
+				if edge and seen.has(world.cell_key([int(piece[0]) + dx, int(piece[1]) + dy])): reachable_side = true
+		if not reachable_side: boxed += 1
+	return maxi(0, total - seen.size()) + boxed
+
 ## Best legal (origin, orientation) for a new object, preferring wall contact for walls-loving kinds.
-## Deterministic: ties break toward `prefer` (a nearby cell) then lowest y, x, rot.
+## Deterministic: ties break toward `prefer` (a nearby cell) then lowest y, x, rot. A spot is only
+## taken if it leaves every part of the house reachable from the door (as it was before).
 static func best_placement(s: Dictionary, building: Dictionary, kind: String, prefer: Array = []) -> Dictionary:
 	var fp: Rect2i = _world().building_rect(building)
-	var best: Dictionary = {}
-	var best_score := -1000000
+	var found: Array = []
+	var order := 0
 	for rot in range(4):
 		var size := size_for(kind, rot)
 		for y in range(fp.position.y + 1, fp.end.y - size.y):
@@ -84,10 +128,20 @@ static func best_placement(s: Dictionary, building: Dictionary, kind: String, pr
 				if not can_place(s, building, kind, rect): continue
 				var score := wall_score(s, building, kind, rect, rot) * 100
 				if not prefer.is_empty(): score -= absi(x - prefer[0]) + absi(y - prefer[1])
-				if score > best_score:
-					best_score = score
-					best = {"rect": rect, "rot": rot, "score": score}
-	return best
+				found.append({"rect": rect, "rot": rot, "score": score, "order": order})
+				order += 1
+	if found.is_empty(): return {}
+	found.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.score > b.score or (a.score == b.score and a.order < b.order))
+	var baseline: int = unreachable_cells(s, building)
+	var tried := 0
+	for candidate in found:
+		tried += 1
+		if tried > 40: break
+		occupy(s, candidate.rect, building.id)
+		var blocked: int = unreachable_cells(s, building, candidate.rect)
+		vacate(s, candidate.rect)
+		if blocked <= baseline: return candidate
+	return {}
 
 static func occupy(s: Dictionary, rect: Array, owner: int) -> void:
 	for y in range(rect[1], rect[1] + rect[3]):
@@ -151,7 +205,8 @@ static func rearrange(s: Dictionary, building: Dictionary, index: int) -> bool:
 ## Doorway to every workstation stance must stay walkable after changes.
 static func circulation_ok(s: Dictionary, building: Dictionary) -> bool:
 	var door: Array = building.get("door", building.cell)
-	var inside: Array = [door[0], door[1] - 1]
+	var out := Orient.outward(int(building.get("door_side", 2)))
+	var inside: Array = [door[0] - out.x, door[1] - out.y]
 	for fixture in building.get("fixtures", []):
 		if not _nav().request_path(s, inside, fixture.stance).ok: return false
 	return true

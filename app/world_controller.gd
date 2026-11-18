@@ -4,22 +4,32 @@ const Clock = preload("res://sim/core/sim_clock.gd")
 const Save = preload("res://sim/persistence/save_manager.gd")
 const Settings = preload("res://app/input_settings.gd")
 const PlayerPanels = preload("res://view/ui/player_panels.gd")
-const Health = preload("res://sim/player/body_health.gd")
+const Health = preload("res://sim/combat/body_health.gd")
 const PlayerActions = preload("res://sim/player/player_actions.gd")
 const Audio = preload("res://view/audio/world_audio.gd")
 const ActionPointer = preload("res://view/ui/action_pointer.gd")
+const Cover = preload("res://sim/combat/cover.gd")
+const MapOverlay = preload("res://view/ui/map_overlay.gd")
 const Moodles = preload("res://view/ui/moodles.gd")
 const BottomBar = preload("res://view/ui/bottom_bar.gd")
 const PerfOverlay = preload("res://view/ui/perf_overlay.gd")
 const ContextMenu = preload("res://view/ui/context_menu.gd")
 const ContextActions = preload("res://sim/player/context_actions.gd")
 const MainMenu = preload("res://view/ui/main_menu.gd")
+const KnockoutScreen = preload("res://view/ui/knockout_screen.gd")
+const Law = preload("res://sim/law/law.gd")
 const CELL: float = 24.0
 var player_panels: CanvasLayer
 var world_audio: Node2D
 var simulation := Simulation.new()
 var clock := Clock.new()
 var follow_player: bool = true
+var kick_seen: int = 0
+var right_down_msec: int = 0
+var peek_on: bool = false
+var peek_octant: int = -1
+var lean_offset: Vector2 = Vector2.ZERO
+var kick_offset: Vector2 = Vector2.ZERO
 var last_input_tick: int = -1
 var last_draw_tick: int = -1
 var tick_ms: float = 0.0
@@ -35,11 +45,15 @@ var save_path: String = "user://living_world.save"
 var aiming: bool = false
 var pointer_held: bool = false
 var action_pointer: Control
+var map_overlay: Control
 var moodles: Control
 var bottom_bar: Control
 var perf: Control
 var context_menu: Control
 var menu: CanvasLayer
+var knockout: CanvasLayer
+var skipping: bool = false
+var skip_previous_speed: int = 1
 var menu_active: bool = false
 var menu_time: float = 0.0
 var intro_tween: Tween
@@ -57,6 +71,11 @@ func _ready() -> void:
 	add_child(pointer_layer)
 	action_pointer = ActionPointer.new()
 	pointer_layer.add_child(action_pointer)
+	map_overlay = MapOverlay.new()
+	var map_layer := CanvasLayer.new()
+	map_layer.layer = 8
+	add_child(map_layer)
+	map_layer.add_child(map_overlay)
 	var moodle_layer := CanvasLayer.new()
 	moodle_layer.layer = 5
 	add_child(moodle_layer)
@@ -84,6 +103,15 @@ func _ready() -> void:
 	perf = PerfOverlay.new()
 	perf.main = self
 	perf_layer.add_child(perf)
+	knockout = KnockoutScreen.new()
+	add_child(knockout)
+	knockout.skip_requested.connect(_skip_ahead)
+	knockout.wait_requested.connect(_skip_ahead)
+	knockout.load_requested.connect(func() -> void: handle_action("load"))
+	knockout.new_game_requested.connect(func() -> void:
+		Engine.set_meta("skip_title", true)
+		get_tree().reload_current_scene())
+	knockout.quit_to_title_requested.connect(func() -> void: get_tree().reload_current_scene())
 	$WorldView.simulation = simulation
 	world_audio = Audio.new()
 	add_child(world_audio)
@@ -98,6 +126,9 @@ func _ready() -> void:
 ## The title screen appears only when the game is launched normally (tests add this scene by hand).
 func _maybe_open_menu() -> void:
 	if get_tree().current_scene != self: return
+	if Engine.has_meta("skip_title"):
+		Engine.remove_meta("skip_title")   # "New game" from the death screen goes straight in
+		return
 	menu_active = true
 	menu = MainMenu.new()
 	add_child(menu)
@@ -134,6 +165,14 @@ func _start_from_menu() -> void:
 	intro_tween.parallel().tween_property($ObserverCamera, "zoom", Vector2.ONE * 0.9, 2.2).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	intro_tween.tween_property($ObserverCamera, "zoom", Vector2.ONE * 2.0, 1.6).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
 	intro_tween.tween_callback(_finish_intro)
+
+## Knocked out: run time at top speed until the player comes round, then back to the usual speed.
+func _skip_ahead() -> void:
+	if skipping: return
+	skipping = true
+	skip_previous_speed = clock.speed
+	clock.paused = false
+	clock.speed = 40
 
 func _finish_intro() -> void:
 	menu_active = false
@@ -175,12 +214,26 @@ func _process(delta: float) -> void:
 	$WorldView.motion.player_aiming = (aiming or (pointer_held and not shotgun_equipped)) and not player_panels.visible and not map_mode
 	$WorldView.motion.player_ready = pointer_held and not player_panels.visible
 	$WorldView.motion.player_aim_position = get_global_mouse_position()
-	action_pointer.active = pointer_held and not player_panels.visible
-	action_pointer.queue_redraw()
+	_update_peek()
+	_update_pointer()
+	map_overlay.state = simulation.state
+	map_overlay.active = map_mode
+	$WorldView.overlay_labels = map_mode
+	map_overlay.zoom = $ObserverCamera.zoom.x
+	map_overlay.player_world = $WorldView.motion.actors.get(str(simulation.state.player), {}).get("position", Vector2.ZERO)
+	map_overlay.queue_redraw()
 	$WorldView.animate(delta, clock.paused, clock.speed)
 	if follow_player:
 		var cell: Array = simulation.state.entities[str(simulation.state.player)].cell
 		$ObserverCamera.position = $WorldView.motion.actors.get(str(simulation.state.player), {}).get("position", Vector2(cell[0], cell[1]) * CELL)
+	_update_camera_kick(delta)
+	var knock_now: Dictionary = simulation.state.player_control.get("knock", {})
+	var waiting_out: bool = (not knock_now.is_empty() and str(knock_now.get("kind", "")) == "ko") or Law.in_custody(simulation.state)
+	if skipping and (not waiting_out or simulation.state.player_control.get("dead", false)):
+		skipping = false
+		clock.speed = skip_previous_speed
+	var body_world: Vector2 = $WorldView.motion.actors.get(str(simulation.state.player), {}).get("position", $ObserverCamera.position)
+	knockout.update_state(simulation.state, get_viewport().get_canvas_transform() * (body_world + Vector2(0, -6)), delta)
 	world_audio.present($WorldView.motion.cues, simulation.state, $ObserverCamera.position, clock.paused, delta)
 	if simulation.state.tick != last_draw_tick:
 		refresh_view()
@@ -219,6 +272,7 @@ func handle_action(kind: String) -> void:
 			player_panels.toggle("health")
 		"interact":
 			if player_panels.visible: player_panels.show_mode("")
+			elif Law.standoff_sheriff(simulation.state) != 0: simulation.submit("surrender")
 			else: simulation.submit("interact",{"target":selected_id})
 		"injury_demo": simulation.submit("debug_injury",{"part":"right_forearm","damage":24,"kind":"cut"})
 		"encounter_demo": simulation.submit("demo_encounter")
@@ -299,6 +353,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			last_right_press = now
 			last_right_position = event.position
 		aiming = event.pressed
+		if event.pressed: right_down_msec = Time.get_ticks_msec()
 		return
 	if event is InputEventKey and event.pressed and event.keycode == KEY_F8:
 		$DebugHUD.toggle_details()
@@ -310,6 +365,14 @@ func _unhandled_input(event: InputEvent) -> void:
 		pending_binding = ""
 		get_viewport().set_input_as_handled()
 		return
+	if map_mode and event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			map_overlay.set_waypoint(get_global_mouse_position())
+			$DebugHUD.notice.text = "Waypoint set: %s" % MapOverlay.bearing_text(map_overlay.player_world, map_overlay.waypoint)
+			return
+		if event.button_index == MOUSE_BUTTON_RIGHT:
+			map_overlay.clear_waypoint()
+			return
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		pointer_held = true
 		if aiming and not player_panels.visible and not clock.paused and not map_mode:
@@ -420,7 +483,7 @@ func toggle_map() -> void:
 		var fit: float = minf(get_viewport().get_visible_rect().size.x / span.x, get_viewport().get_visible_rect().size.y / span.y)
 		camera.position = (low + high) * 0.5 * CELL
 		camera.zoom = Vector2.ONE * clampf(fit, camera.MIN_ZOOM, camera.MAX_ZOOM)
-		$DebugHUD.notice.text = "Map: WASD to move, wheel to zoom, M to return."
+		$DebugHUD.notice.text = "Map: WASD to move, wheel to zoom, click to set a waypoint (right-click clears), M to return."
 	else:
 		follow_player = map_return_follow
 		camera.zoom = map_return_zoom
@@ -443,3 +506,66 @@ func _submit_strike(kind: String) -> void:
 	if direction.length_squared() < 16.0: direction = Vector2.from_angle(float(actor.get("heading", PI / 2.0)))
 	direction = direction.normalized()
 	simulation.submit("player_strike", {"kind": kind, "direction": [roundi(direction.x * 1000.0), roundi(direction.y * 1000.0)]})
+
+## Each shot shoves the camera back against the aim for a moment (presentation only).
+func _update_camera_kick(delta: float) -> void:
+	var gun: Dictionary = simulation.state.get("shotgun", {})
+	var kicks: int = int(gun.get("kicks", 0))
+	if kicks != kick_seen:
+		if kicks > kick_seen:
+			var aim := Vector2(float(gun.get("last_dir", [0, 1000])[0]), float(gun.get("last_dir", [0, 1000])[1])).normalized()
+			kick_offset = -aim * (7.0 + 5.0 * float(gun.get("bloom", 0)) / 900.0) / maxf(0.5, $ObserverCamera.zoom.x)
+		kick_seen = kicks
+	kick_offset = kick_offset.move_toward(Vector2.ZERO, (60.0 + kick_offset.length() * 9.0) * delta)
+	# Leaning out of cover: the view slides towards the corner so you can see past it.
+	var pc: Dictionary = simulation.state.player_control
+	var lean_target := Vector2.ZERO
+	if pc.has("peek"):
+		lean_target = Vector2(pc.peek.to[0] - pc.peek.from[0], pc.peek.to[1] - pc.peek.from[1]) * CELL * 2.2
+	lean_offset = lean_offset.lerp(lean_target, clampf(delta * 7.0, 0.0, 1.0))
+	$ObserverCamera.offset = kick_offset + lean_offset
+
+## Holding the right button for a moment at a corner leans the player out; releasing returns them.
+func _update_peek() -> void:
+	var holding: bool = aiming and not player_panels.visible and not map_mode and not clock.paused and Time.get_ticks_msec() - right_down_msec > 150
+	var player_pos: Vector2 = $WorldView.motion.actors.get(str(simulation.state.player), {}).get("position", Vector2.ZERO)
+	var toward: Vector2 = get_global_mouse_position() - player_pos
+	var octant: int = roundi(toward.angle() / (PI / 4.0)) if holding else -1
+	if holding != peek_on or (holding and octant != peek_octant):
+		peek_on = holding
+		peek_octant = octant
+		var unit: Vector2 = toward.normalized() if toward.length() > 1.0 else Vector2.ZERO
+		simulation.submit("peek", {"on": holding, "toward": [roundi(unit.x * 1000.0), roundi(unit.y * 1000.0)]})
+
+## The pointer: a reticle for fists, an eye when leaning out unarmed, a crosshair and aim line with the gun.
+func _update_pointer() -> void:
+	var s: Dictionary = simulation.state
+	var armed: bool = s.get("shotgun", {}).get("equipped", false)
+	var show: bool = (pointer_held or aiming) and not player_panels.visible and not map_mode
+	action_pointer.active = show
+	if not show:
+		if Input.mouse_mode != Input.MOUSE_MODE_VISIBLE: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		action_pointer.queue_redraw()
+		return
+	if Input.mouse_mode != Input.MOUSE_MODE_HIDDEN: Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
+	var player_pos: Vector2 = $WorldView.motion.actors.get(str(s.player), {}).get("position", Vector2.ZERO)
+	var transform: Transform2D = get_viewport().get_canvas_transform()
+	var muzzle_world: Vector2 = player_pos + Vector2(0, -22)
+	action_pointer.muzzle = transform * muzzle_world
+	action_pointer.peeking = s.player_control.has("peek")
+	if armed and aiming:
+		action_pointer.mode = "aim"
+		action_pointer.bloom = float(s.shotgun.get("bloom", 0)) / 900.0
+		var from_cell: Array = Cover.eye_cell(s)
+		var mouse_world: Vector2 = get_global_mouse_position()
+		var to_cell: Array = [roundi(mouse_world.x / CELL), roundi(mouse_world.y / CELL)]
+		var hit: Array = Cover.first_block(s, from_cell, to_cell)
+		action_pointer.blocked = not hit.is_empty()
+		if not hit.is_empty(): action_pointer.line_end = transform * (Vector2(hit[0], hit[1]) * CELL)
+	elif aiming and not armed:
+		action_pointer.mode = "look" if (s.player_control.has("cover") or s.player_control.has("peek")) else "fist"
+		action_pointer.blocked = false
+	else:
+		action_pointer.mode = "fist"
+		action_pointer.blocked = false
+	action_pointer.queue_redraw()
