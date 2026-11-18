@@ -277,7 +277,7 @@ func _segment(a: Vector2, b: Vector2, width: float, color: Color) -> void:
 func _build_frame() -> Dictionary:
 	var action: String = pose.get("action", "idle")
 	var phase: float = pose.get("phase", 0.0)
-	if action in ["fall", "down", "getup"]: return _fall_frame(action, phase)
+	if action in ["fall", "down", "getup", "crawl"]: return _fall_frame(action, phase)
 	var gait: float = float(pose.get("gait_phase", 0.0)) * TAU
 	var moving: bool = pose.get("moving", false)
 	# 0 = walking pace .. 1 = full sprint. It ramps up when sprinting starts and back down after
@@ -598,6 +598,20 @@ func _build_frame() -> Dictionary:
 		var slide: float = (6.0 if action == "stagger" else 3.0) * flinch
 		right_leg[2] += _joint(0, -slide, 0)
 		right_leg[1] += _joint(0, -slide * 0.55, 0)
+	# A limp: the bad leg drags, the body bobs down on it. An arm that does not work just hangs.
+	if bool(pose.get("limp", false)):
+		var bad_side: int = int(pose.get("limp_side", 1))
+		var bad_leg: PackedVector2Array = left_leg if bad_side < 0 else right_leg
+		bad_leg[2] = bad_leg[0].lerp(bad_leg[2], 0.88)
+		bad_leg[1] = bad_leg[0].lerp(bad_leg[1], 0.9)
+		var dip: float = 1.6 * absf(sin(gait)) if moving else 0.0
+		hip += _joint(0, 0, -dip)
+		chest += _joint(0, 0, -dip) + _joint(float(bad_side) * 1.0, 0, 0)
+		head += _joint(0, 0, -dip)
+	for dead_side in pose.get("dead_arms", []):
+		var limp_arm: PackedVector2Array = arms[int(dead_side)]
+		var dangling_elbow: Vector2 = limp_arm[0] + _joint(float(dead_side) * 2.6, 0.5, -8.5)
+		arms[int(dead_side)] = PackedVector2Array([limp_arm[0], dangling_elbow, dangling_elbow + _joint(float(dead_side) * 1.0, 0.8, -8.0)])
 	return {
 		"hip": hip, "chest": chest, "head": head, "cargo": cargo_center, "stock": stock, "muzzle": muzzle,
 		"left_arm": arms[-1], "right_arm": arms[1],
@@ -641,6 +655,23 @@ func _fall_frame(action: String, phase: float) -> Dictionary:
 	var joints: Dictionary
 	if action == "fall": joints = _sample_keys(FALL_KEYS + [[1.0, LYING_FORWARD]], phase)
 	elif action == "getup": joints = _sample_keys([[0.0, LYING_FORWARD]] + GETUP_KEYS, phase)
+	elif action == "crawl":
+		# Propped on the forearms, the hands reaching one after the other, the legs dragged behind.
+		joints = LYING_FORWARD.duplicate()
+		var g: float = float(pose.get("gait_phase", 0.0)) * TAU
+		var moving_now: bool = bool(pose.get("moving", false))
+		var pull: float = sin(g) if moving_now else sin(float(pose.get("age", 0.0)) * 1.6) * 0.25
+		joints.hip = Vector3(0, 8, 6)
+		joints.chest = Vector3(0, 27, 13.5)
+		joints.head = Vector3(0, 37.5, 21)
+		joints.R_elbow = Vector3(10, 33, 6 + 2.0 * maxf(0.0, pull))
+		joints.L_elbow = Vector3(-10, 33, 6 + 2.0 * maxf(0.0, -pull))
+		joints.R_hand = Vector3(8.5, 44 + 7.0 * pull, 2.5 + 4.0 * maxf(0.0, pull))
+		joints.L_hand = Vector3(-8.5, 44 - 7.0 * pull, 2.5 + 4.0 * maxf(0.0, -pull))
+		joints.R_knee = Vector3(5.4, -4 + 2.0 * pull, 4.5)
+		joints.L_knee = Vector3(-5.4, -4 - 2.0 * pull, 4.5)
+		joints.R_foot = Vector3(5.6, -17 - 2.5 * pull, 3.5)
+		joints.L_foot = Vector3(-5.6, -17 + 2.5 * pull, 3.5)
 	else:
 		joints = LYING_FORWARD.duplicate()
 		# Slow breathing while lying there.

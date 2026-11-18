@@ -11,6 +11,7 @@ const Professions = preload("res://sim/settlement/professions.gd")
 const Crops = preload("res://sim/farming/crops.gd")
 const Sheriff = preload("res://sim/settlement/sheriff.gd")
 const Brawl = preload("res://sim/player/brawl.gd")
+const Limbs = preload("res://sim/player/limbs.gd")
 
 static func spawn(sim: RefCounted, count: int, settlement: int = 1, origin: Array = [60, 49]) -> void:
 	var s: Dictionary = sim.state
@@ -54,11 +55,15 @@ static func update(sim: RefCounted) -> void:
 		var cadence: int = 2 if npc.fidelity == "detailed" else (10 if npc.fidelity == "coarse" else 100)
 		if (npc.fidelity == "detailed" and s.tick % 10 == npc.id % 10) or (npc.fidelity != "detailed" and s.tick % cadence == 0):
 			_decide(sim, npc)
+		var step: int = Limbs.step_ticks(s, npc.id)
+		if step > 2 and npc.job != 0 and Limbs.crawling(s, npc.id):
+			Jobs.release(s, npc.job, "CRAWLING")   # nobody works on their belly
+		if step > 2 and s.tick % step != 0: continue   # a limp or a crawl: far fewer steps
 		if s.tick % cadence == 0:
 			if npc.job != 0:
 				Jobs.advance_many(sim, npc.id, cadence / 2)
 			elif not npc.goal.is_empty():
-				var actions: int = cadence / 2
+				var actions: int = cadence / 2 if step <= 2 else 1
 				var distance: int = mini(actions, npc.path.size())
 				if distance > 0 and npc.nav_revision == s.world.nav_revision:
 					s.entities[str(npc.id)].cell = npc.path[distance - 1]

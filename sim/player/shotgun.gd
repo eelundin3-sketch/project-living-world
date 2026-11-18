@@ -4,6 +4,7 @@ extends RefCounted
 ## the view only reads `state.shotgun` to draw recoil, blasts and impact effects.
 const World = preload("res://sim/world/world_db.gd")
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
+const Wounds = preload("res://sim/player/wounds.gd")
 const CAPACITY := 5
 const PELLETS := 7
 const PELLET_DAMAGE := 9
@@ -68,7 +69,7 @@ static func surface_at(s: Dictionary, cell: Array, owner: int) -> String:
 	var key := World.cell_key(cell)
 	for entity in s.entities.values():
 		if entity.get("cell", []) == cell and entity.id != owner:
-			if entity.kind in ["resident", "raider"]: return "body"
+			if entity.kind in ["resident", "raider", "player"]: return "body"
 			if entity.kind == "tree": return "tree"
 	if s.world.get("building_walls", {}).has(key): return "wall"
 	if s.world.get("fixture_cells", {}).has(key): return "wood"
@@ -113,13 +114,15 @@ static func _strike(sim: RefCounted, surface: String, cell: Array, pellet: Dicti
 	_effect(s, {"body": "blood", "tree": "bark", "wall": "wall", "wood": "wood", "stone": "spark"}[surface], cell, dir)
 	if surface != "body": return
 	for entity in s.entities.values():
-		if entity.get("cell", []) == cell and entity.kind in ["resident", "raider"]:
+		if entity.get("cell", []) == cell and entity.kind in ["resident", "raider", "player"]:
 			var key := str(entity.id)
-			if s.residents.has(key): s.residents[key].health = maxi(0, int(s.residents[key].health) - PELLET_DAMAGE)
+			var was_alive: bool = not s.residents.has(key) or s.residents[key].health > 0
+			if s.residents.has(key) or entity.kind == "player":
+				Wounds.shoot(sim, int(entity.id), cell, dir)
 			var fighters: Dictionary = s.get("local_combat", {}).get("fighters", {})
 			if fighters.has(key):
 				fighters[key].health = maxi(0, int(fighters[key].health) - PELLET_DAMAGE)
 				fighters[key].hit_tick = s.tick
-			if s.residents.has(key) and s.residents[key].health == 0:
+			if s.residents.has(key) and was_alive and s.residents[key].health == 0:
 				sim.record(entity.name + " was shot and is incapacitated.")
 			break

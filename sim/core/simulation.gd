@@ -17,6 +17,7 @@ const Brawl = preload("res://sim/player/brawl.gd")
 const Speech = preload("res://sim/entities/speech.gd")
 const Law = preload("res://sim/settlement/law.gd")
 const Housing = preload("res://sim/settlement/housing.gd")
+const Limbs = preload("res://sim/player/limbs.gd")
 const TownLayout = preload("res://sim/world/town_layout.gd")
 const ContextActions = preload("res://sim/player/context_actions.gd")
 const Looting = preload("res://sim/player/looting.gd")
@@ -166,6 +167,7 @@ func step() -> void:
 			for town_id in state.markets:
 				Market.clear_market(state, int(town_id))
 		BodyHealth.update(state)
+		Limbs.update(state)
 		PlayerActions.update(self)
 		Needs.update(state)
 		Hotbar.update(state)
@@ -188,7 +190,7 @@ func _stamina_allows_run() -> bool:
 	return state.player_health.stamina > 0 and not state.player_health.get("exhausted", false)
 
 func _can_run_route() -> bool:
-	return state.has("player_control") and state.has("player_health") and state.player_control.get("travel_run", false) and _stamina_allows_run() and BodyHealth.move_delay(state) == 1 and not Brawl.player_down(state)
+	return state.has("player_control") and state.has("player_health") and state.player_control.get("travel_run", false) and _stamina_allows_run() and BodyHealth.move_delay(state) == 1 and Limbs.mode(state, state.player) == "walk" and not Brawl.player_down(state)
 
 func _drain(queue_name: String, is_command: bool) -> void:
 	state[queue_name].sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
@@ -203,6 +205,10 @@ func _drain(queue_name: String, is_command: bool) -> void:
 func apply_command(entry: Dictionary) -> void:
 	# Someone lying on the ground cannot act until they are back on their feet.
 	if state.has("brawl") and entry.kind in ["move_player", "player_strike", "interact", "shotgun_fire", "hotbar_use", "eat", "drink", "treat_body", "context_action", "walk_to", "loot_take", "loot_all", "loot_coins", "loot_strip", "loot_give", "wear_item", "take_off", "hold_item", "hotbar_assign", "crouch_toggle", "travel_run", "shotgun_toggle", "shotgun_reload", "person_trade", "take_item", "surrender"] and (Brawl.player_down(state) or Law.restrained(state)):
+		return
+	var limb_problem: String = Limbs.action_problem(state, entry.kind)
+	if not limb_problem.is_empty() and state.has("player_control"):
+		state.player_control.notice = limb_problem
 		return
 	if entry.kind == "player_strike":
 		Unarmed.begin(state, str(entry.payload.get("kind", "")), entry.payload.get("direction", []))
@@ -311,7 +317,7 @@ func apply_command(entry: Dictionary) -> void:
 			var diagonal: bool = direction[0] != 0 and direction[1] != 0
 			if Law.inside_cell(state, next) and World.walkable(state, next) and (not diagonal or (World.walkable(state, [cell[0] + direction[0], cell[1]]) and World.walkable(state, [cell[0], cell[1] + direction[1]]))):
 				if state.has("player_control"):
-					var requested_run: bool=bool(entry.payload.get("run",false)) and _stamina_allows_run() and BodyHealth.move_delay(state)==1
+					var requested_run: bool=bool(entry.payload.get("run",false)) and _stamina_allows_run() and BodyHealth.move_delay(state)==1 and Limbs.mode(state, state.player)=="walk"
 					# Sprinting from a crouch stands you up; otherwise a crouch is a slow, quiet walk.
 					if requested_run: state.player_control.crouching=false
 					var sneaking: bool=bool(state.player_control.get("crouching",false))
@@ -320,7 +326,7 @@ func apply_command(entry: Dictionary) -> void:
 					state.player_control.running=requested_run
 					state.player_control.running_tick=state.tick if requested_run else -1
 					state.player_control.last_dir=[direction[0],direction[1]]
-					state.player_control.next_move=state.tick+(2 if tired_run else (1 if requested_run else maxi(3 if sneaking else 2, BodyHealth.move_delay(state)+(1 if sneaking else 0))+(1 if diagonal else 0)))
+					state.player_control.next_move=state.tick+(2 if tired_run else (1 if requested_run else maxi(maxi(3 if sneaking else 2, BodyHealth.move_delay(state)+(1 if sneaking else 0)), Limbs.step_ticks(state, state.player))+(1 if diagonal else 0)))
 					if requested_run: state.player_health.stamina=maxi(0,state.player_health.stamina-1)
 				state.entities[str(state.player)].cell = next
 	elif entry.kind == "cancel_job" and state.has("jobs"):

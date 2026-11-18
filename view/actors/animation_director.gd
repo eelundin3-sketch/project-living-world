@@ -5,6 +5,7 @@ const World = preload("res://sim/world/world_db.gd")
 const BuildMotion = preload("res://view/actors/build_motion.gd")
 const Outfits = preload("res://sim/entities/outfits.gd")
 const Brawl = preload("res://sim/player/brawl.gd")
+const Limbs = preload("res://sim/player/limbs.gd")
 const CELL: float = 24.0
 const WALK_CYCLE_METERS := 2.0
 const RUN_CYCLE_METERS := 3.25
@@ -50,6 +51,10 @@ static func action_for(s: Dictionary, entity: Dictionary, aim_held: bool = false
 		else:
 			result.action = "getup"
 			result.phase = float(s.tick - int(knock.down_until)) / float(Brawl.RISE_TICKS)
+		return result
+	# Both legs shot out: crawling along the ground.
+	if Limbs.crawling(s, int(entity.id)) and (npc.is_empty() or int(npc.get("health", 100)) > 0):
+		result.action = "crawl"
 		return result
 	if int(npc.get("impact_until", 0)) > s.tick:
 		result.action = "stagger" if npc.get("impact_kind", "") == "shove" else "hit"
@@ -260,6 +265,9 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 			var resident: Dictionary = s.get("residents", {}).get(key, {})
 			var thrown: bool = (not resident.is_empty() and Brawl.knocked(s, resident)) or (entity.kind == "player" and Brawl.player_down(s))
 			if thrown: follow = maxf(follow, CELL * dt * 18.0)
+			var gait_mode: String = Limbs.mode(s, int(entity.id))
+			if gait_mode == "crawl": follow = CELL * dt * 1.05
+			elif gait_mode == "limp": follow = minf(follow, CELL * dt * 2.7)
 			pose.position = before.move_toward(target, follow)
 		# At high simulation speed a frame can skip a corner; never interpolate feet
 		# through a solid fixture/wall while catching up with authoritative movement.
@@ -354,6 +362,13 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 		pose.facing = -1.0 if cos(float(pose.heading)) < 0.0 else 1.0
 		pose.back = sin(float(pose.heading)) < -0.35
 		pose.aiming = entity.kind == "player" and player_aiming
+		pose.limp = Limbs.mode(s, int(entity.id)) == "limp"
+		pose.limp_side = -1 if Limbs.disabled(s, int(entity.id), "left_leg") else 1
+		var dead_arms: Array = []
+		# "right_*" is the figure's side -1 (see the health screen), so the right arm is arms[-1].
+		if Limbs.disabled(s, int(entity.id), "right_arm"): dead_arms.append(-1)
+		if Limbs.disabled(s, int(entity.id), "left_arm"): dead_arms.append(1)
+		pose.dead_arms = dead_arms
 		pose.ready = entity.kind == "player" and player_ready
 		# An unreadied shotgun, and every sheriff's, hangs from a sling across the back.
 		var carried_items: Dictionary = s.inventories.get(key, {}).get("items", {})
@@ -394,7 +409,7 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 		# An armed upper-body pose can play over the walking or running legs.
 		var lawman_armed: bool = str(s.get("residents", {}).get(key, {}).get("arrest", {}).get("phase", "")) in ["standoff", "approach"]
 		var gun_pose := (gun_equipped or lawman_armed) and action in ["gun_carry", "aim", "reload", "shoot"]
-		if pose.moving and not gun_pose and action not in ["punch", "shove", "kick", "hit", "stagger", "down", "fall", "getup", "rest", "cuffed", "escort", "surrender", "cuff", "search"]:
+		if pose.moving and not gun_pose and action not in ["punch", "shove", "kick", "hit", "stagger", "down", "fall", "getup", "rest", "cuffed", "escort", "surrender", "cuff", "search", "crawl"]:
 			action = "run" if sprinting else ("carry" if quantity > 0 else "walk")
 		elif entity.kind == "player" and player_ready and action == "idle":
 			action = "ready"

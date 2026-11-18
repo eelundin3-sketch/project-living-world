@@ -6,6 +6,7 @@ const Health = preload("res://sim/player/body_health.gd")
 const Actions = preload("res://sim/player/player_actions.gd")
 const Combat = preload("res://sim/factions/local_combat.gd")
 const Brawl = preload("res://sim/player/brawl.gd")
+const Limbs = preload("res://sim/player/limbs.gd")
 const ACTION_TICKS: int = 10
 const IMPACT_DELAY: int = 3
 const REACTION_TICKS: int = 12
@@ -13,6 +14,12 @@ const REACTION_TICKS: int = 12
 static func begin(s: Dictionary, kind: String, direction: Array) -> bool:
 	if kind not in ["punch", "shove"] or direction.size() != 2 or not direction[0] is int or not direction[1] is int: return false
 	if not s.has("player_control") or Health.incapacitated(s): return false
+	if kind == "punch" and Limbs.arms_ok(s, s.player) == 0:
+		s.player_control.notice = "Both your arms are useless."
+		return false
+	if Limbs.crawling(s, s.player):
+		s.player_control.notice = "You cannot fight while crawling."
+		return false
 	if not s.player_health.get("treatment", {}).is_empty():
 		s.player_health.notice = "Finish treatment before fighting."
 		return false
