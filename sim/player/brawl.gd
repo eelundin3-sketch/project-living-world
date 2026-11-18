@@ -42,6 +42,10 @@ const NPC_PARTS: Array[String] = ["head", "head", "head", "upper_torso", "upper_
 static func _law() -> GDScript:
 	return load("res://sim/settlement/law.gd")
 
+## Cuffed, being walked to a cell, booked or locked up: nobody may shove, hit or knock the player down.
+static func in_custody(s: Dictionary) -> bool:
+	return s.has("player_control") and (_law().restrained(s) or _law().in_custody(s))
+
 static func _say(sim: RefCounted, speaker: int, topic: String) -> void:
 	load("res://sim/entities/speech.gd").say(sim, speaker, topic)
 
@@ -112,6 +116,7 @@ static func fall_style(s: Dictionary, cell: Array, kind: String, direction: Arra
 	return options[seed_value % options.size()]
 
 static func knockdown(s: Dictionary, holder: Dictionary, cell: Array, kind: String, direction: Array = [0, 0], style: String = "") -> void:
+	if holder == s.get("player_control", null) and in_custody(s): return   # a prisoner is not pushed about
 	var lie: int = KO_TICKS if kind == "ko" else (EXHAUST_LIE_TICKS if kind == "exhaust" else SHOVE_LIE_TICKS)
 	var side: int = 1 if int(direction[0]) > 0 else (-1 if int(direction[0]) < 0 else (1 if (s.tick + int(cell[0])) % 2 == 0 else -1))
 	var drop: int = int(FALL_TICKS_BY_KIND.get(kind, FALL_TICKS))
@@ -189,6 +194,7 @@ static func on_player_hit(sim: RefCounted, npc: Dictionary, victim: Dictionary, 
 
 ## Turns a resident hostile toward the player: they drop their work and fight until it burns out.
 static func engage(s: Dictionary, npc: Dictionary, mode: String = "shove") -> void:
+	if in_custody(s): return   # nobody starts on a prisoner
 	Households.wake(s, npc)
 	if npc.job != 0: Jobs.release(s, npc.job, "INTERRUPTED_BY_FIGHT")
 	npc.goal = ""
@@ -244,6 +250,10 @@ static func update(sim: RefCounted) -> void:
 			if npc.health < 100 and npc.health > 0: npc.health = mini(100, int(npc.health) + 1)
 		var fight: Dictionary = npc.get("brawl", {})
 		if fight.is_empty(): continue
+		if in_custody(s):
+			npc.brawl = {}
+			npc.attack = {}
+			continue
 		if npc.health <= 0 or s.get("local_combat", {}).get("fighters", {}).has(key):
 			npc.brawl = {}
 			continue
@@ -330,6 +340,13 @@ static func _advance_attack(sim: RefCounted, npc: Dictionary, attack: Dictionary
 static func _hit_player(sim: RefCounted, npc: Dictionary, attack: Dictionary, player: Dictionary) -> void:
 	var s: Dictionary = sim.state
 	var control: Dictionary = s.player_control
+	if in_custody(s):
+		# The sheriffs step in: the prisoner is not touched, and whoever tried is sent off.
+		npc.brawl = {}
+		npc.attack = {}
+		npc.anger = mini(int(npc.get("anger", 0)), 20)
+		control.notice = "The sheriff won't let anyone lay a hand on you."
+		return
 	var direction: Array = attack.direction
 	control.impact_until = s.tick + 12
 	control.impact_kind = attack.kind

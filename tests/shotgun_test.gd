@@ -13,7 +13,9 @@ func _initialize() -> void:
 
 func run() -> void:
 	var sim := Sim.new(); sim.start_game(); var s: Dictionary = sim.state
-	check(not Shotgun.owns(s), "Player starts without a shotgun")
+	check(Shotgun.owns(s) and not s.shotgun.equipped, "The player starts with a shotgun, lowered")
+	check(Inventory.amount(s, s.player, "shell") == 10, "...and ten shells")
+	Inventory.consume(s, s.player, "shotgun", 1); Inventory.consume(s, s.player, "shell", 10)   # the rest of this test takes them from the rack
 	# The sheriff's office rack holds shotguns and shells.
 	var office: int = 0
 	for entity in s.entities.values():

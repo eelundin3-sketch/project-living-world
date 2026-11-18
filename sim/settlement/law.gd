@@ -13,6 +13,7 @@ extends RefCounted
 const Brawl = preload("res://sim/player/brawl.gd")
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const Outfits = preload("res://sim/entities/outfits.gd")
+const BodyHealth = preload("res://sim/player/body_health.gd")
 const Nav = preload("res://sim/movement/navigation.gd")
 const World = preload("res://sim/world/world_db.gd")
 const HOUR := 600                     # ticks in an in-game hour
@@ -88,13 +89,16 @@ static func crime(s: Dictionary, town: int, kind: String, victim: int) -> void:
 	if not s.has("player_control") or not SENTENCE.has(kind): return
 	var player: Array = s.entities[str(s.player)].cell
 	var witness: Dictionary = {}
+	var witnesses: Array = []
 	var nearest := 1.0e9
 	for sheriff in sheriffs(s, town):
 		var cell: Array = s.entities[str(sheriff.id)].cell
 		var d: float = Vector2(cell[0] - player[0], cell[1] - player[1]).length()
-		if (sheriff.id == victim or d <= WITNESS_RANGE) and d < nearest:
-			witness = sheriff   # the nearest sheriff who saw it takes the case
-			nearest = d
+		if sheriff.id == victim or d <= WITNESS_RANGE:
+			witnesses.append(sheriff)   # everyone who saw it (or was hit) comes
+			if d < nearest:
+				witness = sheriff       # the nearest takes the case
+				nearest = d
 	# Murder and theft get reported; other crimes count only if the sheriff saw them or was the victim.
 	if witness.is_empty() and kind not in ["murder", "theft"]: return
 	var record: Dictionary = _law(s).wanted.get(str(town), {"hours": 0, "crimes": [], "since": s.tick})
@@ -102,12 +106,15 @@ static func crime(s: Dictionary, town: int, kind: String, victim: int) -> void:
 	record.crimes.append(kind)
 	_law(s).wanted[str(town)] = record
 	# Gunfire is answered by the gunfight (gunfire.gd), not by a chase.
-	if not witness.is_empty() and witness.get("arrest", {}).is_empty() and not in_custody(s) and kind not in ["discharge", "shooting"]:
-		witness.arrest = {"phase": "pursue", "since": s.tick, "path_tick": -100, "announce": "Stop! You're under arrest!"}
-		witness.brawl = {}
-		witness.goal = ""
-		witness.path = []
-		witness.status = "Arresting the traveller"
+	if kind in ["discharge", "shooting"] or in_custody(s): return
+	for sheriff in witnesses:
+		if not sheriff.get("arrest", {}).is_empty(): continue
+		sheriff.arrest = {"phase": "pursue", "since": s.tick, "path_tick": -100, "announce": "Stop! You're under arrest!" if sheriff.id == witness.get("id", 0) else "Stop right there!"}
+		sheriff.brawl = {}
+		sheriff.goal = ""
+		sheriff.path = []
+		sheriff.status = "Arresting the traveller"
+		load("res://sim/settlement/sheriff.gd").stand_up(s, sheriff)
 
 static func surrender(s: Dictionary) -> void:
 	var pc: Dictionary = s.player_control
@@ -126,6 +133,32 @@ static func _approaching(s: Dictionary) -> bool:
 		if npc.get("arrest", {}).get("phase", "") == "approach": return true
 	return false
 
+## The officers see to a prisoner's injuries so nobody dies in the cells: every bleeding or neglected
+## wound is bandaged and cleaned, infections are treated, and someone close to death is brought round.
+## Returns true if anything was done.
+static func tend_prisoner(sim: RefCounted, healer: int) -> bool:
+	var s: Dictionary = sim.state
+	if not s.has("player_health"): return false
+	var done := false
+	for part in s.player_health.parts.values():
+		if int(part.damage) <= 0: continue
+		if bool(part.bleeding) or (part.bandage != "clean" and int(part.damage) >= 8):
+			part.bandage = "clean"
+			part.bandage_until = s.tick + 2400
+			part.bleeding = false
+			done = true
+		if int(part.infection) > 0:
+			part.infection = maxi(0, int(part.infection) - 30)
+			done = true
+	if BodyHealth.overall(s) < 25:
+		BodyHealth.revive(s, 25)
+		done = true
+	if done:
+		s.player_health.notice = "The sheriff has dressed your wounds."
+		s.player_control.notice = "The sheriff dresses your wounds."
+		if healer != 0 and s.residents.has(str(healer)): _say(sim, healer, "Let's get those wounds seen to. You'll not die on my watch.")
+	return done
+
 ## Every tick: release prisoners whose time is up, and run each sheriff's arrest.
 static func update(sim: RefCounted) -> void:
 	var s: Dictionary = sim.state
@@ -133,6 +166,8 @@ static func update(sim: RefCounted) -> void:
 	var pc: Dictionary = s.player_control
 	var jail: Dictionary = pc.get("jail", {})
 	if not jail.is_empty() and s.tick >= int(jail.until): _start_release(sim, jail)
+	# In the cells the keeper keeps an eye on the wounds, so nobody bleeds out in custody.
+	if (not jail.is_empty() or bool(pc.get("restrained", false))) and s.tick % 50 == 0: tend_prisoner(sim, int(jail.get("sheriff", pc.get("escort", 0))))
 	if bool(pc.get("dead", false)): return
 	var player: Array = s.entities[str(s.player)].cell
 	var keys: Array = s.residents.keys()
@@ -148,8 +183,15 @@ static func update(sim: RefCounted) -> void:
 		var cell: Array = s.entities[key].cell
 		var gap := Vector2(player[0] - cell[0], player[1] - cell[1]).length()
 		if arrest.is_empty():
-			# A wanted player who comes into view is held at gunpoint.
+			# A wanted player who comes into view is held at gunpoint by the nearest sheriff; the rest cover him.
 			if wanted_hours(s, npc.settlement) > 0 and gap <= SEE_RANGE and not in_custody(s) and not restrained(s) and not Brawl.player_down(s) and npc.get("sleeping", {}).is_empty():
+				if _nearer_sheriff(s, npc, player) != 0:
+					npc.arrest = {"phase": "backup", "since": s.tick}
+					npc.goal = ""
+					npc.path = []
+					npc.status = "Covering his partner"
+					load("res://sim/settlement/sheriff.gd").stand_up(s, npc)
+					continue
 				npc.arrest = {"phase": "standoff", "since": s.tick}
 				npc.goal = ""
 				npc.path = []
@@ -159,6 +201,8 @@ static func update(sim: RefCounted) -> void:
 			continue
 		match str(arrest.phase):
 			"engage": load("res://sim/player/gunfire.gd").engage(sim, npc, arrest, cell, player, gap)
+			"backup": _backup(sim, npc, arrest, cell, player)
+			"assist": _assist(sim, npc, arrest, cell)
 			"pursue": _pursue(sim, npc, arrest, cell, player, gap)
 			"standoff": _standoff(sim, npc, arrest, cell, player, gap)
 			"approach": _approach(sim, npc, arrest, cell, player, gap)
@@ -169,6 +213,75 @@ static func update(sim: RefCounted) -> void:
 			"fetch": _fetch(sim, npc, arrest, cell)
 			"unlock": _unlock(sim, npc, arrest, cell, player)
 			"return": _return(sim, npc, arrest)
+
+## A sheriff of the same town who is nearer the player and free to take the lead (0 if `npc` is the nearest).
+static func _nearer_sheriff(s: Dictionary, npc: Dictionary, player: Array) -> int:
+	var mine := Vector2(s.entities[str(npc.id)].cell[0] - player[0], s.entities[str(npc.id)].cell[1] - player[1]).length()
+	for other in sheriffs(s, int(npc.settlement)):
+		if other.id == npc.id or Brawl.knocked(s, other): continue
+		var phase: String = str(other.get("arrest", {}).get("phase", ""))
+		if phase not in ["", "backup", "standoff", "approach", "pursue"]: continue
+		if not other.get("sleeping", {}).is_empty(): continue
+		var c: Array = s.entities[str(other.id)].cell
+		var d := Vector2(c[0] - player[0], c[1] - player[1]).length()
+		if d < mine - 0.01 or (is_equal_approx(d, mine) and other.id < npc.id): return int(other.id)
+	return 0
+
+## The sheriff of this town who has the prisoner (cuffing, escorting, booking...), or 0.
+static func _other_lead(s: Dictionary, npc: Dictionary) -> int:
+	for other in sheriffs(s, int(npc.settlement)):
+		if other.id != npc.id and str(other.get("arrest", {}).get("phase", "")) in ["cuff", "escort", "book", "lock", "fetch", "unlock", "return"]: return int(other.id)
+	return 0
+
+static func _join_lead(sim: RefCounted, npc: Dictionary, arrest: Dictionary, lead: int) -> void:
+	arrest.phase = "assist"
+	arrest.lead = lead
+	arrest.since = sim.state.tick
+	npc.path = []
+	npc.status = "Helping take the prisoner in"
+
+## Covers his partner during a standoff: gun on the player, until the arrest begins or it is over.
+static func _backup(sim: RefCounted, npc: Dictionary, arrest: Dictionary, cell: Array, player: Array) -> void:
+	var s: Dictionary = sim.state
+	npc.status = "Covering his partner"
+	var lead: int = _other_lead(s, npc)
+	if lead != 0:
+		_join_lead(sim, npc, arrest, lead)
+		return
+	var leader_busy := false
+	for other in sheriffs(s, int(npc.settlement)):
+		if other.id != npc.id and str(other.get("arrest", {}).get("phase", "")) in ["standoff", "approach", "pursue"]: leader_busy = true
+	if not leader_busy or in_custody(s):
+		npc.arrest = {}
+		npc.status = "Back on duty"
+		npc.work_pause_until = s.tick + 30
+
+## Walks beside the sheriff who has the prisoner, gun ready, until the prisoner is locked up.
+static func _assist(sim: RefCounted, npc: Dictionary, arrest: Dictionary, cell: Array) -> void:
+	var s: Dictionary = sim.state
+	var lead: Dictionary = s.residents.get(str(arrest.get("lead", 0)), {})
+	if lead.is_empty() or lead.health <= 0 or lead.get("arrest", {}).is_empty() or str(lead.arrest.phase) in ["", "engage", "pursue", "standoff"]:
+		npc.arrest = {}
+		npc.path = []
+		npc.status = "Back on duty"
+		npc.work_pause_until = s.tick + 30
+		return
+	npc.status = "Helping take the prisoner in"
+	var lead_cell: Array = s.entities[str(lead.id)].cell
+	var player: Array = s.entities[str(s.player)].cell
+	var here := Vector2(lead_cell[0] - cell[0], lead_cell[1] - cell[1]).length()
+	if here <= 1.9 or s.tick % 2 != 0: return
+	# Take the free cell beside the lead that is on the other side from the prisoner.
+	var goal: Array = lead_cell.duplicate()
+	var best := -1.0
+	for offset in [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]:
+		var candidate: Array = [lead_cell[0] + offset[0], lead_cell[1] + offset[1]]
+		if candidate == player or not World.walkable(s, candidate): continue
+		var score: float = Vector2(candidate[0] - player[0], candidate[1] - player[1]).length() - Vector2(candidate[0] - cell[0], candidate[1] - cell[1]).length() * 0.3
+		if score > best:
+			best = score
+			goal = candidate
+	_step_toward(s, npc, arrest, cell, goal)
 
 static func _give_up(sim: RefCounted, npc: Dictionary, text: String) -> void:
 	_say(sim, npc.id, text)
@@ -188,6 +301,10 @@ static func _step_toward(s: Dictionary, npc: Dictionary, arrest: Dictionary, cel
 ## Chase at the same pace rules as anyone else; shove the player down when he catches up.
 static func _pursue(sim: RefCounted, npc: Dictionary, arrest: Dictionary, cell: Array, player: Array, gap: float) -> void:
 	var s: Dictionary = sim.state
+	var in_charge: int = _other_lead(s, npc)
+	if in_charge != 0:
+		_join_lead(sim, npc, arrest, in_charge)   # his partner already has the prisoner: help him
+		return
 	if arrest.has("announce"):
 		_say(sim, npc.id, str(arrest.announce))
 		arrest.erase("announce")
@@ -267,6 +384,7 @@ static func _cuff(sim: RefCounted, npc: Dictionary, arrest: Dictionary, cell: Ar
 		_release_custody(s, npc)
 		return
 	_start_escort(sim, npc, arrest, cell, desk_spot(office), "desk", office)
+	tend_prisoner(sim, npc.id)   # first aid on the spot
 	_say(sim, npc.id, "Come along. Don't try anything.")
 	npc.status = "Taking the traveller to be booked"
 
@@ -333,6 +451,7 @@ static func _book(sim: RefCounted, npc: Dictionary, arrest: Dictionary) -> void:
 	pc.booking = booking
 	if age >= PROPERTY_AT and not pc.has("property"):
 		_take_property(sim, npc)
+		tend_prisoner(sim, npc.id)
 		_say(sim, npc.id, "Everything goes in the locker.")
 	if age >= UNIFORM_AT and not bool(booking.get("dressed", false)):
 		booking.dressed = true

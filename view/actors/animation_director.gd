@@ -81,6 +81,8 @@ static func action_for(s: Dictionary, entity: Dictionary, aim_held: bool = false
 						result.action = "shoot"
 						result.phase = clampf(float(s.tick - int(cycle.get("since", s.tick))) / 8.0, 0.0, 1.0)
 					_: result.action = "reload" if int(cycle.get("ammo", 1)) <= 0 else "gun_carry"
+			"backup": result.action = "aim"
+			"assist": result.action = "gun_carry"
 			"pursue": result.action = "combat_idle"
 			_: result.action = "idle"
 		return result
@@ -418,7 +420,7 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 			action = pose.handling
 			state_action.phase = pose.handling_age / 0.5
 		# An armed upper-body pose can play over the walking or running legs.
-		var lawman_armed: bool = str(s.get("residents", {}).get(key, {}).get("arrest", {}).get("phase", "")) in ["standoff", "approach", "engage"]
+		var lawman_armed: bool = str(s.get("residents", {}).get(key, {}).get("arrest", {}).get("phase", "")) in ["standoff", "approach", "engage", "backup", "assist"]
 		var gun_pose := (gun_equipped or lawman_armed) and action in ["gun_carry", "aim", "reload", "shoot"]
 		if pose.moving and not gun_pose and action not in ["punch", "shove", "kick", "hit", "stagger", "down", "fall", "getup", "rest", "cuffed", "escort", "surrender", "cuff", "search", "crawl"]:
 			action = "run" if sprinting else ("carry" if quantity > 0 else "walk")

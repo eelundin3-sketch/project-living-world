@@ -4,6 +4,7 @@ extends SceneTree
 const Sim = preload("res://sim/core/simulation.gd")
 const Law = preload("res://sim/settlement/law.gd")
 const Brawl = preload("res://sim/player/brawl.gd")
+const BodyHealth = preload("res://sim/player/body_health.gd")
 const Households = preload("res://sim/entities/households.gd")
 const Checks = preload("res://sim/diagnostics/invariants.gd")
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
@@ -126,4 +127,48 @@ func _initialize() -> void:
 	s3.entities[str(s3.player)].cell = [cell3[0] + 30, cell3[1]]
 	sim3.step(); sim3.step()
 	check(str(sheriff3.arrest.phase) == "pursue", "Running from a standoff makes him chase you")
+	# Two sheriffs: both take part. One cuffs and escorts; the other helps and walks beside him.
+	var made4 := setup(); var sim4: RefCounted = made4[0]; var s4: Dictionary = made4[1]; var first4: Dictionary = made4[2]
+	var partner: Dictionary = {}
+	for npc in Law.sheriffs(s4, 1): if npc.id != first4.id: partner = npc
+	check(not partner.is_empty(), "A town has more than one sheriff")
+	var near4: Array = s4.entities[str(first4.id)].cell
+	s4.entities[str(partner.id)].cell = [near4[0] - 2, near4[1] + 1]
+	partner.sleeping = {}; partner.goal = ""; partner.path = []
+	Law.crime(s4, 1, "assault_sheriff", first4.id)
+	check(not first4.get("arrest", {}).is_empty() and not partner.get("arrest", {}).is_empty(), "Both sheriffs go after the player, not just one")
+	var partner_helped := false
+	var lead_escorted := false
+	var bled_before := false
+	s4.player_health.parts.left_forearm.damage = 40
+	s4.player_health.parts.left_forearm.bleeding = true
+	s4.player_health.parts.left_forearm.wound = "cut"
+	for t in range(1500):
+		sim4.step()
+		if str(partner.get("arrest", {}).get("phase", "")) == "assist": partner_helped = true
+		if str(first4.get("arrest", {}).get("phase", "")) == "escort": lead_escorted = true
+		if str(first4.get("arrest", {}).get("phase", "")) == "escort" and not bled_before:
+			bled_before = true
+			# Someone tries to shove the cuffed player to the ground: it does nothing.
+			Brawl.knockdown(s4, s4.player_control, s4.entities[str(s4.player)].cell, "fall", [1, 0])
+			check(s4.player_control.get("knock", {}).is_empty(), "A prisoner cannot be knocked down")
+		if Law.jailed(s4): break
+	check(lead_escorted and partner_helped, "One sheriff escorts while the other helps (lead %s, partner %s)" % [str(lead_escorted), str(partner_helped)])
+	check(Law.jailed(s4), "The prisoner ends up in the cell")
+	check(not s4.player_health.parts.left_forearm.bleeding and s4.player_health.parts.left_forearm.bandage == "clean", "The officers dressed the wound before locking the cell")
+	check(Checks.validate(s4).is_empty(), "Invariants hold: " + str(Checks.validate(s4)))
+	for t in range(60): sim4.step()
+	check(str(partner.get("arrest", {}).get("phase", "")) == "" , "The helper goes back to his duties once the prisoner is locked up")
+	# Nearly dead on arrest: they bring the prisoner round.
+	var made5 := setup(); var sim5: RefCounted = made5[0]; var s5: Dictionary = made5[1]; var first5: Dictionary = made5[2]
+	for name in ["head", "upper_torso", "lower_torso"]:
+		s5.player_health.parts[name].damage = 50; s5.player_health.parts[name].bleeding = true; s5.player_health.parts[name].wound = "cut"
+	check(BodyHealth.overall(s5) < 25, "The prisoner starts nearly dead (health %d)" % BodyHealth.overall(s5))
+	Law.crime(s5, 1, "assault_sheriff", first5.id)
+	for t in range(1500):
+		sim5.step()
+		if Law.jailed(s5): break
+	check(Law.jailed(s5) and not bool(s5.player_control.get("dead", false)), "Arrested while badly hurt, the prisoner does not die")
+	for t in range(3000): sim5.step()
+	check(not bool(s5.player_control.get("dead", false)) and BodyHealth.overall(s5) >= 20, "...and is still alive hours later (health %d)" % BodyHealth.overall(s5))
 	print("Law: %s" % ("PASS" if failures == 0 else "FAIL")); quit(failures)
