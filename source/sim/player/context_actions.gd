@@ -77,6 +77,8 @@ static func options(s: Dictionary, id: int, part: String = "") -> Array:
 	if id == s.player:
 		result.append(_opt("eat", "Eat", "food", Inventory.amount(s, s.player, "food") > 0, "No food"))
 		result.append(_opt("drink", "Drink", "drop", Needs.near_water(s), "Stand by a well"))
+		result.append(_opt("wash", "Wash up", "drop", Needs.near_water(s), "Stand by a well"))
+		result.append(_opt("shave", "Shave & haircut (3 coins)", "hand"))
 		result.append(_opt("wardrobe", "Clothing", "shirt"))
 		result.append(_opt("inventory", "Inventory", "bag"))
 		result.append(_opt("health", "Check wounds", "heart"))
@@ -303,6 +305,8 @@ static func perform(sim: RefCounted, id: int, action: String, part: String = "")
 		"sleep": Sleep.lie_down(s, id, part_index(part))
 		"eat": pc.notice = Needs.eat(s)
 		"drink": pc.notice = Needs.drink(s)
+		"wash": pc.notice = load("res://sim/player/look.gd").wash(s) if Needs.near_water(s) else "Stand by a well to wash."
+		"shave": pc.notice = load("res://sim/player/look.gd").shave(s)
 		"inventory", "health": pass   # opened by the interface
 		"wardrobe": Looting.open(s, s.player, "wardrobe")
 		"pickup_all": _take_everything(sim, id)

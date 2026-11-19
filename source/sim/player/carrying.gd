@@ -30,6 +30,7 @@ static func pick_up(s: Dictionary, id: int) -> void:
 	pc.held_quantity = 0
 	s.entities[str(id)].cell = s.entities[str(s.player)].cell.duplicate()
 	pc.notice = "You heave %s over your shoulder. F puts them down." % s.entities[str(id)].name
+	if int(npc.get("health", 0)) <= 0: load("res://sim/player/look.gd").bloodied(s, 10)
 
 static func put_down(s: Dictionary, quiet: bool = false) -> void:
 	var pc: Dictionary = s.get("player_control", {})

@@ -133,7 +133,19 @@ func setup(id: int, player: bool, raider: bool) -> void:
 	is_player = player
 	is_raider = raider
 
+var drawn_beard := -1   # the beard stage last painted (player only)
+
 func set_pose(value: Dictionary, delta: float = -1.0) -> void:
+	if is_player:
+		# Dust and blood on you show as a tint over the whole figure (look.gd).
+		var look: Dictionary = value.get("look", {})
+		var tint: Color = Color.WHITE.lerp(Color(0.80, 0.72, 0.62), clampf(float(look.get("dirt", 0)) / 100.0, 0.0, 1.0) * 0.7)
+		tint = tint.lerp(Color(0.88, 0.55, 0.5), clampf(float(look.get("blood", 0)) / 100.0, 0.0, 1.0) * 0.6)
+		if not self_modulate.is_equal_approx(tint): self_modulate = tint
+		var stubble: int = (1 if int(look.get("beard", 0)) >= 20 else 0) + (1 if int(look.get("beard", 0)) >= 55 else 0)
+		if stubble != drawn_beard:   # a new stage of beard: repaint even standing still
+			drawn_beard = stubble
+			queue_redraw()
 	var next_position: Vector2 = value.get("position", Vector2.ZERO)
 	var snap := delta < 0.0 or frame.is_empty() or position.distance_to(next_position) > 96.0
 	var changed: bool = pose.get("action") != value.get("action") or pose.get("ready", false) != value.get("ready", false)
@@ -1297,6 +1309,17 @@ func _draw_head(head: Vector2, skin: Color) -> void:
 		draw_polyline(PackedVector2Array([nose + Vector2(0, -0.2), nose + Vector2(0.7, 1.3), nose + Vector2(-0.4, 1.6)]), skin.darkened(0.33), 0.55, true)
 		var mouth := face + Vector2(forward.x * 2.8, 5.1)
 		draw_polyline(PackedVector2Array([mouth + Vector2(-1.6, -0.2), mouth + Vector2(0.1, 0.1), mouth + Vector2(1.5, -0.3)]), INK, 0.65, true)
+		# The player's beard grows by the day (look.gd): stubble, then a full beard round the jaw.
+		var beard: int = int(pose.get("look", {}).get("beard", 0)) if is_player else 0
+		if beard >= 55:
+			draw_colored_polygon(PackedVector2Array([face + Vector2(-5.4, 2.0), face + Vector2(-2.4, 4.0), mouth + Vector2(-1.9, 0.9),
+				mouth + Vector2(1.9, 0.9), face + Vector2(2.6, 4.0), face + Vector2(5.4, 2.0), face + Vector2(4.6, 5.6),
+				face + Vector2(1.9, 9.0 + beard / 40.0), face + Vector2(-1.9, 9.0 + beard / 40.0), face + Vector2(-4.8, 5.6)]), Color(hair, 0.92))
+			draw_polyline(PackedVector2Array([mouth + Vector2(-1.6, -0.2), mouth + Vector2(0.1, 0.1), mouth + Vector2(1.5, -0.3)]), INK, 0.65, true)
+		elif beard >= 20:
+			for dot in range(9):
+				var along: float = float(dot) / 8.0
+				draw_circle(face + Vector2(lerpf(-4.8, 4.8, along), 5.2 + sin(along * PI) * 2.6), 0.42, Color(hair, 0.55), true, -1, true)
 		# One visible ear and a shaped sideburn, away from the eyes.
 		var ear_side := -side if side != 0 else -1.0
 		var ear := face + Vector2(ear_side * 6.4, 1.6)

@@ -165,7 +165,7 @@ static func price(s: Dictionary, town_id: int, item: String, buying: bool, targe
 	var base: int = Market.quote(s, town_id, item, buying)
 	var terms: Dictionary = s.get("player_control", {}).get("trade_terms", {})
 	var pct: int = int(terms.get("pct", 0)) if int(terms.get("target", 0)) == target else 0
-	pct += feeling_pct(s, target)
+	pct += feeling_pct(s, target) + load("res://sim/player/look.gd").price_pct(s)   # how they feel, and how you look
 	var adjusted: int = roundi(float(base) * float(100 + pct) / 100.0) if buying else roundi(float(base) * float(100 - pct) / 100.0)
 	return clampi(adjusted, 1, 100)
 
@@ -198,7 +198,8 @@ static func haggle(sim: RefCounted, target: int) -> void:
 		return
 	terms.haggled = true
 	var liking: int = load("res://sim/factions/society.gd").opinion(s, int(npc.id), int(s.player))
-	var chance: int = clampi(50 - int(npc.get("anger", 0)) / 2 + liking / 4, 10, 85)
+	var tidy: int = 5 if load("res://sim/player/look.gd").score(s) >= 30 else 0   # a clean, well-dressed customer
+	var chance: int = clampi(50 - int(npc.get("anger", 0)) / 2 + liking / 4 + tidy, 10, 85)
 	if sim.random_int("haggle", 0, 99) < chance:
 		terms.pct = -sim.random_int("haggle", 10, 20)
 		pc.notice = "%s: Fine, %d%% off, for you." % [first, -int(terms.pct)]

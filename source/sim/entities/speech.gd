@@ -15,6 +15,7 @@ const LINES: Dictionary = {
 	"robbed": ["Thief!", "Where's my stuff?!", "You went through my pockets!", "Give that back!"],
 	"woke_caught": ["Hey! Get your hands off that!", "Thief! Thief!", "I saw that! Stop right there!"],
 	"sheriff_warn": ["That's enough! Break it up!", "Stop that right now!", "Not in my town, stranger.", "I'm watching you."],
+	"greet_scruffy": ["You look like you've been dragged through a hedge.", "Good grief, have a wash, stranger.", "Is that blood on you?", "Keep your distance, you're filthy.", "There's a well by the storehouse, you know."],
 	"greet_cold": ["You've got a nerve, showing your face here.", "Hmph.", "Keep walking.", "We know what you did.", "Don't you come near my family."],
 	"greet_warm": ["Good to see you again, friend!", "There you are! How have you been?", "Ah, a friendly face.", "Come by for supper some time.", "Always welcome here."],
 	"greet_player": ["Morning, traveller.", "Afternoon.", "Evening, stranger.", "Hello there.", "Good to see a new face.", "Keep your boots dry, friend.", "Quiet day, isn't it?"],
@@ -78,7 +79,8 @@ static func update(sim: RefCounted) -> void:
 			if Brawl.player_down(s) or sim.random_int("speech", 0, 99) >= 60: continue
 			# What they remember of you colours the greeting (society.gd: opinion).
 			var feeling: int = load("res://sim/factions/society.gd").opinion(s, int(npc.id), int(s.player))
-			say(sim, npc.id, "greet_cold" if feeling <= -30 else ("greet_warm" if feeling >= 40 else "greet_player"))
+			var scruffy: bool = load("res://sim/player/look.gd").score(s) <= -40   # filthy or bloodied (look.gd)
+			say(sim, npc.id, "greet_cold" if feeling <= -30 else ("greet_warm" if feeling >= 40 else ("sheriff_warn" if scruffy and npc.occupation == "Sheriff" else ("greet_scruffy" if scruffy else "greet_player"))))
 			npc.greeted_tick = s.tick + 3000
 			npc.talk_until = s.tick + 300
 			break

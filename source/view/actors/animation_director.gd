@@ -341,6 +341,7 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 		# Carried over someone's shoulder: drawn up at shoulder height (carrying.gd).
 		var shoulder: float = -20.0 if s.get("residents", {}).get(key, {}).has("carried_by") else 0.0
 		pose.shoulder = shoulder
+		if entity.kind == "player": pose.look = s.get("player_status", {}).get("look", {})   # beard, dirt, blood (look.gd)
 		# Sprint ramp: eases in over about 0.3 s and out over about 0.5 s after shift is released.
 		var old_blend: float = float(pose.get("run_blend", 0.0))
 		var wanted_blend: float = 1.0 if (sprinting and pose.moving) else 0.0
