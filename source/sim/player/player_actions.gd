@@ -201,6 +201,10 @@ static func trade(sim: RefCounted,payload: Dictionary) -> void:
 		return
 	var result := Market.transact(s,seller,buyer,item,quantity,price,e.settlement)
 	pc.notice=("You %s %d %s for %d coins." % ["buy" if buy else "sell", quantity, item, quantity * price]) if result.ok else "Trade failed: "+result.error_code
+	# Honest business is remembered kindly (a small, quickly fading memory: society.gd).
+	var keeper: Dictionary = Stalls.counterpart(s, id)
+	if result.ok and not keeper.is_empty() and s.has("factions"):
+		load("res://sim/factions/society.gd").remember(s, int(keeper.id), "paid_well", int(s.player), "The stranger traded fairly with me.")
 	reconcile(s)
 static func update(sim: RefCounted) -> void:
 	var s: Dictionary=sim.state

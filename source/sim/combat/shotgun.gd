@@ -168,4 +168,6 @@ static func _strike(sim: RefCounted, surface: String, cell: Array, pellet: Dicti
 				fighters[key].hit_tick = s.tick
 			if s.residents.has(key) and was_alive and s.residents[key].health == 0:
 				sim.record(entity.name + " was shot and is incapacitated.")
+				if pellet.owner == s.player:   # remembered as a killing, by family and witnesses
+					load("res://sim/law/law.gd").remember_crime(s, int(s.residents[key].settlement), "murder", int(entity.id))
 			break

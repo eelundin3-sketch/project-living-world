@@ -164,8 +164,17 @@ static func price(s: Dictionary, town_id: int, item: String, buying: bool, targe
 	var base: int = Market.quote(s, town_id, item, buying)
 	var terms: Dictionary = s.get("player_control", {}).get("trade_terms", {})
 	var pct: int = int(terms.get("pct", 0)) if int(terms.get("target", 0)) == target else 0
+	pct += feeling_pct(s, target)
 	var adjusted: int = roundi(float(base) * float(100 + pct) / 100.0) if buying else roundi(float(base) * float(100 - pct) / 100.0)
 	return clampi(adjusted, 1, 100)
+
+## How the person you trade with feels about you moves the price: someone who holds a grudge
+## (opinion -50 or worse) charges 15% more, a friend (50 or better) 10% less.
+static func feeling_pct(s: Dictionary, target: int) -> int:
+	var npc: Dictionary = counterpart(s, target)
+	if npc.is_empty() or not s.has("player"): return 0
+	var feeling: int = load("res://sim/factions/society.gd").opinion(s, int(npc.id), int(s.player))
+	return 15 if feeling <= -50 else (-10 if feeling >= 50 else 0)
 
 ## The person on the other side of a trade: the resident, or whoever minds the stall.
 static func counterpart(s: Dictionary, target: int) -> Dictionary:
@@ -187,7 +196,7 @@ static func haggle(sim: RefCounted, target: int) -> void:
 		pc.trade_terms = terms
 		return
 	terms.haggled = true
-	var liking: int = int(npc.get("relations", {}).get(str(s.player), 0))
+	var liking: int = load("res://sim/factions/society.gd").opinion(s, int(npc.id), int(s.player))
 	var chance: int = clampi(50 - int(npc.get("anger", 0)) / 2 + liking / 4, 10, 85)
 	if sim.random_int("haggle", 0, 99) < chance:
 		terms.pct = -sim.random_int("haggle", 10, 20)

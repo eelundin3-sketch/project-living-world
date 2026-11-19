@@ -15,6 +15,8 @@ const LINES: Dictionary = {
 	"robbed": ["Thief!", "Where's my stuff?!", "You went through my pockets!", "Give that back!"],
 	"woke_caught": ["Hey! Get your hands off that!", "Thief! Thief!", "I saw that! Stop right there!"],
 	"sheriff_warn": ["That's enough! Break it up!", "Stop that right now!", "Not in my town, stranger.", "I'm watching you."],
+	"greet_cold": ["You've got a nerve, showing your face here.", "Hmph.", "Keep walking.", "We know what you did.", "Don't you come near my family."],
+	"greet_warm": ["Good to see you again, friend!", "There you are! How have you been?", "Ah, a friendly face.", "Come by for supper some time.", "Always welcome here."],
 	"greet_player": ["Morning, traveller.", "Afternoon.", "Evening, stranger.", "Hello there.", "Good to see a new face.", "Keep your boots dry, friend.", "Quiet day, isn't it?"],
 	"smalltalk": ["Looks like rain later.", "The rye's coming along nicely.", "Prices at the market are odd today.", "Did you hear? A trader's been walking the road.", "I could do with a rest.", "Timber's going quickly this week.", "My back aches from the work.", "Have you seen the sheriff about?", "The days are getting shorter.", "Bread's ready soon, I think.", "That new house is coming along.", "Strange folk, these travellers."],
 	"reply": ["Aye, I'd say so.", "Hah, you're not wrong.", "So I've heard.", "Don't get me started.", "Hmm, fair enough.", "Mm. Take care now.", "Tell me about it."],
@@ -73,7 +75,9 @@ static func update(sim: RefCounted) -> void:
 		var cell: Array = s.entities[str(npc.id)].cell
 		if absi(cell[0] - player[0]) <= 3 and absi(cell[1] - player[1]) <= 3 and s.tick >= int(npc.get("greeted_tick", 0)):
 			if Brawl.player_down(s) or sim.random_int("speech", 0, 99) >= 60: continue
-			say(sim, npc.id, "greet_player")
+			# What they remember of you colours the greeting (society.gd: opinion).
+			var feeling: int = load("res://sim/factions/society.gd").opinion(s, int(npc.id), int(s.player))
+			say(sim, npc.id, "greet_cold" if feeling <= -30 else ("greet_warm" if feeling >= 40 else "greet_player"))
 			npc.greeted_tick = s.tick + 3000
 			npc.talk_until = s.tick + 300
 			break

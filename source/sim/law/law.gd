@@ -85,8 +85,24 @@ static func standoff_sheriff(s: Dictionary) -> int:
 
 ## A crime in `town`. If a sheriff saw it (or suffered it) he comes for the player at once;
 ## either way the town remembers.
+## What a crime leaves behind besides the law: an entry in the chronicle (with who saw it) and
+## memories, in the victim, their family and the witnesses. Also used where a killing is not
+## handed to the law as a separate crime (a shotgun kill in a gunfight).
+const MEMORY_OF := {"theft": "robbed", "assault": "assaulted", "assault_sheriff": "assaulted", "kick": "assaulted",
+	"shooting": "shot_at", "murder": "killed_kin"}
+static func remember_crime(s: Dictionary, town: int, kind: String, victim: int) -> Dictionary:
+	if not s.has("player") or not s.entities.has(str(s.player)): return {}
+	var cell: Array = s.entities[str(victim)].cell if s.entities.has(str(victim)) else s.entities[str(s.player)].cell
+	var entry: Dictionary = load("res://sim/world/chronicle.gd").record(s, kind, town, int(s.player), victim, cell)
+	if s.has("factions"):
+		var victim_name: String = str(s.entities.get(str(victim), {}).get("name", "someone"))
+		var text: String = "The stranger %s %s." % [{"theft": "robbed", "murder": "killed", "shooting": "shot at"}.get(kind, "attacked"), victim_name] if victim != 0 else "The stranger fired a gun in town."
+		load("res://sim/factions/society.gd").witnessed(s, victim, str(MEMORY_OF.get(kind, "assaulted")), int(s.player), text, entry.witnesses, "saw_murder" if kind == "murder" else "saw_crime")
+	return entry
+
 static func crime(s: Dictionary, town: int, kind: String, victim: int) -> void:
 	if not s.has("player_control") or not SENTENCE.has(kind): return
+	remember_crime(s, town, kind, victim)
 	var player: Array = s.entities[str(s.player)].cell
 	var witness: Dictionary = {}
 	var witnesses: Array = []

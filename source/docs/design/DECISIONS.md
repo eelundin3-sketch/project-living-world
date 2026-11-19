@@ -426,3 +426,32 @@ the heel first travels 8 pixels farther behind toe-off, then folds up and recove
 forward. Two cubic curves preserve the planted-foot horizontal velocity at
 lift-off and landing. The previous extra 10% reach at landing was removed so the
 cycle wraps continuously. Walking speed, stamina and simulation movement are unchanged.
+
+## 2026-11-19 — Carrying weight, background saves, signpost distances
+
+**Item weights live in code for now.** `sim/player/encumbrance.gd` holds a table of
+weights in tenths (integer maths; anything unlisted, including clothing, weighs
+0.5). `content/items/core.json` lists only eight items and not the shotgun,
+shells or clothing, so a data-file version waits for the move of all tuning
+tables into `content/`. The load is computed from the inventory when needed,
+never stored. Heavy, overloaded and crushing loads lengthen steps by 10, 30 and
+60% through `Pace.delay(..., slower)`. With `slower = 0` that function gives
+exactly the old result, so no existing route or test changes.
+
+**Saves are written on a background thread.** A save of the real world costs about
+340 ms: a checksum, the write, then a full verify (re-read, checksum again,
+invariants, schema). Only the deep copy of the state (`sim.snapshot()`, about
+12 ms) has to run on the main thread. `SaveManager.save_snapshot(data, path)`
+does the rest on that private copy, so `app/world_controller.gd` runs it on a
+`Thread` (one at a time). A load first waits for any save still running.
+Autosaves go to the older of `autosave_a.save` and `autosave_b.save` at 06:00
+each in-game day. Each save gets a small `.info` JSON file (day, time, town,
+when written) so the title screen can offer Continue without verifying a whole
+world. Named manual slots wait for a pause menu.
+
+**Signposts measure their roads once.** `RoadPlanner.ensure_ways` routes from each
+signpost to every town's gate (`town_gate`, which auto-travel now shares) on the
+travel grid. It stores the distance in paces and the heading in thousandths on
+the signpost entity. It runs at the end of `start_game`, and in `restore` for
+older saves (about 28 ms once). Signposts that already have `ways` are skipped,
+so it is stable across save and load.

@@ -225,6 +225,7 @@ static func _births(sim: RefCounted, town: Dictionary) -> void:
 		household.children += 1
 		s.residents[str(child)].household = key
 		town.population = int(town.get("population", 0)) + 1
+		load("res://sim/world/chronicle.gd").record(s, "birth", int(town.id), int(household.members[0]), child, door)
 		sim.record("%s was born to the %s household." % [s.entities[str(child)].name, s.entities[str(household.members[0])].name.split(" ")[-1]])
 
 ## A newly built house takes in the most crowded household and gets a garden.
