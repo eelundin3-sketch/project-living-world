@@ -41,6 +41,7 @@ const Navigation = preload("res://sim/movement/navigation.gd")
 const Weather = preload("res://sim/world/weather.gd")
 const LocalCombat = preload("res://sim/combat/local_combat.gd")
 const Unarmed = preload("res://sim/combat/unarmed.gd")
+const Probe = preload("res://sim/diagnostics/perf_probe.gd")
 var state: Dictionary
 
 func _init(seed_value: int = 417) -> void:
@@ -116,18 +117,27 @@ func random_int(stream: String, low: int, high: int) -> int:
 	return Streams.next_int(state.rng, state.seed, stream, low, high)
 
 func step() -> void:
+	Probe.begin()
 	state.tick += 1
 	_drain("commands", true)
 	_drain("events", false)
+	Probe.mark("commands")
 	if state.has("residents"):
 		Weather.update(self)
 		Unarmed.update(self)
+		Probe.mark("weather+unarmed")
 		Brawl.update(self)
+		Probe.mark("brawl")
 		Law.update(self)
+		Probe.mark("law")
 		Gunfire.update(self)
+		Probe.mark("gunfire")
 		Fear.update(self)
+		Probe.mark("fear")
 		Speech.update(self)
+		Probe.mark("speech")
 		ContextActions.update(self)
+		Probe.mark("context")
 		LocalCombat.update(self)
 		var travelling: bool = not state.get("player_path", []).is_empty()
 		# Holding Shift while following a route runs it: a step every tick (three in four when fatigued).
@@ -156,35 +166,46 @@ func step() -> void:
 				if not destination.is_empty():
 					var reroute := Navigation.request_path(state, state.entities[str(state.player)].cell, destination)
 					if reroute.ok: state.player_path = reroute.path
+		Probe.mark("local_combat+route")
 		if state.tick % 10 == 0:
 			Jobs.refresh(self)
+		Probe.mark("jobs_refresh")
 		if state.has("routes"):
 			Fidelity.update(state)
 			Regional.update(self)
+		Probe.mark("regional")
 		Residents.update(self)
+		Probe.mark("residents")
 		if state.has("factions"):
 			Society.update(self)
 			Risk.update(self)
+		Probe.mark("society")
 		if state.has("workshops"):
 			Recipes.update(self)
+		Probe.mark("recipes")
 		if state.has("construction"):
 			Planner.update(self)
+		Probe.mark("planner")
 		if state.has("markets") and state.tick % 600 == 300: Market.ensure_tents(self)
 		if state.has("markets") and state.tick % 300 == 0:
 			for town_id in state.markets:
 				Market.clear_market(state, int(town_id))
+		Probe.mark("market")
 		BodyHealth.update(state)
 		Limbs.update(state)
 		Cover.update(state)
+		Probe.mark("body+cover")
 		PlayerActions.update(self)
 		Needs.update(state)
 		Hotbar.update(state)
 		Shotgun.update(self)
+		Probe.mark("player+needs+shotgun")
 		if state.has("households") and state.tick % 14400 == 7200: Households.daily(self)
 		Crops.update(state)
+		Probe.mark("daily+crops")
 		if state.tick % 14400 == 0:
-			for entity in state.entities.values():
-				if entity.kind == "tree":
+			for entity in World.of_kind(state, "tree"):
+				if true:
 					if entity.get("felled", false):
 						# A stump sprouts a new tree after a week; a fallen trunk waits to be gathered.
 						if Inventory.amount(state, entity.id, "log") == 0 and state.tick - int(entity.get("felled_tick", 0)) >= 7 * 14400:
@@ -201,8 +222,9 @@ func _can_run_route() -> bool:
 	return state.has("player_control") and state.has("player_health") and state.player_control.get("travel_run", false) and _stamina_allows_run() and BodyHealth.move_delay(state) == 1 and Limbs.mode(state, state.player) == "walk" and not Brawl.player_down(state)
 
 func _drain(queue_name: String, is_command: bool) -> void:
-	state[queue_name].sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		return a.due < b.due or (a.due == b.due and a.id < b.id))
+	if state[queue_name].size() > 1:   # an empty or single-entry queue is already in order
+		state[queue_name].sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			return a.due < b.due or (a.due == b.due and a.id < b.id))
 	while not state[queue_name].is_empty() and state[queue_name][0].due <= state.tick:
 		var entry: Dictionary = state[queue_name].pop_front()
 		if is_command:

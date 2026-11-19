@@ -118,6 +118,8 @@ static func update(sim: RefCounted) -> void:
 				_effect(s, "muzzle", actor.cell)
 			else: _damage(sim, target.id, 15)
 		elif s.tick >= fighter.retry:
+			if not fighter.path.is_empty() and fighter.path_target == target_cell and fighter.path_revision != s.world.nav_revision and Nav.still_clear(s, fighter.path):
+				fighter.path_revision = s.world.nav_revision
 			if fighter.path.is_empty() or fighter.path_target != target_cell or fighter.path_revision != s.world.nav_revision:
 				fighter.path = []
 				for offset in [[0, -1], [-1, 0], [1, 0], [0, 1]]:

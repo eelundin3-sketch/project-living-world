@@ -5,6 +5,7 @@ const Props = preload("res://view/world/prop_art.gd")
 const Director = preload("res://view/actors/animation_director.gd")
 const BuildMotion = preload("res://view/actors/build_motion.gd")
 const Outfits = preload("res://sim/entities/outfits.gd")
+const Probe = preload("res://sim/diagnostics/perf_probe.gd")
 const INK := Color("30271f")
 ## Presentation proportions in canvas pixels; feet remain on the same world anchor.
 const HIP_HEIGHT := 29.0
@@ -817,6 +818,12 @@ func _treat_arms(arms: Dictionary, chest: Vector2, hip: Vector2, head: Vector2, 
 	return {"arms": result, "center": center, "hand": result[worker][2]}
 
 func _draw() -> void:
+	var t := Time.get_ticks_usec()
+	_paint()
+	Probe.add("d:characters", Time.get_ticks_usec() - t)
+	Probe.count("character_redraws")
+
+func _paint() -> void:
 	if frame.is_empty(): return
 	var action: String = pose.get("action", "idle")
 	var gait: float = float(pose.get("gait_phase", 0.0)) * TAU

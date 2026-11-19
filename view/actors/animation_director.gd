@@ -20,6 +20,13 @@ var wind_strength: float = 1.0
 var player_aiming: bool = false
 var player_ready: bool = false
 var player_aim_position: Vector2 = Vector2.ZERO
+## Trees are tracked only inside this rectangle of cells (set by the world view to what is on
+## screen plus a margin). Empty means every tree, which is what headless tests use.
+var view_cells: Rect2i = Rect2i()
+var tree_pass: int = 0
+var tree_pass_view: Rect2i = Rect2i(0, 0, -1, -1)
+var tree_pass_tick: int = -1
+var tree_serial: int = 0   # bumps whenever a tracked tree falls, empties or dies (shadows repaint)
 
 func reset() -> void:
 	actors.clear()
@@ -222,23 +229,11 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 		if not cue_kind.is_empty(): cues.append({"kind": cue_kind, "position": Vector2(fight_event.cell[0], fight_event.cell[1]) * CELL})
 	var dt: float = 0.0 if paused else minf(delta, 0.1) * speed
 	time += dt
+	_update_trees(s, first)
 	var live_ids: Dictionary = {}
-	for entity in s.entities.values():
-		if not entity.has("cell"):
-			continue
-		var key: String = str(entity.id)
-		if entity.kind == "tree":
-			var logs: int = s.inventories[key].items.get("log", 0)
-			var tree: Dictionary = trees.get(key, {"logs": logs, "fall": -1.0, "hit": -10.0, "felled": entity.get("felled", false)})
-			var felled: bool = entity.get("felled", false)
-			if felled and not tree.get("felled", false) and not first:
-				tree.fall = time
-				cues.append({"kind": "fall", "position": Vector2(entity.cell[0], entity.cell[1]) * CELL})
-			tree.felled = felled
-			tree.dead = entity.get("dead", false)
-			tree.autumn = entity.get("autumn", false)
-			tree.logs = logs
-			trees[key] = tree
+	for key in _actor_keys(s):
+		var entity: Dictionary = s.entities.get(key, {})
+		if entity.is_empty() or not entity.has("cell"):
 			continue
 		if entity.kind not in ["resident", "player", "raider"]:
 			continue
@@ -514,6 +509,60 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 	for key in actors.keys():
 		if not live_ids.has(key): actors.erase(key)
 	previous_tick = s.tick
+
+## The people to animate: the player, every resident and any raiders, without walking the
+## thousands of trees and buildings in the entity table.
+static func _actor_keys(s: Dictionary) -> Array:
+	var keys: Array = []
+	if s.has("player"): keys.append(str(s.player))
+	keys.append_array(s.get("residents", {}).keys())
+	for key in s.get("local_combat", {}).get("fighters", {}):
+		if not s.get("residents", {}).has(key): keys.append(key)
+	return keys
+
+## Tree state for falling and chopping animation. It only changes on a tick, and only the trees
+## near the screen are ever drawn, so the pass runs on a new tick or a new view, over the chunks
+## the view covers. A tree seen for the first time (or again after being off screen) starts in
+## its current state, so a tree felled out of sight lies there already rather than toppling.
+var track_trees: bool = true   # off on the map view, where trees are plain dots
+func _update_trees(s: Dictionary, first: bool) -> void:
+	if not track_trees: return
+	if not first and s.tick == tree_pass_tick and view_cells == tree_pass_view: return
+	tree_pass += 1
+	tree_pass_tick = s.tick
+	tree_pass_view = view_cells
+	if view_cells.size.x <= 0 or view_cells.size.y <= 0:
+		for entity in s.entities.values():
+			if entity.get("kind", "") == "tree": _track_tree(s, entity, first)
+		return
+	var low := World.chunk_coord(view_cells.position.x, view_cells.position.y)
+	var high := World.chunk_coord(view_cells.end.x, view_cells.end.y)
+	for cy in range(low.y, high.y + 1):
+		for cx in range(low.x, high.x + 1):
+			var chunk: Dictionary = s.world.chunks.get("%d,%d" % [cx, cy], {})
+			for id in chunk.get("entities", []):
+				var entity: Dictionary = s.entities.get(str(id), {})
+				if entity.get("kind", "") != "tree": continue
+				if view_cells.has_point(Vector2i(entity.cell[0], entity.cell[1])): _track_tree(s, entity, first)
+
+func _track_tree(s: Dictionary, entity: Dictionary, first: bool) -> void:
+	var key: String = str(entity.id)
+	var logs: int = s.inventories[key].items.get("log", 0)
+	var felled: bool = entity.get("felled", false)
+	var tree: Dictionary = trees.get(key, {})
+	if tree.is_empty() or int(tree.get("pass", -1)) != tree_pass - 1:
+		tree = {"logs": logs, "fall": float(tree.get("fall", -1.0)) if not tree.is_empty() else -1.0, "hit": float(tree.get("hit", -10.0)) if not tree.is_empty() else -10.0, "felled": felled}
+	if tree.has("pass") and (bool(tree.get("felled", false)) != felled or (int(tree.get("logs", 0)) > 0) != (logs > 0) or bool(tree.get("dead", false)) != bool(entity.get("dead", false))):
+		tree_serial += 1
+	if felled and not tree.get("felled", false) and not first:
+		tree.fall = time
+		cues.append({"kind": "fall", "position": Vector2(entity.cell[0], entity.cell[1]) * CELL})
+	tree.felled = felled
+	tree.dead = entity.get("dead", false)
+	tree.autumn = entity.get("autumn", false)
+	tree.logs = logs
+	tree.pass = tree_pass
+	trees[key] = tree
 
 func tree_pose(id: int, point: Vector2) -> Dictionary:
 	var tree: Dictionary = trees.get(str(id), {})

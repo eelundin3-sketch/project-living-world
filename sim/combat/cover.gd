@@ -11,17 +11,32 @@ const HOLD_TICKS := 2          # standing still this long counts as taking cover
 
 ## True when something solid stands in `cell` (a wall, furniture, a rock or a standing tree).
 static func blocker(s: Dictionary, cell: Array) -> bool:
-	var key := World.cell_key(cell)
+	var key: String = "%d,%d" % [cell[0], cell[1]]
 	if s.world.get("building_walls", {}).has(key) or s.world.get("fixture_cells", {}).has(key) or s.world.blocked.has(key): return true
 	return tree_at(s, cell)
 
 static func tree_at(s: Dictionary, cell: Array) -> bool:
-	var coord := World.chunk_coord(int(cell[0]), int(cell[1]))
-	var chunk: Dictionary = s.world.chunks.get("%d,%d" % [coord.x, coord.y], {})
-	for id in chunk.get("entities", []):
+	for id in _trees_by_cell(s).get(Vector2i(int(cell[0]), int(cell[1])), []):
 		var entity: Dictionary = s.entities.get(str(id), {})
-		if entity.get("kind", "") == "tree" and not entity.get("felled", false) and entity.get("cell", []) == cell: return true
+		if not entity.is_empty() and not entity.get("felled", false) and entity.get("cell", []) == cell: return true
 	return false
+
+## Tree ids by cell. Derived from the state and rebuilt only when entities are added or removed
+## (trees never walk), so asking "is there a tree here?" no longer scans a whole chunk.
+static var _trees_cache: Array = []
+static func _trees_by_cell(s: Dictionary) -> Dictionary:
+	var cache: Dictionary = World.DerivedCache.slot(_trees_cache, s.entities)
+	var signature := [s.entities.size(), World.entity_serial]
+	if cache.get("signature") == signature: return cache.trees
+	var trees := {}
+	for entity in World.of_kind(s, "tree"):
+		if not entity.has("cell"): continue
+		var at := Vector2i(int(entity.cell[0]), int(entity.cell[1]))
+		if not trees.has(at): trees[at] = []
+		trees[at].append(int(entity.id))
+	cache.trees = trees
+	cache.signature = signature
+	return trees
 
 ## Directions (0 up, 1 right, 2 down, 3 left) in which a neighbouring cell blocks.
 static func cover_sides(s: Dictionary, cell: Array) -> Array:

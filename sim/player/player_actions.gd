@@ -32,13 +32,31 @@ static func target(s: Dictionary, preferred: int = 0) -> int:
 	if preferred!=s.player and s.entities.has(str(preferred)) and near(s,s.entities[str(preferred)]): return preferred
 	var found: int=0
 	var score: int=10000
-	for e in s.entities.values():
+	for id in nearby_ids(s, s.entities[str(s.player)].cell, 24):
+		var e: Dictionary=s.entities.get(str(id),{})
+		if e.is_empty() or not e.has("cell"): continue
 		if e.get("kind","")=="stash" and Inventory.used(s.inventories.get(str(e.id),{"items":{},"capacity":1,"reserved":{}}))==0: continue
 		if e.id==s.player or e.get("kind","") not in ["sawmill","bakery","forge","office","warehouse","market","market_stall","construction","stash","resident","tree","farm","ore","chest"] or not near(s,e): continue
 		var candidate: int=distance(s.entities[str(s.player)].cell,World.Fixtures.interaction_cell(s,e.id))*10
 		candidate+=0 if e.kind in ["sawmill","warehouse","market","market_stall","stash"] else (3 if e.kind=="resident" else 5)
 		if candidate<score: score=candidate; found=e.id
 	return found
+## Ids of everything that could be within reach of a cell, in ascending id order (the order of
+## the entity table, so "first best" choices are unchanged): the chunk lists around the cell,
+## which hold every entity that never walks, plus the residents, who do.
+static func nearby_ids(s: Dictionary, cell: Array, reach: int) -> Array:
+	var seen: Dictionary = {}
+	var low: Vector2i = World.chunk_coord(cell[0] - reach, cell[1] - reach)
+	var high: Vector2i = World.chunk_coord(cell[0] + reach, cell[1] + reach)
+	for cy in range(low.y, high.y + 1):
+		for cx in range(low.x, high.x + 1):
+			for id in s.world.chunks.get("%d,%d" % [cx, cy], {}).get("entities", []):
+				seen[int(id)] = true
+	for key in s.get("residents", {}): seen[int(key)] = true
+	var ids: Array = seen.keys()
+	ids.sort()
+	return ids
+
 static func hold(s: Dictionary,item: String) -> void:
 	var pc: Dictionary=s.player_control
 	if not pc.work.is_empty(): pc.notice="Finish or cancel work before changing what you hold."; return

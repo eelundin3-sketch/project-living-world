@@ -24,7 +24,9 @@ func _initialize() -> void:
 	check(Inventory.transfer(a.state, a.state.warehouse, a.state.player, "food", 5).ok, "Transfer succeeds")
 	check(Inventory.totals(a.state) == before, "Transfer conserves items")
 	check(not Inventory.transfer(a.state, a.state.warehouse, a.state.player, "food", 100).ok, "Capacity enforced")
-	check(Inventory.reserve(a.state, a.state.player, "test", 25), "Capacity reservation")
+	# The player now starts with a gun and shells, so reserve what is actually free.
+	var free_space := Inventory.available(a.state, a.state.player)
+	check(free_space >= 10 and Inventory.reserve(a.state, a.state.player, "test", free_space), "Capacity reservation")
 	check(not Inventory.transfer(a.state, a.state.warehouse, a.state.player, "food", 10).ok, "Reservation excludes another transfer")
 	print("World/inventory: %s" % ("PASS" if failures == 0 else "FAIL"))
 	quit(0 if failures == 0 else 1)

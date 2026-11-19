@@ -15,8 +15,8 @@ const ASSIST_TICKS := 30
 static func nearest_door(s: Dictionary, cell: Array) -> Dictionary:
 	var best: Dictionary = {}
 	var best_distance := NEAR
-	for entity in s.entities.values():
-		if not entity.has("footprint") or not entity.has("door"): continue
+	for entity in World.buildings(s):
+		if not entity.has("door"): continue
 		var door: Array = entity.door
 		var distance: float = Vector2(door[0] - cell[0], door[1] - cell[1]).length()
 		if distance > best_distance: continue

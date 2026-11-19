@@ -6,6 +6,7 @@ signal toggled(expanded: bool)
 const WINDOW := 240
 const WIDTH := 268.0
 const LOG_PATH := "user://perf_log.csv"
+const Probe = preload("res://sim/diagnostics/perf_probe.gd")
 var main: Node
 var expanded: bool = false
 var frames: Array[float] = []   # milliseconds per frame, newest last
@@ -19,6 +20,12 @@ var last_tick: int = -1
 var tick_rate: float = 0.0
 var tick_clock: float = 0.0
 var hover: String = ""
+var frames_since_collect: int = 0
+var sections: Array = []            # [[name, ms per frame], ...] largest first, from the last collect
+var cumulative: Dictionary = {}     # name -> microseconds, for benchmarks (reset by whoever reads it)
+var cumulative_counts: Dictionary = {}
+var cumulative_frames: int = 0
+var render_measured: bool = false
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -28,6 +35,11 @@ func _ready() -> void:
 func sample(delta: float) -> void:
 	frames.append(delta * 1000.0)
 	if frames.size() > WINDOW: frames.pop_front()
+	frames_since_collect += 1
+	cumulative_frames += 1
+	if not render_measured and is_inside_tree():
+		RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true)
+		render_measured = true
 	tick_clock += delta
 	if main != null and last_tick >= 0 and main.simulation.state.tick != last_tick: ticks_this_second += main.simulation.state.tick - last_tick
 	if main != null: last_tick = main.simulation.state.tick
@@ -46,7 +58,22 @@ func _percentile(sorted: Array, fraction: float) -> float:
 	if sorted.is_empty(): return 0.0
 	return sorted[clampi(int(float(sorted.size() - 1) * fraction), 0, sorted.size() - 1)]
 
+## Where the frame time went since the last collect: the probe's sections per rendered frame.
+func _take_sections() -> void:
+	var probe := Probe.take()
+	var per_frame: float = maxf(1.0, float(frames_since_collect))
+	frames_since_collect = 0
+	var list: Array = []
+	for key in probe.totals:
+		cumulative[key] = int(cumulative.get(key, 0)) + int(probe.totals[key])
+		list.append([key, float(probe.totals[key]) / 1000.0 / per_frame])
+	for key in probe.counters:
+		cumulative_counts[key] = int(cumulative_counts.get(key, 0)) + int(probe.counters[key])
+	list.sort_custom(func(a: Array, b: Array) -> bool: return a[1] > b[1])
+	sections = list
+
 func _collect() -> void:
+	_take_sections()
 	var sorted: Array = frames.duplicate()
 	sorted.sort()
 	var total := 0.0
@@ -59,6 +86,10 @@ func _collect() -> void:
 		"prims": int(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)), "nodes": int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT)),
 		"memory_mb": Performance.get_monitor(Performance.MEMORY_STATIC) / 1048576.0, "video_mb": Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1048576.0,
 		"process_ms": Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0}
+	if render_measured:
+		var rid := get_viewport().get_viewport_rid()
+		stats["render_cpu_ms"] = RenderingServer.viewport_get_measured_render_time_cpu(rid) + RenderingServer.get_frame_setup_time_cpu()
+		stats["render_gpu_ms"] = RenderingServer.viewport_get_measured_render_time_gpu(rid)
 	if main != null:
 		var s: Dictionary = main.simulation.state
 		var world: Node = main.get_node("WorldView")
@@ -129,7 +160,7 @@ func _draw() -> void:
 	if recording: draw_circle(tab.position + Vector2(62, 13), 4.5, Color("e0443a"))
 	if not expanded: return
 	var left := tab.position.x
-	var body := Rect2(left, 40, WIDTH, 372)
+	var body := Rect2(left, 40, WIDTH, 372 + 32 + 14.0 * mini(8, sections.size()))
 	draw_rect(body, panel)
 	draw_rect(body, edge, false, 1.0)
 	var rec: Rect2 = rects.record
@@ -160,8 +191,16 @@ func _draw() -> void:
 	y = graph.end.y + 18
 	draw_string(font, Vector2(x, y), "RENDER", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("c9bd9e")); y += 16
 	_pair(font, x, y, "draws", str(stats.draw_calls), Color("f0e4c8")); _pair(font, x + 128, y, "objects", str(stats.objects), Color("f0e4c8")); y += 16
-	_pair(font, x, y, "prims", str(stats.primitives), Color("f0e4c8")); _pair(font, x + 128, y, "nodes", str(stats.nodes), Color("f0e4c8")); y += 16
-	_pair(font, x, y, "mem MB", "%.0f" % stats.memory_mb, Color("f0e4c8")); _pair(font, x + 128, y, "video MB", "%.0f" % stats.video_mb, Color("f0e4c8")); y += 22
+	_pair(font, x, y, "prims", str(stats.prims), Color("f0e4c8")); _pair(font, x + 128, y, "nodes", str(stats.nodes), Color("f0e4c8")); y += 16
+	_pair(font, x, y, "mem MB", "%.0f" % stats.memory_mb, Color("f0e4c8")); _pair(font, x + 128, y, "video MB", "%.0f" % stats.video_mb, Color("f0e4c8")); y += 16
+	_pair(font, x, y, "rnd cpu", "%.1f" % float(stats.get("render_cpu_ms", 0.0)), Color("f0e4c8")); _pair(font, x + 128, y, "rnd gpu", "%.1f" % float(stats.get("render_gpu_ms", 0.0)), Color("f0e4c8")); y += 22
+	draw_string(font, Vector2(x, y), "COST PER FRAME (ms)", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("c9bd9e")); y += 15
+	for index in range(mini(8, sections.size())):
+		var entry: Array = sections[index]
+		draw_string(font, Vector2(x, y), str(entry[0]), HORIZONTAL_ALIGNMENT_LEFT, 180, 11, Color("a89d84"))
+		draw_string(font, Vector2(x + 186, y), "%.2f" % float(entry[1]), HORIZONTAL_ALIGNMENT_RIGHT, 60, 11, tone(float(entry[1]) * 4.0))
+		y += 14
+	y += 6
 	if stats.has("tick"):
 		draw_string(font, Vector2(x, y), "SIMULATION", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("c9bd9e")); y += 16
 		_pair(font, x, y, "tick", str(stats.tick), Color("f0e4c8")); _pair(font, x + 128, y, "ticks/s", "%.1f" % stats.tick_rate, Color("f0e4c8")); y += 16

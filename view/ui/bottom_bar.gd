@@ -47,7 +47,19 @@ func _place_drop_zones() -> void:
 		drop_zones[index].position = rects["slot%d" % index].position
 		drop_zones[index].size = rects["slot%d" % index].size
 
+var drawn_signature: int = 0
+## Repaints only when something it shows has changed: stamina, the hotbar and its counts, the
+## shotgun's load, the day and hour, the speed, or the hover. It used to repaint every tick.
 func refresh() -> void:
+	if simulation == null: return
+	var s: Dictionary = simulation.state
+	var hotbar: Dictionary = s.get("hotbar", {})
+	var signature: int = [s.get("player_health", {}).get("stamina", 100), s.get("player_health", {}).get("stamina_max", 100),
+		hotbar.hash(), s.get("inventories", {}).get(str(s.get("player", 0)), {}).get("items", {}).hash(),
+		s.get("shotgun", {}).get("equipped", false), s.get("shotgun", {}).get("loaded", 0),
+		int(s.tick) / 600, clock.paused if clock != null else false, clock.speed if clock != null else 1, hover, blocked, size].hash()
+	if signature == drawn_signature: return
+	drawn_signature = signature
 	queue_redraw()
 
 func _layout() -> Dictionary:

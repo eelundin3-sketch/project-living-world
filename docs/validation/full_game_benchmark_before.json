@@ -1,0 +1,280 @@
+{
+  "cpu": "Apple M4",
+  "engine": "4.6-stable (official)",
+  "jobs": 6292,
+  "label": "before",
+  "rows": [
+    {
+      "astar_calls": 22,
+      "astar_nodes": 7667,
+      "max_ms": 86.4,
+      "p50_ms": 0.72,
+      "p95_ms": 11.754,
+      "p999_ms": 50.972,
+      "p99_ms": 29.115,
+      "phase": "warmup",
+      "systems": {
+        "body+cover": {
+          "avg_ms": 0.531,
+          "worst_ms": 0.62
+        },
+        "brawl": {
+          "avg_ms": 0.024,
+          "worst_ms": 0.04
+        },
+        "commands": {
+          "avg_ms": 0.001,
+          "worst_ms": 0.01
+        },
+        "context": {
+          "avg_ms": 0.001,
+          "worst_ms": 0.0
+        },
+        "daily+crops": {
+          "avg_ms": 0.001,
+          "worst_ms": 0.01
+        },
+        "fear": {
+          "avg_ms": 0.005,
+          "worst_ms": 0.01
+        },
+        "gunfire": {
+          "avg_ms": 0.001,
+          "worst_ms": 0.0
+        },
+        "jobs_refresh": {
+          "avg_ms": 0.503,
+          "worst_ms": 15.89
+        },
+        "law": {
+          "avg_ms": 0.013,
+          "worst_ms": 0.02
+        },
+        "local_combat+route": {
+          "avg_ms": 0.002,
+          "worst_ms": 0.0
+        },
+        "market": {
+          "avg_ms": 0.001,
+          "worst_ms": 0.0
+        },
+        "planner": {
+          "avg_ms": 0.001,
+          "worst_ms": 0.0
+        },
+        "player+needs+shotgun": {
+          "avg_ms": 0.112,
+          "worst_ms": 1.68
+        },
+        "recipes": {
+          "avg_ms": 0.059,
+          "worst_ms": 3.39
+        },
+        "regional": {
+          "avg_ms": 0.007,
+          "worst_ms": 0.05
+        },
+        "residents": {
+          "avg_ms": 2.048,
+          "worst_ms": 79.66
+        },
+        "society": {
+          "avg_ms": 0.002,
+          "worst_ms": 0.02
+        },
+        "speech": {
+          "avg_ms": 0.001,
+          "worst_ms": 0.07
+        },
+        "weather+unarmed": {
+          "avg_ms": 0.002,
+          "worst_ms": 0.01
+        }
+      },
+      "ticks": 200,
+      "total_ms": 663.4
+    },
+    {
+      "astar_calls": 107,
+      "astar_nodes": 74141,
+      "max_ms": 2774.89,
+      "p50_ms": 0.703,
+      "p95_ms": 6.356,
+      "p999_ms": 126.577,
+      "p99_ms": 42.643,
+      "phase": "idle",
+      "systems": {
+        "body+cover": {
+          "avg_ms": 0.533,
+          "worst_ms": 0.63
+        },
+        "brawl": {
+          "avg_ms": 0.024,
+          "worst_ms": 0.04
+        },
+        "commands": {
+          "avg_ms": 0.002,
+          "worst_ms": 1.28
+        },
+        "context": {
+          "avg_ms": 0.001,
+          "worst_ms": 0.0
+        },
+        "daily+crops": {
+          "avg_ms": 0.001,
+          "worst_ms": 0.01
+        },
+        "fear": {
+          "avg_ms": 0.005,
+          "worst_ms": 0.01
+        },
+        "gunfire": {
+          "avg_ms": 0.001,
+          "worst_ms": 0.0
+        },
+        "jobs_refresh": {
+          "avg_ms": 0.449,
+          "worst_ms": 6.46
+        },
+        "law": {
+          "avg_ms": 0.013,
+          "worst_ms": 0.02
+        },
+        "local_combat+route": {
+          "avg_ms": 0.002,
+          "worst_ms": 0.01
+        },
+        "market": {
+          "avg_ms": 0.001,
+          "worst_ms": 0.1
+        },
+        "planner": {
+          "avg_ms": 0.001,
+          "worst_ms": 0.02
+        },
+        "player+needs+shotgun": {
+          "avg_ms": 0.108,
+          "worst_ms": 1.86
+        },
+        "recipes": {
+          "avg_ms": 0.159,
+          "worst_ms": 44.21
+        },
+        "regional": {
+          "avg_ms": 3.58,
+          "worst_ms": 2774.11
+        },
+        "residents": {
+          "avg_ms": 1.064,
+          "worst_ms": 120.13
+        },
+        "society": {
+          "avg_ms": 0.001,
+          "worst_ms": 0.02
+        },
+        "speech": {
+          "avg_ms": 0.001,
+          "worst_ms": 0.07
+        },
+        "weather+unarmed": {
+          "avg_ms": 0.002,
+          "worst_ms": 0.0
+        }
+      },
+      "ticks": 1500,
+      "total_ms": 8922.8
+    },
+    {
+      "astar_calls": 24,
+      "astar_nodes": 11012,
+      "max_ms": 218.48,
+      "p50_ms": 0.698,
+      "p95_ms": 6.459,
+      "p999_ms": 158.29,
+      "p99_ms": 28.279,
+      "phase": "after_shot",
+      "systems": {
+        "body+cover": {
+          "avg_ms": 0.533,
+          "worst_ms": 0.65
+        },
+        "brawl": {
+          "avg_ms": 0.024,
+          "worst_ms": 0.04
+        },
+        "commands": {
+          "avg_ms": 0.002,
+          "worst_ms": 0.08
+        },
+        "context": {
+          "avg_ms": 0.001,
+          "worst_ms": 0.0
+        },
+        "daily+crops": {
+          "avg_ms": 0.001,
+          "worst_ms": 0.01
+        },
+        "fear": {
+          "avg_ms": 0.005,
+          "worst_ms": 0.01
+        },
+        "gunfire": {
+          "avg_ms": 0.001,
+          "worst_ms": 0.0
+        },
+        "jobs_refresh": {
+          "avg_ms": 0.455,
+          "worst_ms": 5.02
+        },
+        "law": {
+          "avg_ms": 0.013,
+          "worst_ms": 0.02
+        },
+        "local_combat+route": {
+          "avg_ms": 0.002,
+          "worst_ms": 0.0
+        },
+        "market": {
+          "avg_ms": 0.001,
+          "worst_ms": 0.01
+        },
+        "planner": {
+          "avg_ms": 0.001,
+          "worst_ms": 0.01
+        },
+        "player+needs+shotgun": {
+          "avg_ms": 0.111,
+          "worst_ms": 1.92
+        },
+        "recipes": {
+          "avg_ms": 0.093,
+          "worst_ms": 4.84
+        },
+        "regional": {
+          "avg_ms": 0.008,
+          "worst_ms": 0.04
+        },
+        "residents": {
+          "avg_ms": 1.748,
+          "worst_ms": 211.15
+        },
+        "society": {
+          "avg_ms": 0.001,
+          "worst_ms": 0.02
+        },
+        "speech": {
+          "avg_ms": 0.001,
+          "worst_ms": 0.05
+        },
+        "weather+unarmed": {
+          "avg_ms": 0.001,
+          "worst_ms": 0.0
+        }
+      },
+      "ticks": 300,
+      "total_ms": 901.2
+    }
+  ],
+  "save_ms": 348.543,
+  "setup_ms": 1738.91
+}

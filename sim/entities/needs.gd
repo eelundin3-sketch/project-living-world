@@ -3,6 +3,7 @@ extends RefCounted
 ## Everything is derived from authoritative state; the HUD only reads `levels()`.
 const BodyHealth = preload("res://sim/combat/body_health.gd")
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
+const World = preload("res://sim/world/world_db.gd")
 
 ## Severity thresholds (levels 1..4) for 0-100 gauges.
 const GAUGE_STEPS: Array[int] = [35, 55, 75, 90]
@@ -45,8 +46,8 @@ static func bleeding_parts(s: Dictionary) -> int:
 
 static func indoors(s: Dictionary) -> bool:
 	var cell: Array = s.entities[str(s.player)].cell
-	for entity in s.entities.values():
-		if entity.has("footprint"):
+	for entity in World.buildings(s):
+		if true:
 			var f: Array = entity.footprint
 			if cell[0] >= f[0] and cell[1] >= f[1] and cell[0] < f[0] + f[2] and cell[1] < f[1] + f[3]: return true
 	return false
@@ -100,8 +101,8 @@ static func near_water(s: Dictionary) -> bool:
 		# The market-square well sits in front of each storehouse.
 		var store: Array = s.entities[str(town.warehouse)].cell
 		if absi(store[0] - cell[0]) <= 3 and absi(store[1] + 6 - cell[1]) <= 3: return true
-	for entity in s.entities.values():
-		if entity.get("kind", "") in ["warehouse", "home"]:
+	for entity in World.of_kind(s, "warehouse") + World.of_kind(s, "home"):
+		if true:
 			var door: Array = entity.get("door", entity.cell)
 			if absi(door[0] - cell[0]) <= 3 and absi(door[1] - cell[1]) <= 3: return true
 	return false
@@ -141,8 +142,9 @@ static func update(s: Dictionary) -> void:
 	if s.tick % 10 == 0:
 		var threat := 0
 		var cell: Array = s.entities[str(s.player)].cell
-		for entity in s.entities.values():
-			if entity.get("kind", "") == "raider":
+		for entity in World.of_kind(s, "raider"):
+			# A dead raider is no threat (bodies used to keep the player stressed).
+			if int(s.get("local_combat", {}).get("fighters", {}).get(str(entity.id), {}).get("health", 1)) > 0:
 				var distance: int = absi(entity.cell[0] - cell[0]) + absi(entity.cell[1] - cell[1])
 				if distance < 14: threat = maxi(threat, 100 - distance * 6)
 		if bleeding_parts(s) > 0: threat = maxi(threat, 45)

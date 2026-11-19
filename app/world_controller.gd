@@ -19,6 +19,7 @@ const ContextActions = preload("res://sim/player/context_actions.gd")
 const MainMenu = preload("res://view/ui/main_menu.gd")
 const KnockoutScreen = preload("res://view/ui/knockout_screen.gd")
 const Law = preload("res://sim/law/law.gd")
+const Probe = preload("res://sim/diagnostics/perf_probe.gd")
 const CELL: float = 24.0
 var player_panels: CanvasLayer
 var world_audio: Node2D
@@ -60,6 +61,8 @@ var menu_time: float = 0.0
 var intro_tween: Tween
 var last_right_press: int = -10000
 var last_right_position: Vector2 = Vector2.ZERO
+var overlay_was_live: bool = true
+var pointer_was_shown: bool = true
 
 func _ready() -> void:
 	SaveMigration.migrate()   # saves from before the game was renamed come across once
@@ -210,8 +213,10 @@ func _process(delta: float) -> void:
 		simulation.submit("travel_run", {"run": Input.is_key_pressed(KEY_SHIFT)})
 	var started := Time.get_ticks_usec()
 	var advanced: int = clock.advance(delta, simulation)
+	Probe.add("f:simulation", Time.get_ticks_usec() - started)
+	Probe.count("ticks", advanced)
 	if advanced > 0:
-		tick_ms = float(Time.get_ticks_usec() - started) / 1000.0 / advanced
+		tick_ms = float(clock.worst_step_usec) / 1000.0   # the slowest tick this frame: spikes show
 	var shotgun_equipped: bool = simulation.state.get("shotgun", {}).get("equipped", false)
 	$WorldView.motion.player_aiming = (aiming or (pointer_held and not shotgun_equipped)) and not player_panels.visible and not map_mode
 	$WorldView.motion.player_ready = pointer_held and not player_panels.visible
@@ -223,8 +228,13 @@ func _process(delta: float) -> void:
 	$WorldView.overlay_labels = map_mode
 	map_overlay.zoom = $ObserverCamera.zoom.x
 	map_overlay.player_world = $WorldView.motion.actors.get(str(simulation.state.player), {}).get("position", Vector2.ZERO)
-	map_overlay.queue_redraw()
+	# The overlay draws only on the map or with a waypoint set; otherwise one last clearing redraw.
+	var overlay_live: bool = map_mode or map_overlay.waypoint != Vector2.INF
+	if overlay_live or overlay_was_live: map_overlay.queue_redraw()
+	overlay_was_live = overlay_live
+	var view_started := Time.get_ticks_usec()
 	$WorldView.animate(delta, clock.paused, clock.speed)
+	Probe.add("f:animate", Time.get_ticks_usec() - view_started)
 	if follow_player:
 		var cell: Array = simulation.state.entities[str(simulation.state.player)].cell
 		$ObserverCamera.position = $WorldView.motion.actors.get(str(simulation.state.player), {}).get("position", Vector2(cell[0], cell[1]) * CELL)
@@ -238,7 +248,9 @@ func _process(delta: float) -> void:
 	knockout.update_state(simulation.state, get_viewport().get_canvas_transform() * (body_world + Vector2(0, -6)), delta)
 	world_audio.present($WorldView.motion.cues, simulation.state, $ObserverCamera.position, clock.paused, delta)
 	if simulation.state.tick != last_draw_tick:
+		var refresh_started := Time.get_ticks_usec()
 		refresh_view()
+		Probe.add("f:refresh_ui", Time.get_ticks_usec() - refresh_started)
 	if not follow_player:
 		$WorldView.queue_redraw()
 
@@ -250,13 +262,24 @@ func refresh_view() -> void:
 	if $WorldView.background != null and selected_id != last_selected_id:
 		last_selected_id = selected_id
 		$WorldView.background.queue_redraw()
+	var t := Time.get_ticks_usec()
 	$DebugHUD.refresh(simulation, clock, selected_id, tick_ms)
+	t = _lap("u:debug_hud", t)
 	player_panels.refresh()
+	t = _lap("u:panels", t)
 	if moodles != null: moodles.refresh()
+	t = _lap("u:moodles", t)
 	if bottom_bar != null:
 		bottom_bar.blocked = player_panels.visible
 		bottom_bar.refresh()
+	t = _lap("u:bottom_bar", t)
 	if not map_mode: $DebugHUD.notice.text = PlayerActions.prompt(simulation.state, selected_id)
+	_lap("u:prompt", t)
+
+func _lap(name: String, since: int) -> int:
+	var now := Time.get_ticks_usec()
+	Probe.add(name, now - since)
+	return now
 
 func handle_action(kind: String) -> void:
 	if kind.begins_with("buy:") or kind.begins_with("sell:"):
@@ -547,8 +570,10 @@ func _update_pointer() -> void:
 	action_pointer.active = show
 	if not show:
 		if Input.mouse_mode != Input.MOUSE_MODE_VISIBLE: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-		action_pointer.queue_redraw()
+		if pointer_was_shown: action_pointer.queue_redraw()   # one redraw to clear it
+		pointer_was_shown = false
 		return
+	pointer_was_shown = true
 	if Input.mouse_mode != Input.MOUSE_MODE_HIDDEN: Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
 	var player_pos: Vector2 = $WorldView.motion.actors.get(str(s.player), {}).get("position", Vector2.ZERO)
 	var transform: Transform2D = get_viewport().get_canvas_transform()

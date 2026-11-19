@@ -30,6 +30,7 @@ func run() -> void:
 		if control is Button: speed_labels.append(control.text)
 	check(hud.pause_button.text == "Resume" and speed_labels.has("1×") and speed_labels.has("2×") and speed_labels.has("3×"), "Top-left clock exposes resume/pause, 1x, 2x and 3x")
 	main.handle_action("pause")
+	main.clock.budget_usec = 1 << 30   # the per-frame time cap must not cut this check short on a slow machine
 	main.clock.advance(0.1, main.simulation)
 	check(main.simulation.state.tick >= 3, "3x simulation ticks")
 	main.save_path = OS.get_temp_dir().path_join("solo-ui-save.dat")

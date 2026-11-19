@@ -1,5 +1,6 @@
 extends RefCounted
 ## Unarmed actions and impacts are simulation state, independent of rendering.
+const Spatial = preload("res://sim/world/spatial.gd")
 const World = preload("res://sim/world/world_db.gd")
 const Jobs = preload("res://sim/jobs/job_board.gd")
 const Health = preload("res://sim/combat/body_health.gd")
@@ -108,7 +109,8 @@ static func _resolve(sim: RefCounted, action: Dictionary) -> void:
 	var direction := Vector2(action.direction[0], action.direction[1]).normalized()
 	var best: int = 0
 	var best_distance: float = 100.0
-	for entity in s.entities.values():
+	for actor_key in Spatial.actor_keys(s):
+		var entity: Dictionary = s.entities.get(actor_key, {})
 		if entity.get("kind", "") not in ["resident", "raider"] or not entity.has("cell"): continue
 		var npc: Dictionary = s.get("residents", {}).get(str(entity.id), {})
 		var fighter: Dictionary = s.get("local_combat", {}).get("fighters", {}).get(str(entity.id), {})
@@ -145,8 +147,10 @@ static func _resolve(sim: RefCounted, action: Dictionary) -> void:
 		var step: Array = [signi(action.direction[0]), 0] if absi(action.direction[0]) >= absi(action.direction[1]) else [0, signi(action.direction[1])]
 		var destination: Array = [victim.cell[0] + step[0], victim.cell[1] + step[1]]
 		var occupied: bool = false
-		for other in s.entities.values():
-			if other.get("kind", "") in ["player", "resident", "raider", "caravan"] and other.get("cell", []) == destination: occupied = true; break
+		occupied = not Spatial.actors_at(s, destination).is_empty()
+		if not occupied:
+			for other in s.entities.values():
+				if other.get("kind", "") == "caravan" and other.get("cell", []) == destination: occupied = true; break
 		if not occupied and World.walkable(s, destination): World.move_record(s, victim, destination)
 		if not fighter.is_empty(): fighter.path = []; fighter.path_revision = -1
 	if not fighter.is_empty(): fighter.hit_tick = s.tick
