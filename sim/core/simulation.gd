@@ -222,8 +222,9 @@ func _can_run_route() -> bool:
 	return state.has("player_control") and state.has("player_health") and state.player_control.get("travel_run", false) and _stamina_allows_run() and BodyHealth.move_delay(state) == 1 and Limbs.mode(state, state.player) == "walk" and not Brawl.player_down(state)
 
 func _drain(queue_name: String, is_command: bool) -> void:
-	state[queue_name].sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		return a.due < b.due or (a.due == b.due and a.id < b.id))
+	if state[queue_name].size() > 1:   # an empty or single-entry queue is already in order
+		state[queue_name].sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			return a.due < b.due or (a.due == b.due and a.id < b.id))
 	while not state[queue_name].is_empty() and state[queue_name][0].due <= state.tick:
 		var entry: Dictionary = state[queue_name].pop_front()
 		if is_command:
