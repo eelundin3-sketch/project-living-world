@@ -5,6 +5,9 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: source
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4

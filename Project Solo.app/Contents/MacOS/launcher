@@ -1,8 +1,9 @@
 #!/bin/sh
-# Project Solo launcher: runs the game from this folder with Godot 4.6.
-# It lives at the top of the downloaded project folder, finds Godot 4.6 (never a newer version, which
-# can upgrade the project files), and starts the game from the source next to it, so it is never stale.
+# Project Solo launcher: runs the game from this download with Godot 4.6.
+# It sits at the very top of the downloaded folder, finds Godot 4.6 (never a newer version, which
+# can upgrade the project files), and starts the game from the "source" folder next to it, so it is never stale.
 HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
+PROJECT="$HERE/source"
 is_46() { [ -x "$1" ] && "$1" --version 2>/dev/null | grep -q '^4\.6\.'; }
 find_godot() {
   if [ -n "$GODOT_BIN" ]; then is_46 "$GODOT_BIN" && echo "$GODOT_BIN" && return 0; fi
@@ -23,6 +24,10 @@ if answer is "Open the download page" then open location "https://godotengine.or
 APPLESCRIPT
   exit 1
 }
-cd "$HERE" || exit 1
-[ -n "$SOLO_DRY_RUN" ] && { echo "would run: $GODOT --path $HERE"; exit 0; }
-exec "$GODOT" --path "$HERE"
+[ -f "$PROJECT/project.godot" ] || {
+  osascript -e 'display dialog "Project Solo could not find its game files. Keep Project Solo.app in the same folder as the \"source\" folder it came with (the downloaded Project Solo folder), then open it again." buttons {"OK"} default button "OK" with title "Project Solo" with icon caution' 2>/dev/null
+  exit 1
+}
+cd "$PROJECT" || exit 1
+[ -n "$SOLO_DRY_RUN" ] && { echo "would run: $GODOT --path $PROJECT"; exit 0; }
+exec "$GODOT" --path "$PROJECT"
