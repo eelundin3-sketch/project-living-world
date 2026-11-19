@@ -212,6 +212,8 @@ static func haggle(sim: RefCounted, target: int) -> void:
 
 ## What a villager says when asked for news: where goods sell dear, and any trouble about.
 static func news(s: Dictionary, npc: Dictionary) -> String:
+	var heard: String = load("res://sim/entities/gossip.gd").tell(s, npc)   # real gossip first
+	if not heard.is_empty(): return heard
 	var here: int = int(npc.settlement)
 	var best: String = ""
 	var best_gap := 2

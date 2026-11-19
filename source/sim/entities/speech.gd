@@ -65,6 +65,7 @@ static func update(sim: RefCounted) -> void:
 			if absi(cell_a[0] - cell_b[0]) > 4 or absi(cell_a[1] - cell_b[1]) > 4: continue
 			say(sim, a.id, "smalltalk")
 			say(sim, b.id, "reply")
+			load("res://sim/entities/gossip.gd").chat(sim, a, b)   # and they pass on the news
 			a.talk_until = s.tick + 900
 			b.talk_until = s.tick + 900
 			spoke_in[a.settlement] = true

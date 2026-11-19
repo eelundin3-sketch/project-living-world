@@ -36,6 +36,7 @@ static func record(s: Dictionary, kind: String, town: int, actor: int, victim: i
 	for key in extra: entry[key] = extra[key]
 	all.append(entry)
 	while all.size() > MAX: all.pop_front()
+	load("res://sim/entities/gossip.gd").witnessed(s, entry)   # who saw it knows it first
 	return entry
 
 ## Entries since `since_tick`, optionally only in one town and of some kinds, oldest first.
