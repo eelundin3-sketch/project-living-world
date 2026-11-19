@@ -927,6 +927,7 @@ func _draw_entity(s: Dictionary, entity: Dictionary, p: Vector2, canvas: Node2D 
 			var rect := Rect2(Vector2(footprint.position) * CELL - Vector2.ONE * CELL / 2, Vector2(footprint.size) * CELL)
 			MapArt.construction(canvas, entity, site, rect)
 		"caravan": MapArt.cart(canvas, p)
+		"signpost": MapArt.signpost(canvas, p)
 		"ore":
 			if entity.get("big", false):
 				var rr: Array = entity.rock_rect

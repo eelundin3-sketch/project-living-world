@@ -36,6 +36,11 @@ static func initialize(sim: RefCounted) -> void:
 	Market.add_market(s, 2)
 	Dustvale.install(sim)
 	s.routes = {"1": {"id": 1, "from": 1, "to": 2, "blocked": false, "risk": 0, "guards": 0, "travel_ticks": 1500}}
+	# The roads to Dustvale (planned in road_planner.gd) are routes too, so a closure or danger can
+	# apply to any of them.
+	if s.settlements.has("3"):
+		s.routes["2"] = {"id": 2, "from": 1, "to": 3, "blocked": false, "risk": 0, "guards": 0, "travel_ticks": 1700}
+		s.routes["3"] = {"id": 3, "from": 2, "to": 3, "blocked": false, "risk": 0, "guards": 0, "travel_ticks": 1900}
 	# Trade between the towns is carried by a villager who takes up trading when prices make it
 	# worth the walk (see traders.gd); there is no abstract cart.
 	s.caravans = {}
@@ -143,3 +148,9 @@ static func update(sim: RefCounted) -> void:
 		elif s.tick % 300 == 0:
 			_sell_cargo(sim, caravan)
 			dispatch(sim, caravan)
+
+## The route record between two towns (either way round); older saves only have route 1.
+static func route_between(s: Dictionary, a: int, b: int) -> int:
+	for route in s.get("routes", {}).values():
+		if (int(route.from) == a and int(route.to) == b) or (int(route.from) == b and int(route.to) == a): return int(route.id)
+	return 1

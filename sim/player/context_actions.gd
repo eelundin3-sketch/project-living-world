@@ -184,6 +184,8 @@ static func describe(s: Dictionary, id: int, part: String = "") -> String:
 			return "%s: %d iron ore left." % [e.name, int(_items(s, id).get("ore", 0))]
 		"farm":
 			return "%s." % e.name
+		"signpost":
+			return "A signpost: %s." % e.get("directions", "")
 	return String(e.name)
 
 ## Adjacent cells from which `e` (or the clicked piece of furniture in it) can be used.

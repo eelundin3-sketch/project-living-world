@@ -319,6 +319,20 @@ static func toilet(c: Node2D, p: Vector2) -> void:
 	Props.ellipse(c, p + Vector2(0, -6), Vector2(5.6, 4.2), Color("85888a"), 0.0, Color("5b5e60"), 0.5)
 	c.draw_line(p + Vector2(5, -19), p + Vector2(8, -23), Color("8e949a"), 1.2, true)
 
+## A signpost at a fork in the road: a weathered post with three pointing boards.
+static func signpost(c: Node2D, p: Vector2) -> void:
+	Props.ellipse(c, p + Vector2(0, 4), Vector2(9, 3.2), Color(0, 0, 0, 0.2), 0, INK, 0)
+	Character.limb(c, p + Vector2(0, 3), p + Vector2(0, -34), Color("6e5338"), 3.2)
+	for board in [[Vector2(1, -31), 1.0, Color("a98a5c")], [Vector2(-1, -25), -1.0, Color("9b7c50")], [Vector2(1, -19), 1.0, Color("a3845a")]]:
+		var at: Vector2 = board[0] + p
+		var dir: float = board[1]
+		var tip := at + Vector2(dir * 17, 0)
+		var points := PackedVector2Array([at + Vector2(0, -2.6), tip + Vector2(-dir * 3, -2.6), tip, tip + Vector2(-dir * 3, 2.6), at + Vector2(0, 2.6)])
+		c.draw_colored_polygon(points, board[2])
+		c.draw_polyline(points + PackedVector2Array([points[0]]), INK, 0.8, true)
+		c.draw_line(at + Vector2(dir * 3, 0), tip + Vector2(-dir * 5, 0), Color(0.25, 0.18, 0.11, 0.55), 0.7)
+	Props.nail(c, p + Vector2(0, -31), 0.9)
+
 static func cart(c: Node2D, p: Vector2) -> void:
 	Props.ellipse(c, p + Vector2(1, 9), Vector2(27, 9), Color(0, 0, 0, 0.17), 0, INK, 0)
 	for x in [-21, 21]:

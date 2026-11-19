@@ -11,10 +11,11 @@ extends RefCounted
 ##   reach  how many cells either side of the line stay clear of buildings and trees
 ## world.layout[town] = {"archetype", "centre", "street_y", "extent": [x_lo, x_hi]}
 const World = preload("res://sim/world/world_db.gd")
+const RoadPlanner = preload("res://sim/world/road_planner.gd")
 const ARCHETYPES: Array[String] = ["crossroads", "winding", "ring", "hamlets"]
-const VERSION := 1
+const VERSION := 2   # 2: link roads planned around obstacles, with junctions
 const LOT_SPACING := 5.0
-const MAX_LOT_DISTANCE := 62.0   # how far from a town's square its lots reach
+const MAX_LOT_DISTANCE := 80.0   # how far from a town's square its lots reach (out along the roads leaving town)
 
 # --- small helpers ----------------------------------------------------------------------------
 
@@ -86,25 +87,11 @@ static func generate(sim: RefCounted) -> void:
 		layout[str(town)] = {"archetype": pool[index % pool.size()], "centre": [store[0], store[1]], "street_y": street_y, "extent": extent}
 		_segment(segments, "main", town, _curve(Vector2(extent[0], street_y), Vector2(extent[1], street_y), 0.5, 4.0, 0.7, 4.0), 17.0, 4.0)
 		_lanes(sim, segments, town, str(layout[str(town)].archetype), store, extent, street_y)
-	# Roads between the towns.
-	if layout.has("1") and layout.has("2"):
-		var a: Dictionary = layout["1"]
-		var b: Dictionary = layout["2"]
-		_segment(segments, "link", 1, _curve(Vector2(a.extent[1], a.street_y), Vector2(b.extent[0], b.street_y), _rf(sim, "town_layout:links", 5.0, 9.0), _rf(sim, "town_layout:links", 1.6, 3.4), _rf(sim, "town_layout:links", 0.0, 6.0)), 17.0, 4.0)
-	if layout.has("1") and layout.has("3"):
-		var a: Dictionary = layout["1"]
-		var c: Dictionary = layout["3"]
-		var from: Vector2 = Vector2(float(a.centre[0]) + _rf(sim, "town_layout:links", 2.0, 14.0), float(a.street_y))
-		var to: Vector2 = Vector2(float(c.extent[0]), float(c.street_y))
-		_segment(segments, "link", 1, _curve(from, to, _rf(sim, "town_layout:links", 5.0, 10.0), _rf(sim, "town_layout:links", 1.4, 3.0), _rf(sim, "town_layout:links", 0.0, 6.0)), 16.0, 4.0)
-	if layout.has("2") and layout.has("3"):
-		var b: Dictionary = layout["2"]
-		var c: Dictionary = layout["3"]
-		var from: Vector2 = Vector2(float(b.extent[0]), float(b.street_y))
-		var to: Vector2 = Vector2(float(c.extent[1]), float(c.street_y))
-		_segment(segments, "link", 2, _curve(from, to, _rf(sim, "town_layout:links", 6.0, 11.0), _rf(sim, "town_layout:links", 1.4, 3.0), _rf(sim, "town_layout:links", 0.0, 6.0)), 16.0, 4.0)
-	s.world.roads = {"version": VERSION, "segments": segments}
+	# Roads between the towns, planned around what is in the way (road_planner.gd).
+	var junctions: Array = RoadPlanner.plan(sim, segments, layout)
+	s.world.roads = {"version": VERSION, "segments": segments, "junctions": junctions}
 	s.world.layout = layout
+	RoadPlanner.place_signposts(sim, junctions)
 
 ## The lanes that give a town its character, all leaving the main street.
 static func _lanes(sim: RefCounted, segments: Array, town: int, archetype: String, store: Array, extent: Array, street_y: int) -> void:
