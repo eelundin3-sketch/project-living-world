@@ -466,13 +466,14 @@ func restore(snapshot_data: Dictionary) -> void:
 	if state.has("hotbar") and int(state.hotbar.get("active", -1)) < 0: state.hotbar.active = 0
 	Brawl.initialize(state)
 	Crops.initialize(state) if state.has("world") else null
-	if state.has("households"): Chests.ensure_all(self)
 	World.upgrade_layouts(state)
 	World.upgrade_architecture(state)
 	World.upgrade_house_layouts(state)
 	World.upgrade_building_scale(state)
 	World.upgrade_forests(self)
 	World.Fixtures.upgrade(state)
+	# After the layout upgrades, which may rebuild furniture: re-links the existing chests.
+	if state.has("households"): Chests.ensure_all(self)
 	if state.has("routes"):
 		BodyHealth.initialize(state)
 		PlayerActions.initialize(state)

@@ -7,17 +7,41 @@ const Outfits = preload("res://sim/entities/outfits.gd")
 
 static func ensure_all(sim: RefCounted) -> void:
 	var buildings: Array = []
+	var unlinked := false
 	for entity in sim.state.entities.values():
-		if entity.has("furniture"): buildings.append(entity)
-	for building in buildings: ensure(sim, building)
+		if not entity.has("furniture"): continue
+		buildings.append(entity)
+		for item in entity.furniture:
+			if item.kind == "chest" and not item.has("chest_id"): unlinked = true
+	if not unlinked: return
+	# A layout upgrade rebuilds a building's furniture and drops the links to its chests. Those
+	# chests (and what is in them) still exist: hand them back to the new chest pieces, in id
+	# order, instead of making new ones, so loading the same save twice changes nothing.
+	var linked: Dictionary = {}
+	for building in buildings:
+		for item in building.furniture:
+			if item.has("chest_id"): linked[int(item.chest_id)] = true
+	var spare: Dictionary = {}
+	for entity in sim.state.entities.values():
+		if entity.kind == "chest" and entity.has("building") and not linked.has(int(entity.id)):
+			if not spare.has(int(entity.building)): spare[int(entity.building)] = []
+			spare[int(entity.building)].append(int(entity.id))
+	for list in spare.values(): list.sort()
+	for building in buildings: ensure(sim, building, spare.get(int(building.id), []))
 
-static func ensure(sim: RefCounted, building: Dictionary) -> void:
+static func ensure(sim: RefCounted, building: Dictionary, spare: Array = []) -> void:
 	var s: Dictionary = sim.state
 	var index := 0
 	for item in building.get("furniture", []):
 		index += 1
 		if item.kind != "chest" or item.has("chest_id"): continue
 		var rect: Array = item.rect
+		if not spare.is_empty():
+			var kept: Dictionary = s.entities[str(spare.pop_front())]
+			World.move_record(s, kept, [rect[0], rect[1]])
+			kept.rock_rect = rect.duplicate()
+			item.chest_id = int(kept.id)
+			continue
 		var id: int = World.add_entity(sim, "chest", "Chest", [rect[0], rect[1]], int(building.get("settlement", 0)))
 		var chest: Dictionary = s.entities[str(id)]
 		chest.rock_rect = rect.duplicate()   # reach is measured from the whole chest, not one cell
