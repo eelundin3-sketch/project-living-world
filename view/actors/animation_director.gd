@@ -93,6 +93,11 @@ static func action_for(s: Dictionary, entity: Dictionary, aim_held: bool = false
 			"pursue": result.action = "combat_idle"
 			_: result.action = "idle"
 		return result
+	# The player asleep in a bed.
+	if entity.kind == "player" and not s.get("player_control", {}).get("sleeping", {}).is_empty():
+		result.action = "rest"
+		result.rest_rot = int(s.player_control.sleeping.get("rot", 0))
+		return result
 	# The player under arrest (hands cuffed behind the back) or giving up (hands raised).
 	if entity.kind == "player" and bool(s.get("player_control", {}).get("restrained", false)):
 		result.action = "cuffed"
@@ -241,6 +246,7 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 		var target := Vector2(entity.cell[0], entity.cell[1]) * CELL
 		# A sleeper lies in the middle of the bed's mattress, not on the cell the simulation uses.
 		var sleeping_in: Dictionary = s.get("residents", {}).get(key, {}).get("sleeping", {})
+		if entity.kind == "player": sleeping_in = s.get("player_control", {}).get("sleeping", {})
 		var old_pose: Dictionary = actors.get(key, {})
 		if not sleeping_in.get("bed_rect", []).is_empty():
 			target = bed_center(sleeping_in.bed_rect, int(sleeping_in.rot))

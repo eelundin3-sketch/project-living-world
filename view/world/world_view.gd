@@ -1248,7 +1248,12 @@ func _name_tag(canvas: Node2D, p: Vector2, label: String, color: Color) -> void:
 	canvas.draw_string(font, origin + Vector2(0.5, 0.5), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(0, 0, 0, 0.8))
 	canvas.draw_string(font, origin, label, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, color)
 
+## The furniture or fixture the last pick() landed on inside a building ("furniture:<i>",
+## "fixture:<i>"), or "" when it picked a thing in its own right.
+var last_pick_part: String = ""
+
 func pick(world_position: Vector2) -> int:
+	last_pick_part = ""
 	var best: int = 0
 	var distance: float = 26.0
 	for entity in simulation.state.entities.values():
@@ -1260,12 +1265,29 @@ func pick(world_position: Vector2) -> int:
 			distance = candidate
 			best = entity.id
 	if best == 0:
-		for entity in simulation.state.entities.values():
-			if entity.has("footprint"):
-				var rect := World.building_rect(entity)
-				if Rect2(Vector2(rect.position) * CELL - Vector2.ONE * CELL / 2, Vector2(rect.size) * CELL).has_point(world_position):
-					return entity.id
+		# Inside a building only the furniture and fixtures answer a click; bare floor is nothing.
+		return pick_part(world_position)
 	return best
+
+## The building whose furniture or fixture is under this point (setting last_pick_part), or 0.
+## Tall furniture is drawn reaching up into the cell above, so that cell counts too; a chest
+## answers as its own chest.
+func pick_part(world_position: Vector2) -> int:
+	var s: Dictionary = simulation.state
+	var cell := Vector2i(roundi(world_position.x / CELL), roundi(world_position.y / CELL))
+	for probe in [cell, cell + Vector2i(0, 1)]:
+		var owner_id: int = int(s.world.get("fixture_cells", {}).get("%d,%d" % [probe.x, probe.y], 0))
+		var building: Dictionary = s.entities.get(str(owner_id), {})
+		if building.is_empty(): continue
+		for list_name in ["fixtures", "furniture"]:
+			var items: Array = building.get(list_name, [])
+			for index in range(items.size()):
+				var r: Array = items[index].rect
+				if probe.x < r[0] or probe.y < r[1] or probe.x >= r[0] + r[2] or probe.y >= r[1] + r[3]: continue
+				if items[index].has("chest_id") and s.entities.has(str(items[index].chest_id)): return int(items[index].chest_id)
+				last_pick_part = ("fixture:%d" if list_name == "fixtures" else "furniture:%d") % index
+				return owner_id
+	return 0
 
 func tree_inside_building(cell: Array) -> bool:
 	for rect in building_rects:

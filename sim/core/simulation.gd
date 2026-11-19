@@ -42,6 +42,10 @@ const Weather = preload("res://sim/world/weather.gd")
 const LocalCombat = preload("res://sim/combat/local_combat.gd")
 const Unarmed = preload("res://sim/combat/unarmed.gd")
 const Probe = preload("res://sim/diagnostics/perf_probe.gd")
+const Sleep = preload("res://sim/player/sleep.gd")
+## Commands that are the player doing something: refused while down or restrained, and they wake
+## a sleeping player.
+const PLAYER_ACTS := ["move_player", "player_strike", "interact", "shotgun_fire", "hotbar_use", "eat", "drink", "treat_body", "context_action", "walk_to", "travel", "loot_take", "loot_all", "loot_coins", "loot_strip", "loot_give", "wear_item", "take_off", "hold_item", "hotbar_assign", "crouch_toggle", "travel_run", "shotgun_toggle", "shotgun_reload", "person_trade", "take_item", "surrender"]
 var state: Dictionary
 
 func _init(seed_value: int = 417) -> void:
@@ -197,6 +201,7 @@ func step() -> void:
 		Probe.mark("body+cover")
 		PlayerActions.update(self)
 		Needs.update(state)
+		Sleep.update(state)
 		Hotbar.update(state)
 		Shotgun.update(self)
 		Probe.mark("player+needs+shotgun")
@@ -234,8 +239,13 @@ func _drain(queue_name: String, is_command: bool) -> void:
 
 func apply_command(entry: Dictionary) -> void:
 	# Someone lying on the ground cannot act until they are back on their feet.
-	if state.has("brawl") and entry.kind in ["move_player", "player_strike", "interact", "shotgun_fire", "hotbar_use", "eat", "drink", "treat_body", "context_action", "walk_to", "loot_take", "loot_all", "loot_coins", "loot_strip", "loot_give", "wear_item", "take_off", "hold_item", "hotbar_assign", "crouch_toggle", "travel_run", "shotgun_toggle", "shotgun_reload", "person_trade", "take_item", "surrender"] and (Brawl.player_down(state) or Law.restrained(state)):
+	if state.has("brawl") and entry.kind in PLAYER_ACTS and (Brawl.player_down(state) or Law.restrained(state)):
 		return
+	# Asleep: any action (or a key press, sent as "wake") gets the player up; a step only wakes them.
+	if Sleep.asleep(state) and (entry.kind == "wake" or (entry.kind in PLAYER_ACTS and entry.kind != "travel_run")):
+		Sleep.wake(state, "You get up.")
+		if entry.kind in ["wake", "move_player"]: return
+	if entry.kind == "wake": return
 	var limb_problem: String = Limbs.action_problem(state, entry.kind)
 	if not limb_problem.is_empty() and state.has("player_control"):
 		state.player_control.notice = limb_problem
@@ -304,7 +314,7 @@ func apply_command(entry: Dictionary) -> void:
 				state.player_control.notice = "You cannot find a way there."
 		return
 	if entry.kind == "context_action" and state.has("player_control"):
-		ContextActions.request(self, int(entry.payload.get("target", 0)), str(entry.payload.get("action", "")))
+		ContextActions.request(self, int(entry.payload.get("target", 0)), str(entry.payload.get("action", "")), str(entry.payload.get("part", "")))
 		return
 	if entry.kind=="surrender" and state.has("player_control"):
 		Law.surrender(state)

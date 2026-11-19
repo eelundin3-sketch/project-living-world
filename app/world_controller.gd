@@ -55,6 +55,8 @@ var context_menu: Control
 var menu: CanvasLayer
 var knockout: CanvasLayer
 var skipping: bool = false
+const SLEEP_SPEED := 8
+var context_part: String = ""   # the furniture or fixture the open menu is about
 var skip_previous_speed: int = 1
 var menu_active: bool = false
 var menu_time: float = 0.0
@@ -172,12 +174,12 @@ func _start_from_menu() -> void:
 	intro_tween.tween_callback(_finish_intro)
 
 ## Knocked out: run time at top speed until the player comes round, then back to the usual speed.
-func _skip_ahead() -> void:
+func _skip_ahead(fast: int = 40) -> void:
 	if skipping: return
 	skipping = true
 	skip_previous_speed = clock.speed
 	clock.paused = false
-	clock.speed = 40
+	clock.speed = fast
 
 func _finish_intro() -> void:
 	menu_active = false
@@ -240,7 +242,10 @@ func _process(delta: float) -> void:
 		$ObserverCamera.position = $WorldView.motion.actors.get(str(simulation.state.player), {}).get("position", Vector2(cell[0], cell[1]) * CELL)
 	_update_camera_kick(delta)
 	var knock_now: Dictionary = simulation.state.player_control.get("knock", {})
-	var waiting_out: bool = (not knock_now.is_empty() and str(knock_now.get("kind", "")) == "ko") or Law.in_custody(simulation.state)
+	# Asleep in a bed: time runs fast (SLEEP_SPEED) until the player wakes.
+	var sleeping_now: bool = not simulation.state.player_control.get("sleeping", {}).is_empty()
+	if sleeping_now and not skipping: _skip_ahead(SLEEP_SPEED)
+	var waiting_out: bool = (not knock_now.is_empty() and str(knock_now.get("kind", "")) == "ko") or Law.in_custody(simulation.state) or sleeping_now
 	if skipping and (not waiting_out or simulation.state.player_control.get("dead", false)):
 		skipping = false
 		clock.speed = skip_previous_speed
@@ -419,6 +424,10 @@ func _unhandled_input(event: InputEvent) -> void:
 				_open_context_menu(selected_id, event.position)
 	if event is InputEventMouseButton:
 		$WorldView.queue_redraw()
+	if event is InputEventKey and event.pressed and not event.echo and not simulation.state.get("player_control", {}).get("sleeping", {}).is_empty():
+		simulation.submit("wake")   # any key gets the player out of bed
+		get_viewport().set_input_as_handled()
+		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.physical_keycode:
 			KEY_I: handle_action("inventory")
@@ -475,19 +484,20 @@ func _open_context_menu(id: int, at: Vector2) -> void:
 		context_menu.close()
 		return
 	var s: Dictionary = simulation.state
-	var options: Array = ContextActions.options(s, id)
+	context_part = $WorldView.last_pick_part
+	var options: Array = ContextActions.options(s, id, context_part)
 	if options.is_empty():
 		context_menu.close()
 		return
-	var entity: Dictionary = s.entities[str(id)]
-	context_menu.open(id, entity.name, ContextActions.subtitle(s, id), options, at)
+	var subtitle: String = ContextActions.subtitle(s, id) if context_part.is_empty() else String(s.entities[str(id)].name)
+	context_menu.open(id, ContextActions.title(s, id, context_part), subtitle, options, at)
 	pointer_held = false
 
 func _on_context_chosen(target: int, action: String) -> void:
 	if action in ["inventory", "health"]:
 		handle_action(action)
 		return
-	simulation.submit("context_action", {"target": target, "action": action})
+	simulation.submit("context_action", {"target": target, "action": action, "part": context_part})
 
 func toggle_map() -> void:
 	var camera: Camera2D = $ObserverCamera
