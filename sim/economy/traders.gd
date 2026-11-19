@@ -10,6 +10,7 @@ extends RefCounted
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const Market = preload("res://sim/economy/market.gd")
 const Nav = preload("res://sim/movement/navigation.gd")
+const Pace = preload("res://sim/movement/pace.gd")
 const World = preload("res://sim/world/world_db.gd")
 const GOODS: Array[String] = ["log", "food", "plank"]
 const LOAD := 20
@@ -75,6 +76,14 @@ static func away(s: Dictionary, npc: Dictionary) -> bool:
 	var trip: Dictionary = s.get("caravans", {}).get(str(npc.id), {})
 	return not trip.is_empty() and (trip.in_transit or int(trip.town) != int(trip.home))
 
+## How far along its path a travelling trader is now (older saves have no schedule: a cell every
+## TICKS_PER_CELL).
+static func path_index(s: Dictionary, trip: Dictionary) -> int:
+	var elapsed: int = s.tick - int(trip.depart_tick)
+	var eta: Array = trip.get("eta", [])
+	if eta.size() != trip.path.size(): return mini(elapsed / TICKS_PER_CELL, trip.path.size() - 1)
+	return clampi(eta.bsearch(elapsed, false) - 1, 0, trip.path.size() - 1)
+
 ## Starts a walk from the trader's current town to `to`, carrying `item` (or nothing).
 static func _set_out(sim: RefCounted, trip: Dictionary, to: int, item: String, quantity: int) -> bool:
 	var s: Dictionary = sim.state
@@ -82,9 +91,12 @@ static func _set_out(sim: RefCounted, trip: Dictionary, to: int, item: String, q
 	var goal: Array = s.entities[str(s.settlements[str(to)].warehouse)].cell
 	var start: Array = [from[0], from[1] + 2]
 	var finish: Array = [goal[0], goal[1] + 2]
-	var route := Nav.request_path(s, start, finish)
+	var route := Nav.request_travel_path(s, start, finish)   # along the roads
 	if not route.ok: return false
 	trip.path = [start] + route.path
+	# When the trader reaches each cell: a little quicker on the roads (pace.gd).
+	trip.eta = Pace.schedule(s, trip.path, TICKS_PER_CELL)
+	trip.route = load("res://sim/economy/regional_trade.gd").route_between(s, int(trip.town), to)   # (loaded here: regional_trade preloads this file)
 	trip.origin = trip.town
 	trip.destination = to
 	trip.item = item
@@ -92,7 +104,7 @@ static func _set_out(sim: RefCounted, trip: Dictionary, to: int, item: String, q
 	trip.in_transit = true
 	trip.idle = 0
 	trip.depart_tick = s.tick
-	trip.arrival_tick = s.tick + trip.path.size() * TICKS_PER_CELL
+	trip.arrival_tick = s.tick + int(trip.eta[trip.eta.size() - 1]) + TICKS_PER_CELL
 	trip.fidelity = s.residents[str(trip.id)].get("fidelity", trip.fidelity)
 	trip.event_id = sim.schedule("caravan_arrival", trip.arrival_tick, {"id": trip.id})
 	var route_record: Dictionary = s.get("routes", {}).get(str(trip.route), {})
@@ -169,7 +181,7 @@ static func update(sim: RefCounted) -> void:
 			retire(sim, trip)
 			continue
 		if trip.in_transit:
-			var step: int = mini((s.tick - int(trip.depart_tick)) / TICKS_PER_CELL, trip.path.size() - 1)
+			var step: int = path_index(s, trip)
 			if step >= 0 and not trip.path.is_empty(): s.entities[key].cell = trip.path[step].duplicate()
 			continue
 		if (s.tick + int(trip.id)) % CHECK_EVERY != 0: continue

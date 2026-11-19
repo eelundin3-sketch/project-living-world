@@ -6,7 +6,13 @@ extends RefCounted
 const World = preload("res://sim/world/world_db.gd")
 const Probe = preload("res://sim/diagnostics/perf_probe.gd")
 const DerivedCache = preload("res://sim/core/derived_cache.gd")
+const TownLayout = preload("res://sim/world/town_layout.gd")
 static var _grids: Array = []
+static var _travel: Array = []
+## Weights for the travel grid: a road's centre costs 1, the rest of its corridor 1.5, open
+## country 3, so long walks keep to the roads unless leaving them saves a great deal.
+const OFF_ROAD := 3.0
+const ROAD_EDGE := 1.5
 
 ## What the grid was built from. Any write that changes walkability either bumps nav_revision or
 ## changes one of the three tables' sizes (or replaces a table), so this catches every change.
@@ -47,6 +53,40 @@ static func grid(state: Dictionary) -> AStarGrid2D:
 	Probe.count("nav_grid_rebuilds")
 	return astar
 
-## Forget the grid (tests that swap worlds in place can call this; normal play never needs to).
+## The same walkability with road preference, for long trips. Rebuilt when walkability or the
+## roads change; like grid(), derived from the state and never saved.
+static func travel_grid(state: Dictionary) -> AStarGrid2D:
+	var sig := _signature(state)
+	sig.append(TownLayout.road_signature(state))
+	var cache: Dictionary = DerivedCache.slot(_travel, state.world)
+	if cache.get("signature") == sig: return cache.astar
+	var started := Time.get_ticks_usec()
+	var base := grid(state)
+	if not cache.has("astar"): cache.astar = AStarGrid2D.new()
+	var astar: AStarGrid2D = cache.astar
+	astar.region = base.region
+	astar.cell_size = Vector2.ONE
+	astar.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_NEVER
+	astar.default_compute_heuristic = AStarGrid2D.HEURISTIC_MANHATTAN
+	astar.default_estimate_heuristic = AStarGrid2D.HEURISTIC_MANHATTAN
+	astar.jumping_enabled = false
+	astar.update()
+	var region: Rect2i = base.region
+	astar.fill_solid_region(region, false)
+	astar.fill_weight_scale_region(region, OFF_ROAD)
+	var roads := TownLayout.road_map(state)
+	for key in roads.kind:
+		var cell := _parse(key)
+		if region.has_point(cell): astar.set_point_weight_scale(cell, 1.0 if roads.centre.has(key) else ROAD_EDGE)
+	for table in [state.world.blocked, state.world.get("building_walls", {}), state.world.get("fixture_cells", {})]:
+		for key in table:
+			var cell := _parse(key)
+			if region.has_point(cell): astar.set_point_solid(cell, true)
+	cache.signature = sig
+	Probe.add("travel_grid_rebuild", Time.get_ticks_usec() - started)
+	return astar
+
+## Forget the grids (tests that swap worlds in place can call this; normal play never needs to).
 static func reset() -> void:
 	_grids.clear()
+	_travel.clear()

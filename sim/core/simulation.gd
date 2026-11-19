@@ -43,6 +43,7 @@ const LocalCombat = preload("res://sim/combat/local_combat.gd")
 const Unarmed = preload("res://sim/combat/unarmed.gd")
 const Probe = preload("res://sim/diagnostics/perf_probe.gd")
 const Sleep = preload("res://sim/player/sleep.gd")
+const Pace = preload("res://sim/movement/pace.gd")
 ## Commands that are the player doing something: refused while down or restrained, and they wake
 ## a sleeping player.
 const PLAYER_ACTS := ["move_player", "player_strike", "interact", "shotgun_fire", "hotbar_use", "eat", "drink", "treat_body", "context_action", "walk_to", "travel", "loot_take", "loot_all", "loot_coins", "loot_strip", "loot_give", "wear_item", "take_off", "hold_item", "hotbar_assign", "crouch_toggle", "travel_run", "shotgun_toggle", "shotgun_reload", "person_trade", "take_item", "surrender"]
@@ -149,7 +150,8 @@ func step() -> void:
 		var tired_route: bool = run_route and state.player_health.stamina <= BodyHealth.WINDED_AT
 		if run_route: state.player_control.crouching = false
 		var sneaking_route: bool = travelling and bool(state.get("player_control", {}).get("crouching", false))
-		var route_step: bool = (state.tick % 4 != 3 if tired_route else true) if run_route else (state.tick % 3 == 0 if sneaking_route else state.tick % 2 == 0)
+		# Walking a route: a step every two ticks (three crouched), a little quicker on the roads (pace.gd).
+		var route_step: bool = (state.tick % 4 != 3 if tired_route else true) if run_route else state.tick >= int(state.get("player_control", {}).get("route_next", 0))
 		if travelling and Law.jailed(state) and not Law.inside_cell(state, state.player_path[0]):
 			state.player_path = []
 			travelling = false
@@ -159,6 +161,8 @@ func step() -> void:
 				var from_cell: Array = state.entities[str(state.player)].cell
 				state.player_control.last_dir = [signi(next[0] - from_cell[0]), signi(next[1] - from_cell[1])]
 				state.entities[str(state.player)].cell = next
+				if not run_route and state.has("player_control"):
+					state.player_control.route_next = state.tick + Pace.delay(state, next, 3 if sneaking_route else 2, state.player_control)
 				if run_route:
 					state.player_control.running = true
 					state.player_control.running_tick = state.tick
@@ -372,7 +376,8 @@ func apply_command(entry: Dictionary) -> void:
 					state.player_control.running=requested_run
 					state.player_control.running_tick=state.tick if requested_run else -1
 					state.player_control.last_dir=[direction[0],direction[1]]
-					state.player_control.next_move=state.tick+(2 if tired_run else (1 if requested_run else maxi(maxi(3 if sneaking else 2, BodyHealth.move_delay(state)+(1 if sneaking else 0)), Limbs.step_ticks(state, state.player))+(1 if diagonal else 0)))
+					var walk_ticks: int = maxi(maxi(3 if sneaking else 2, BodyHealth.move_delay(state)+(1 if sneaking else 0)), Limbs.step_ticks(state, state.player))+(1 if diagonal else 0)
+					state.player_control.next_move=state.tick+(2 if tired_run else (1 if requested_run else Pace.delay(state, next, walk_ticks, state.player_control)))
 					if requested_run: state.player_health.stamina=maxi(0,state.player_health.stamina-1)
 				state.entities[str(state.player)].cell = next
 	elif entry.kind == "cancel_job" and state.has("jobs"):

@@ -235,6 +235,7 @@ func _process(delta: float) -> void:
 	if overlay_live or overlay_was_live: map_overlay.queue_redraw()
 	overlay_was_live = overlay_live
 	var view_started := Time.get_ticks_usec()
+	$WorldView.motion.tick_fraction = clampf(clock.accumulator / clock.STEP_SECONDS, 0.0, 1.0)
 	$WorldView.animate(delta, clock.paused, clock.speed)
 	Probe.add("f:animate", Time.get_ticks_usec() - view_started)
 	if follow_player:

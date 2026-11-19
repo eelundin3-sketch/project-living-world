@@ -4,6 +4,7 @@ const Sim = preload("res://sim/core/simulation.gd")
 const Traders = preload("res://sim/economy/traders.gd")
 const Market = preload("res://sim/economy/market.gd")
 const Checks = preload("res://sim/diagnostics/invariants.gd")
+const TownLayout = preload("res://sim/world/town_layout.gd")
 var failures: int = 0
 func check(value: bool, label: String) -> void:
 	if not value: failures += 1; printerr("FAIL: " + label)
@@ -25,21 +26,32 @@ func _initialize() -> void:
 	var cells: Dictionary = {}
 	var sold_before: int = int(trip.deliveries)
 	var left := false
+	var walked_path: Array = []
+	var walked_eta: Array = []
 	for t in range(6000):
 		sim.step()
 		if trip.in_transit:
 			left = true
+			if walked_path.is_empty():
+				walked_path = trip.path.duplicate()
+				walked_eta = trip.get("eta", []).duplicate()
 			cells[str(s.entities[str(trader_id)].cell)] = true
 		if left and int(trip.deliveries) > sold_before: break
 	check(left and cells.size() > 50, "The trader walks the road (%d cells)" % cells.size())
+	# Between the towns the trader keeps to the roads, and walks them a little quicker.
+	var on_road := 0
+	for cell in walked_path: if TownLayout.on_road(s, cell): on_road += 1
+	check(walked_path.size() > 0 and on_road * 100 >= walked_path.size() * 80, "The trader's way keeps to the roads (%d of %d cells)" % [on_road, walked_path.size()])
+	check(walked_eta.size() == walked_path.size() and int(walked_eta[walked_eta.size() - 1]) < (walked_path.size() - 1) * Traders.TICKS_PER_CELL, "A road walk is quicker than the same walk off the roads (%d < %d ticks)" % [int(walked_eta[-1]) if not walked_eta.is_empty() else -1, (walked_path.size() - 1) * Traders.TICKS_PER_CELL])
 	check(int(trip.deliveries) > sold_before, "The trader sells her load at another market")
 	check(Checks.validate(s).is_empty(), "Goods and money are conserved: " + str(Checks.validate(s)))
 	var copy := Sim.new(); copy.restore(sim.snapshot())
 	check(copy.state_hash() == sim.state_hash(), "A trip in progress survives a reload")
 	# With no price worth the walk she goes home, gives up and her tent is packed away.
-	for town in s.settlements.values():
-		for item in Traders.GOODS: s.inventories[str(town.warehouse)].items[item] = 0
+	# (The stores are kept empty the whole time: the workshops would otherwise restock them.)
 	for t in range(9000):
+		for town in s.settlements.values():
+			for item in Traders.GOODS: s.inventories[str(town.warehouse)].items[item] = 0
 		sim.step()
 		if not s.caravans.has(str(trader_id)): break
 	check(not s.caravans.has(str(trader_id)) and s.residents[str(trader_id)].occupation != "Trader", "Without profit the trader takes up other work")

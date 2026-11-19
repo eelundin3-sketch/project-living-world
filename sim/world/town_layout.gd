@@ -222,6 +222,48 @@ static func road_cells(s: Dictionary) -> Dictionary:
 static func on_road(s: Dictionary, cell: Array) -> bool:
 	return road_cells(s).has("%d,%d" % [cell[0], cell[1]])
 
+## What kind of road each cell is on: {"kind": {"x,y": 2 on a road between towns, 1 on a town
+## street or lane}, "centre": {"x,y": true within a cell of a road's line}}. Memoised like road_cells.
+static var _map_cache: Dictionary = {}
+static func road_map(s: Dictionary) -> Dictionary:
+	var cells := road_cells(s)   # refreshes _cell_cache.signature for this layout
+	var signature: String = _cell_cache.get("signature", "")
+	if _map_cache.get("signature", "") == signature: return _map_cache.map
+	var kind: Dictionary = {}
+	var centre: Dictionary = {}
+	for pass_link in [false, true]:   # links last, so where a link runs down a street it counts as the link
+		for segment in segments(s):
+			if (segment.kind == "link") != pass_link: continue
+			var value: int = 2 if pass_link else 1
+			var reach: int = ceili(float(segment.reach))
+			var previous: Vector2 = _vec(segment.points[0])
+			for index in range(segment.points.size()):
+				var p: Vector2 = _vec(segment.points[index])
+				var steps: int = maxi(1, ceili(previous.distance_to(p)))
+				for step in range(steps + 1):
+					var q: Vector2 = previous.lerp(p, float(step) / float(steps))
+					var cx: int = roundi(q.x)
+					var cy: int = roundi(q.y)
+					for dy in range(-reach, reach + 1):
+						for dx in range(-reach, reach + 1):
+							if dx * dx + dy * dy > reach * reach + reach: continue
+							var key := "%d,%d" % [cx + dx, cy + dy]
+							kind[key] = value
+							if absi(dx) <= 1 and absi(dy) <= 1: centre[key] = true
+				previous = p
+	var map := {"kind": kind, "centre": centre, "cells": cells.size()}
+	_map_cache = {"signature": signature, "map": map}
+	return map
+
+## 2 on a road between towns, 1 on a town street or lane, 0 off the roads.
+static func road_kind(s: Dictionary, cell: Array) -> int:
+	return int(road_map(s).kind.get("%d,%d" % [cell[0], cell[1]], 0))
+
+## A short text that changes whenever the roads do (for caches built on them).
+static func road_signature(s: Dictionary) -> String:
+	road_cells(s)
+	return String(_cell_cache.get("signature", ""))
+
 ## Coarse rectangles over the road corridors (a box around every few points), for code that wants rectangles.
 static func corridors(s: Dictionary) -> Array[Rect2i]:
 	var result: Array[Rect2i] = []

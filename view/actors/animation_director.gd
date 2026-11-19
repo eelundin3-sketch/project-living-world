@@ -6,6 +6,8 @@ const BuildMotion = preload("res://view/actors/build_motion.gd")
 const Outfits = preload("res://sim/entities/outfits.gd")
 const Brawl = preload("res://sim/combat/brawl.gd")
 const Limbs = preload("res://sim/combat/limbs.gd")
+const Pace = preload("res://sim/movement/pace.gd")
+const Traders = preload("res://sim/economy/traders.gd")
 const CELL: float = 24.0
 const WALK_CYCLE_METERS := 2.0
 const RUN_CYCLE_METERS := 3.25
@@ -20,6 +22,9 @@ var wind_strength: float = 1.0
 var player_aiming: bool = false
 var player_ready: bool = false
 var player_aim_position: Vector2 = Vector2.ZERO
+## How far the clock is between the last tick and the next (0..1), set by the controller each
+## frame, so a walking trader can be placed exactly where its schedule has it.
+var tick_fraction: float = 0.0
 ## Trees are tracked only inside this rectangle of cells (set by the world view to what is on
 ## screen plus a margin). Empty means every tree, which is what headless tests use.
 var view_cells: Rect2i = Rect2i()
@@ -213,6 +218,30 @@ static func action_for(s: Dictionary, entity: Dictionary, aim_held: bool = false
 		elif status == "Ate from communal stores": result.action = "eat"
 	return result
 
+## Where a travelling trader is now: their fractional place along the path from the trip's
+## schedule, averaged over half a cell either side so corners are rounded off.
+static func trip_point(s: Dictionary, trip: Dictionary, fraction: float) -> Vector2:
+	var path: Array = trip.path
+	var eta: Array = trip.get("eta", [])
+	var elapsed: float = float(s.tick - int(trip.depart_tick)) + fraction
+	var u: float
+	if eta.size() != path.size():
+		u = elapsed / float(Traders.TICKS_PER_CELL)
+	else:
+		var index: int = clampi(eta.bsearch(int(floor(elapsed)), false) - 1, 0, path.size() - 1)
+		if index >= path.size() - 1: u = float(path.size() - 1)
+		else:
+			var span: float = maxf(1.0, float(int(eta[index + 1]) - int(eta[index])))
+			u = float(index) + clampf((elapsed - float(eta[index])) / span, 0.0, 1.0)
+	return (_path_at(path, u - 0.5) + _path_at(path, u) + _path_at(path, u + 0.5)) / 3.0 * CELL
+
+static func _path_at(path: Array, u: float) -> Vector2:
+	var clamped: float = clampf(u, 0.0, float(path.size() - 1))
+	var i: int = mini(int(floor(clamped)), path.size() - 2)
+	var a: Array = path[i]
+	var b: Array = path[i + 1]
+	return Vector2(a[0], a[1]).lerp(Vector2(b[0], b[1]), clamped - float(i))
+
 ## Pixel centre of a bed's mattress for its rect (cells) and orientation; matches the bed art.
 static func bed_center(rect: Array, rot: int) -> Vector2:
 	var corner := Vector2(rect[0], rect[1]) * CELL - Vector2(12, 12)
@@ -252,6 +281,11 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 			target = bed_center(sleeping_in.bed_rect, int(sleeping_in.rot))
 		elif float(old_pose.get("rest_blend", 0.0)) > 0.25 and old_pose.has("bed_center"):
 			target = old_pose.bed_center   # still climbing out of bed
+		# A trader on the road walks a schedule (traders.gd eta): place them exactly on it, on a line
+		# rounded through the path's corners, so the walk is steady and does not zig-zag.
+		var trip: Dictionary = s.get("caravans", {}).get(key, {})
+		var on_trip: bool = not trip.is_empty() and bool(trip.get("in_transit", false)) and trip.get("path", []).size() > 1
+		if on_trip: target = trip_point(s, trip, 0.0 if paused else tick_fraction)
 		var items: Dictionary = s.inventories[key].items
 		if entity.kind=="player" and s.has("player_control"):
 			items={}
@@ -272,7 +306,13 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 			# gap so diagonal steps (1.41 cells) and fast game speeds never leave the figure far behind.
 			# Constant pace while the gap is within one cell (so motion is smooth), plus a catch-up term
 			# only for the part of the gap beyond that, which is what diagonals and high game speed produce.
-			var follow: float = CELL * dt * lerpf(5.0, 10.0, float(pose.get("run_blend", 0.0))) + maxf(0.0, before.distance_to(target) - CELL * 1.05) * dt / 0.1
+			# The player's walking pace: slower crouched, a little quicker on the roads (pace.gd), as
+			# the simulation steps them, so the figure keeps an even stride instead of stop-and-go.
+			var walk_pace: float = 5.0
+			if entity.kind == "player":
+				walk_pace *= lerpf(1.0, 0.667, clampf(float(pose.get("sneak", 0.0)), 0.0, 1.0)) * (1.0 + float(Pace.bonus(s, entity.cell)) / 100.0)
+			var follow: float = CELL * dt * lerpf(walk_pace, 10.0, float(pose.get("run_blend", 0.0))) + maxf(0.0, before.distance_to(target) - CELL * 1.05) * dt / 0.1
+			if on_trip: follow = maxf(follow, before.distance_to(target))   # the schedule is exact: keep to it
 			# Someone knocked off their feet is thrown, not walked: settle the body fast instead of
 			# letting it slide on at walking pace while it falls.
 			var resident: Dictionary = s.get("residents", {}).get(key, {})
