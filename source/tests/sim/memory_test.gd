@@ -71,6 +71,14 @@ func _initialize() -> void:
 	for i in range(30): Society.remember(s, int(victim.id), "gift" if i % 2 == 0 else "helped", int(s.residents.keys()[i % s.residents.size()]), "kindness")
 	check(victim.memories.size() <= 16, "Memories stay within 16")
 	check(victim.memories.any(func(m): return m.kind == "killed_kin"), "...and the strongest (a killing) is never pushed out")
+	# Binding someone's wound is remembered kindly, by them and their family.
+	var patient: Dictionary = bystander
+	load("res://sim/combat/bleeding.gd").open_wound(s, patient)
+	load("res://sim/inventory/inventory_store.gd").produce(s, int(s.player), "bandage", 1)
+	var before_help: int = Society.opinion(s, int(patient.id), player)
+	load("res://sim/player/context_actions.gd").perform(sim, int(patient.id), "bandage")
+	check(not load("res://sim/combat/bleeding.gd").bleeding(patient), "Bandaging stops their bleeding")
+	check(Society.opinion(s, int(patient.id), player) >= before_help + 39, "...and they remember you saved them (%d -> %d)" % [before_help, Society.opinion(s, int(patient.id), player)])
 	var errors: Array = load("res://sim/diagnostics/invariants.gd").validate(s)
 	check(errors.is_empty(), "World invariants hold (%s)" % str(errors))
 	# Save, load and continue.

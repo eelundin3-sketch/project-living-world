@@ -354,8 +354,11 @@ static func perform(sim: RefCounted, id: int, action: String, part: String = "")
 		"bandage":
 			var patient: Dictionary = s.residents.get(str(id), {})
 			if not patient.is_empty() and int(patient.get("bleeding_until", 0)) > s.tick and Inventory.consume(s, s.player, "bandage", 1):
-				patient.bleeding_until = 0
+				load("res://sim/combat/bleeding.gd").stop(patient)
 				pc.notice = "You bind %s's wound. The bleeding stops." % e.name
+				# They (and their family) won't forget it, and word gets round (society.gd, chronicle).
+				var entry: Dictionary = load("res://sim/world/chronicle.gd").record(s, "saved_life", int(patient.settlement), int(s.player), id, e.cell)
+				load("res://sim/factions/society.gd").witnessed(s, id, "saved_life", int(s.player), "The stranger bound my wound and saved my life.", entry.witnesses, "helped")
 			else: pc.notice = "There is nothing to bandage."
 		"punch", "shove", "kick":
 			var from: Array = s.entities[str(s.player)].cell
