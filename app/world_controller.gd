@@ -10,6 +10,7 @@ const Audio = preload("res://view/audio/world_audio.gd")
 const ActionPointer = preload("res://view/ui/action_pointer.gd")
 const Cover = preload("res://sim/combat/cover.gd")
 const MapOverlay = preload("res://view/ui/map_overlay.gd")
+const MedievalMap = preload("res://view/ui/medieval_map.gd")
 const SaveMigration = preload("res://app/save_migration.gd")
 const Moodles = preload("res://view/ui/moodles.gd")
 const BottomBar = preload("res://view/ui/bottom_bar.gd")
@@ -56,6 +57,7 @@ var menu: CanvasLayer
 var knockout: CanvasLayer
 var skipping: bool = false
 const SLEEP_SPEED := 8
+var medieval_map: Control
 var context_part: String = ""   # the furniture or fixture the open menu is about
 var skip_previous_speed: int = 1
 var menu_active: bool = false
@@ -83,6 +85,12 @@ func _ready() -> void:
 	map_layer.layer = 8
 	add_child(map_layer)
 	map_layer.add_child(map_overlay)
+	# The drawn map (M) sits under the hotbar and moodles, over the (then hidden) world.
+	medieval_map = MedievalMap.new()
+	var drawn_map_layer := CanvasLayer.new()
+	drawn_map_layer.layer = 4
+	add_child(drawn_map_layer)
+	drawn_map_layer.add_child(medieval_map)
 	var moodle_layer := CanvasLayer.new()
 	moodle_layer.layer = 5
 	add_child(moodle_layer)
@@ -207,6 +215,8 @@ func _process(delta: float) -> void:
 			var cell_direction: Array = [int(signf(direction.x)), int(signf(direction.y))]
 			simulation.submit("move_player", {"direction": cell_direction,"run":sprint})
 			last_input_tick = simulation.state.tick+1
+	elif map_mode:
+		if direction != Vector2.ZERO: medieval_map.pan(direction.limit_length() * 700.0 * delta)
 	else:
 		$ObserverCamera.position += direction.limit_length() * 480 * delta / $ObserverCamera.zoom.x
 	# Holding Shift while a route is being followed (double-click, or walking up to a target) runs it.
@@ -226,17 +236,19 @@ func _process(delta: float) -> void:
 	_update_peek()
 	_update_pointer()
 	map_overlay.state = simulation.state
-	map_overlay.active = map_mode
-	$WorldView.overlay_labels = map_mode
+	map_overlay.active = false   # the drawn map shows the markings now; the overlay is the in-play waypoint
+	map_overlay.visible = not map_mode
+	$WorldView.overlay_labels = false
+	if map_mode: medieval_map.refresh_live(simulation.state)
 	map_overlay.zoom = $ObserverCamera.zoom.x
 	map_overlay.player_world = $WorldView.motion.actors.get(str(simulation.state.player), {}).get("position", Vector2.ZERO)
 	# The overlay draws only on the map or with a waypoint set; otherwise one last clearing redraw.
-	var overlay_live: bool = map_mode or map_overlay.waypoint != Vector2.INF
+	var overlay_live: bool = map_overlay.waypoint != Vector2.INF or int(simulation.state.get("player_control", {}).get("travelling", 0)) != 0
 	if overlay_live or overlay_was_live: map_overlay.queue_redraw()
 	overlay_was_live = overlay_live
 	var view_started := Time.get_ticks_usec()
 	$WorldView.motion.tick_fraction = clampf(clock.accumulator / clock.STEP_SECONDS, 0.0, 1.0)
-	$WorldView.animate(delta, clock.paused, clock.speed)
+	if not map_mode: $WorldView.animate(delta, clock.paused, clock.speed)   # nothing of the world shows behind the map
 	Probe.add("f:animate", Time.get_ticks_usec() - view_started)
 	if follow_player:
 		var cell: Array = simulation.state.entities[str(simulation.state.player)].cell
@@ -257,7 +269,7 @@ func _process(delta: float) -> void:
 		var refresh_started := Time.get_ticks_usec()
 		refresh_view()
 		Probe.add("f:refresh_ui", Time.get_ticks_usec() - refresh_started)
-	if not follow_player:
+	if not follow_player and not map_mode:
 		$WorldView.queue_redraw()
 
 func refresh_view() -> void:
@@ -363,10 +375,16 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed:
 		if event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN] and player_panels.scrolls_health_list_at(event.position):
 			return
+		if map_mode and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+			medieval_map.zoom_at(event.position, 1.15 if event.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0 / 1.15)
+			get_viewport().set_input_as_handled()
+			return
 		if event.button_index==MOUSE_BUTTON_WHEEL_UP: $ObserverCamera.adjust_zoom(1.15); get_viewport().set_input_as_handled()
 		elif event.button_index==MOUSE_BUTTON_WHEEL_DOWN: $ObserverCamera.adjust_zoom(1.0/1.15); get_viewport().set_input_as_handled()
 	elif event is InputEventMagnifyGesture:
-		$ObserverCamera.adjust_zoom(event.factor); get_viewport().set_input_as_handled()
+		if map_mode: medieval_map.zoom_at(event.position, event.factor)
+		else: $ObserverCamera.adjust_zoom(event.factor)
+		get_viewport().set_input_as_handled()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if menu_active: return
@@ -398,11 +416,20 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if map_mode and event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_LEFT:
-			map_overlay.set_waypoint(get_global_mouse_position())
+			var town_id: int = medieval_map.town_at(event.position)
+			if town_id != 0:
+				_open_travel_menu(town_id, event.position)
+				return
+			context_menu.close()
+			map_overlay.set_waypoint(medieval_map.world_of(event.position))
+			medieval_map.waypoint = map_overlay.waypoint
+			medieval_map.queue_redraw()
 			$DebugHUD.notice.text = "Waypoint set: %s" % MapOverlay.bearing_text(map_overlay.player_world, map_overlay.waypoint)
 			return
 		if event.button_index == MOUSE_BUTTON_RIGHT:
 			map_overlay.clear_waypoint()
+			medieval_map.waypoint = Vector2.INF
+			medieval_map.queue_redraw()
 			return
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		pointer_held = true
@@ -443,7 +470,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_Q: simulation.submit("drink")
 			KEY_F: handle_action("interact")
 			KEY_ESCAPE:
-				if map_mode: toggle_map()   # Esc closes the map first, then any open panel
+				if map_mode: toggle_map()   # Esc closes the map first, then stops a travel, then closes panels
+				elif int(simulation.state.get("player_control", {}).get("travelling", 0)) != 0: simulation.submit("stop_travel")
 				else: player_panels.show_mode("")
 			KEY_SPACE:
 				if not player_panels.visible and not clock.paused: _submit_strike("shove")
@@ -494,37 +522,46 @@ func _open_context_menu(id: int, at: Vector2) -> void:
 	context_menu.open(id, ContextActions.title(s, id, context_part), subtitle, options, at)
 	pointer_held = false
 
+## On the map: a town's name was clicked.
+func _open_travel_menu(town_id: int, at: Vector2) -> void:
+	var s: Dictionary = simulation.state
+	var town: Dictionary = s.settlements.get(str(town_id), {})
+	if town.is_empty(): return
+	var store: Array = s.entities[str(town.warehouse)].cell
+	var here: Array = s.entities[str(s.player)].cell
+	var distance: int = absi(store[0] - here[0]) + absi(store[1] + 2 - here[1])
+	var reason := ""
+	if Law.jailed(s) or Law.in_custody(s): reason = "You are locked up"
+	elif distance <= 3: reason = "You are here"
+	var options: Array = [{"id": "travel_town", "label": "Travel here", "icon": "sun", "enabled": reason.is_empty(), "reason": reason}]
+	context_part = ""
+	context_menu.open(town_id, str(town.name), "About %d m along the roads" % distance if distance > 3 else "You are here", options, at)
+
 func _on_context_chosen(target: int, action: String) -> void:
 	if action in ["inventory", "health"]:
 		handle_action(action)
 		return
+	if action == "travel_town":
+		simulation.submit("travel", {"town": target})
+		if map_mode: toggle_map()   # back to the world: the camera follows the walk, and a step takes over
+		return
 	simulation.submit("context_action", {"target": target, "action": action, "part": context_part})
 
 func toggle_map() -> void:
-	var camera: Camera2D = $ObserverCamera
 	map_mode = not map_mode
 	context_menu.close()
 	if map_mode:
-		map_return_zoom = camera.zoom
 		map_return_follow = follow_player
 		follow_player = false
-		var low := Vector2(INF, INF)
-		var high := Vector2(-INF, -INF)
-		for town in simulation.state.get("settlements", {}).values():
-			var store: Array = simulation.state.entities[str(town.warehouse)].cell
-			low = Vector2(minf(low.x, store[0]), minf(low.y, store[1]))
-			high = Vector2(maxf(high.x, store[0]), maxf(high.y, store[1]))
-		if low.x == INF:
-			low = Vector2(40, 30); high = Vector2(90, 70)
-		# Frame every settlement with a generous margin so the roads and forest around them show.
-		var span := (high - low + Vector2(120, 70)) * CELL
-		var fit: float = minf(get_viewport().get_visible_rect().size.x / span.x, get_viewport().get_visible_rect().size.y / span.y)
-		camera.position = (low + high) * 0.5 * CELL
-		camera.zoom = Vector2.ONE * clampf(fit, camera.MIN_ZOOM, camera.MAX_ZOOM)
-		$DebugHUD.notice.text = "Map: WASD to move, wheel to zoom, click to set a waypoint (right-click clears), M to return."
+		medieval_map.waypoint = map_overlay.waypoint
+		medieval_map.open(simulation.state)   # a fresh picture each time the map opens
+		$WorldView.visible = false
+		$DebugHUD.notice.text = "Map: click a town's name to travel there. WASD and the wheel to look around, Esc or M to close."
 	else:
+		medieval_map.close()
+		$WorldView.visible = true
 		follow_player = map_return_follow
-		camera.zoom = map_return_zoom
+		$WorldView.snap_visuals()   # catch up with whatever moved while the map was open
 	refresh_view()
 
 func _submit_shot() -> void:

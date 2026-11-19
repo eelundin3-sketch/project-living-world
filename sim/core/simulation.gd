@@ -167,12 +167,18 @@ func step() -> void:
 					state.player_control.running = true
 					state.player_control.running_tick = state.tick
 					state.player_health.stamina = maxi(0, state.player_health.stamina - 1)
-				if state.player_path.is_empty(): state.player_control.travel_run = false
+				if state.player_path.is_empty():
+					state.player_control.travel_run = false
+					var arrived: int = int(state.player_control.get("travelling", 0))
+					if arrived != 0:
+						state.player_control.travelling = 0
+						state.player_control.notice = "You arrive in %s." % state.settlements.get(str(arrived), {}).get("name", "town")
 			else:
 				var destination: Array = state.get("player_travel_goal", [])
 				state.player_path = []
 				if not destination.is_empty():
-					var reroute := Navigation.request_path(state, state.entities[str(state.player)].cell, destination)
+					var by_road: bool = int(state.player_control.get("travelling", 0)) != 0
+					var reroute := Navigation.request_travel_path(state, state.entities[str(state.player)].cell, destination) if by_road else Navigation.request_path(state, state.entities[str(state.player)].cell, destination)
 					if reroute.ok: state.player_path = reroute.path
 		Probe.mark("local_combat+route")
 		if state.tick % 10 == 0:
@@ -250,6 +256,9 @@ func apply_command(entry: Dictionary) -> void:
 		Sleep.wake(state, "You get up.")
 		if entry.kind in ["wake", "move_player"]: return
 	if entry.kind == "wake": return
+	# Taking over: any action of the player's own ends a travel to a town.
+	if entry.kind in PLAYER_ACTS and entry.kind not in ["travel", "travel_run"] and int(state.get("player_control", {}).get("travelling", 0)) != 0:
+		state.player_control.travelling = 0
 	var limb_problem: String = Limbs.action_problem(state, entry.kind)
 	if not limb_problem.is_empty() and state.has("player_control"):
 		state.player_control.notice = limb_problem
@@ -335,7 +344,10 @@ func apply_command(entry: Dictionary) -> void:
 	if entry.kind=="travel_run" and state.has("player_control"):
 		state.player_control.travel_run=bool(entry.payload.get("run",false))
 		return
-	if entry.kind=="stop_travel": state.player_path=[]; state.player_travel_goal=[]; return
+	if entry.kind=="stop_travel":
+		state.player_path=[]; state.player_travel_goal=[]
+		if state.has("player_control"): state.player_control.travelling = 0
+		return
 	if entry.kind in ["interact","hold_item","take_item","person_trade","treat_body","debug_injury"] and state.has("player_control"):
 		match entry.kind:
 			"interact":
@@ -405,12 +417,7 @@ func apply_command(entry: Dictionary) -> void:
 	elif entry.kind == "migrate" and state.has("factions"):
 		Society.migrate(self, int(entry.payload.get("id", 0)), int(entry.payload.get("destination", 2)))
 	elif entry.kind == "travel" and state.has("settlements"):
-		var town: Dictionary = state.settlements.get(str(entry.payload.get("town", 1)), {})
-		if not town.is_empty():
-			var route := Navigation.request_path(state, state.entities[str(state.player)].cell, state.entities[str(town.warehouse)].cell)
-			if route.ok:
-				state.player_path = route.path
-				state.player_travel_goal = state.entities[str(town.warehouse)].cell.duplicate()
+		_travel_to(int(entry.payload.get("town", 1)))
 	elif entry.kind == "install_recipe" and state.has("recipes"):
 		var result: Dictionary = {"ok": true, "recipe": entry.payload.recipe}
 		if result.ok:
@@ -450,6 +457,38 @@ func _furniture_command(entry: Dictionary) -> String:
 		"rearrange_furniture":
 			return ("Moved the %s against the wall." % building.furniture[index].kind) if Placement.rearrange(state, building, index) else "It already sits as well as it can."
 	return ""
+
+## Travel to a town: walk there along the roads by yourself, to the street in front of its
+## storehouse. Any step or action of the player's own takes over again (apply_command).
+func _travel_to(town_id: int) -> void:
+	var town: Dictionary = state.settlements.get(str(town_id), {})
+	if town.is_empty(): return
+	var pc: Dictionary = state.get("player_control", {})
+	if Law.jailed(state) or Law.in_custody(state):
+		if not pc.is_empty(): pc.notice = "You are locked in a cell."
+		return
+	var store: Array = state.entities[str(town.warehouse)].cell
+	var goal: Array = [store[0], store[1] + 2]
+	if not World.walkable(state, goal):
+		var best := 9999
+		for dy in range(-3, 4):
+			for dx in range(-3, 4):
+				var candidate: Array = [store[0] + dx, store[1] + 2 + dy]
+				if World.walkable(state, candidate) and absi(dx) + absi(dy) < best: best = absi(dx) + absi(dy); goal = candidate
+	var from: Array = state.entities[str(state.player)].cell
+	if absi(from[0] - goal[0]) + absi(from[1] - goal[1]) <= 3:
+		if not pc.is_empty(): pc.notice = "You are already in %s." % town.name
+		return
+	var route := Navigation.request_travel_path(state, from, goal)
+	if not route.ok or route.path.is_empty():
+		if not pc.is_empty(): pc.notice = "You cannot find a way to %s." % town.name
+		return
+	state.player_path = route.path
+	state.player_travel_goal = goal.duplicate()
+	if not pc.is_empty():
+		pc.pending = {}
+		pc.travelling = town_id
+		pc.notice = "Travelling to %s. Move to take over." % town.name
 
 func apply_event(entry: Dictionary) -> void:
 	if entry.kind == "caravan_arrival" and state.has("caravans"):
