@@ -21,6 +21,7 @@ const BLOOM_DECAY := 25           # ... and settles by this much each tick
 const SPREAD := 0.17
 const Brawl = preload("res://sim/combat/brawl.gd")
 
+const HURT_ARM_SPREAD := 1.3   # a hurt arm widens the pattern by this much
 static func initialize(s: Dictionary) -> void:
 	if not s.has("shotgun"):
 		s.shotgun = {"equipped": false, "loaded": 0, "reloading": false, "reload_next": 0, "last_shot": -1000, "pellets": [], "effects": [], "kicks": 0, "bloom": 0, "last_dir": [0, 1000]}
@@ -63,8 +64,11 @@ static func fire(sim: RefCounted, direction: Array) -> bool:
 	gun.last_dir = [int(direction[0]), int(direction[1])]
 	Brawl.event(s, "gunshot", origin, gun.last_dir)
 	load("res://sim/combat/gunfire.gd").on_player_shot(sim, origin)
+	# A hurt (not yet useless) arm can't hold the gun steady: the pattern opens up.
+	var Limbs = load("res://sim/combat/limbs.gd")
+	var shaky: float = HURT_ARM_SPREAD if Limbs.state(s, int(s.player), "left_arm") == "hurt" or Limbs.state(s, int(s.player), "right_arm") == "hurt" else 1.0
 	for index in range(PELLETS):
-		var spread: float = (float(sim.random_int("shotgun", -1000, 1000)) / 1000.0) * SPREAD * (1.0 + 1.5 * float(gun.get("bloom", 0)) / 1000.0)
+		var spread: float = (float(sim.random_int("shotgun", -1000, 1000)) / 1000.0) * SPREAD * shaky * (1.0 + 1.5 * float(gun.get("bloom", 0)) / 1000.0)
 		var angle: float = base + spread
 		var reach: float = RANGE_CELLS - float(sim.random_int("shotgun", 0, 200)) / 100.0
 		gun.pellets.append({"x": float(origin[0]) + 0.5 * cos(base), "y": float(origin[1]) + 0.5 * sin(base), "dx": cos(angle), "dy": sin(angle), "left": reach, "owner": s.player})

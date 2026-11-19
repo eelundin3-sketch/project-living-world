@@ -425,8 +425,11 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 		pose.back = sin(float(pose.heading)) < -0.35
 		pose.aiming = entity.kind == "player" and player_aiming
 		pose.bloom = int(s.get("shotgun", {}).get("bloom", 0)) if entity.kind == "player" else 0
-		pose.limp = Limbs.mode(s, int(entity.id)) == "limp"
-		pose.limp_side = -1 if Limbs.disabled(s, int(entity.id), "left_leg") else 1
+		# A useless leg drags; a hurt one (not yet useless) still makes you favour it.
+		var hurt_left: bool = Limbs.state(s, int(entity.id), "left_leg") != "ok"
+		var hurt_right: bool = Limbs.state(s, int(entity.id), "right_leg") != "ok"
+		pose.limp = Limbs.mode(s, int(entity.id)) == "limp" or (hurt_left != hurt_right)
+		pose.limp_side = -1 if (Limbs.disabled(s, int(entity.id), "left_leg") or (hurt_left and not hurt_right)) else 1
 		var dead_arms: Array = []
 		# "right_*" is the figure's side -1 (see the health screen), so the right arm is arms[-1].
 		if Limbs.disabled(s, int(entity.id), "right_arm"): dead_arms.append(-1)
