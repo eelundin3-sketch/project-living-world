@@ -2,7 +2,7 @@
 
 Updated 2026-11-16. This guide describes the working game. For older versions of
 a feature, see [Decisions](../design/DECISIONS.md) and the [Changelog](CHANGELOG.md).
-For launch instructions and the keyboard map, see the [README](../../README.md).
+For launch instructions and the keyboard map, see the [README](../../../README.md).
 
 ## A first visit to Alder Hollow
 
