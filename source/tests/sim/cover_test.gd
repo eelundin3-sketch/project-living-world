@@ -27,12 +27,26 @@ func _initialize() -> void:
 	check(not Cover.line_clear(s, [699, 695], [702, 695]), "A wall breaks the line of sight")
 	check(Cover.line_clear(s, [701, 700], [701, 705]) and Cover.line_clear(s, [699, 701], [704, 704]), "Open ground does not")
 	check(Cover.first_block(s, [705, 695], [695, 695]) == [700, 695], "The first solid cell along a line is found")
+	# High and low: a wall stops a shot whoever is behind it; a low thing (a chest, a bed) only
+	# shields someone crouched right behind it, and covers only the crouched.
+	s.world.fixture_cells["710,695"] = 0
+	check(Cover.height(s, [700, 695]) == Cover.HIGH and Cover.height(s, [710, 695]) == Cover.LOW, "Walls are high, a chest-sized thing is low")
+	check(not Cover.is_cover(s, [711, 695], false) and Cover.is_cover(s, [711, 695], true), "Behind something low is cover only when crouched")
+	check(Cover.is_cover(s, [701, 695], false), "Beside a wall is cover even standing")
+	check(Cover.line_clear(s, [705, 695], [711, 695]), "A shot goes over something low at someone standing behind it")
+	check(not Cover.line_clear(s, [705, 695], [711, 695], false, true), "...but not at someone crouched right behind it")
+	check(Cover.line_clear(s, [705, 695], [713, 695], false, true), "Crouching two cells back from it is no cover")
+	check(not Cover.line_clear(s, [699, 695], [702, 695], false, false), "A wall stops shots at anyone")
+	s.world.fixture_cells.erase("710,695")
 	# The player takes cover, then leans out while the right button is held.
 	var pc: Dictionary = s.player_control
 	s.entities[str(s.player)].cell = [701, 699]
 	pc.next_move = 0; s.player_path = []
 	for t in range(6): sim.step()
-	check(pc.has("cover") and not pc.has("peek"), "Standing still at the wall is cover")
+	check(not pc.has("cover"), "Just standing at a wall is not taking cover (not sneaking, not in a fight)")
+	pc.crouching = true
+	for t in range(3): sim.step()
+	check(pc.has("cover") and not pc.has("peek"), "Crouched still at the wall is cover")
 	check(not Cover.player_exposed(s), "In cover the player is not exposed")
 	sim.submit("peek", {"on": true, "toward": [0, 1000]}); sim.step(); sim.step()
 	check(pc.has("peek") and pc.peek.to == [701, 700], "Holding peek leans out to the corner")

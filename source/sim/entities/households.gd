@@ -161,6 +161,7 @@ static func daily(sim: RefCounted) -> void:
 		load("res://sim/law/sheriff.gd").ensure(sim)
 		_pair_up(sim, town)
 		_births(sim, town)
+	load("res://sim/entities/family_economy.gd").ensure(s)   # new families get their purse and name now
 
 static func _pair_up(sim: RefCounted, town: Dictionary) -> void:
 	var s: Dictionary = sim.state

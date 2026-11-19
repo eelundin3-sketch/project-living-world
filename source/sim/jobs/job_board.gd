@@ -234,6 +234,7 @@ static func advance(sim: RefCounted, npc_id: int) -> void:
 				return
 			job.state = "DONE"
 			s.completed_jobs += 1
+			npc.work_done = int(npc.get("work_done", 0)) + 1   # paid each evening (family_economy.gd)
 			npc.skill = mini(100, npc.skill + 1)
 			s.job_archive.append(job.duplicate(true))
 			if s.job_archive.size() > 64:

@@ -24,6 +24,12 @@ const KILL_STRENGTH := 4.0
 const WOUND_HIT_CHANCE := 38
 const KILL_HIT_CHANCE := 62
 const COVER_SEARCH := 8
+const ADVANCE_BEYOND := 8.0       # farther than this from the gunman, a sheriff works closer for a better shot
+const SHOTS_BEFORE_ADVANCE := 2   # shots from one cover before moving up, when still too far
+const ADVANCE_STEP_TICKS := 3     # moving between covers is slow and low: a step every third tick
+const SAFE_AFTER_SHOT := 15       # only move while the gunman has not fired for this long (or is reloading)
+const Bleeding = preload("res://sim/combat/bleeding.gd")
+const Inventory = preload("res://sim/inventory/inventory_store.gd")
 
 static func _law(s: Dictionary) -> Dictionary:
 	if not s.has("law"): s.law = {"wanted": {}}
@@ -196,9 +202,17 @@ static func engage(sim: RefCounted, npc: Dictionary, arrest: Dictionary, cell: A
 		"hide":
 			# Make sure there is cover to hide in and a clear shot from its corner.
 			if cycle.cover.is_empty() or not Cover.is_cover(s, cycle.cover):
-				cycle.cover = find_cover(s, cell, player)
+				# Already behind something the gunman cannot see past: stay put and work from here.
+				if Cover.is_cover(s, cell) and not Cover.line_clear(s, cell, player, true, false): cycle.cover = cell.duplicate()
+				else: cycle.cover = find_cover(s, cell, player)   # caught in the open: get behind something, fast
 			if not cycle.cover.is_empty() and cell != cycle.cover:
 				_run_to(s, npc, cycle.cover)
+				return
+			# Hit and bleeding: bind the wound here, behind cover, before anything else.
+			if Bleeding.bleeding(npc) and Inventory.amount(s, int(npc.id), "bandage") > 0 and Bleeding.begin(s, npc):
+				cycle.phase = "bandage"
+				cycle.since = s.tick
+				npc.status = "Bandaging a wound behind cover"
 				return
 			if int(cycle.ammo) <= 0:
 				if age >= RELOAD_TICKS:
@@ -210,12 +224,31 @@ static func engage(sim: RefCounted, npc: Dictionary, arrest: Dictionary, cell: A
 			if age >= HIDE_TICKS:
 				var corner: Array = Cover.peek_cell(s, cell, Vector2(player[0] - cell[0], player[1] - cell[1])) if not cycle.cover.is_empty() else cell.duplicate()
 				if cycle.cover.is_empty(): corner = cell.duplicate()
-				if corner.is_empty() or not Cover.line_clear(s, corner, player):
-					cycle.cover = find_cover(s, cell, player, true)   # the corner has no view: find another
-					cycle.since = s.tick
-					if cycle.cover.is_empty():
-						_run_to(s, npc, [player[0] + signi(cell[0] - player[0]) * 4, player[1] + signi(cell[1] - player[1]) * 4])   # no cover to be had: close in for a clear shot
-					return
+				var no_view: bool = corner.is_empty() or not Cover.line_clear(s, corner, player, false, Cover.player_low(s))
+				var too_far: bool = Vector2(player[0] - cell[0], player[1] - cell[1]).length() > ADVANCE_BEYOND and int(cycle.get("shots_here", 0)) >= SHOTS_BEFORE_ADVANCE
+				if no_view or too_far:
+					# Work closer one cover at a time, only while it is safe to move, one sheriff at a time.
+					var next: Array = next_cover(s, cell, player)
+					if next.is_empty() and no_view: next = find_cover(s, cell, player, true)   # a cover to one side that sees them
+					if not next.is_empty() and _may_move(s, alert, npc):
+						cycle.phase = "advance"
+						cycle.target = next
+						cycle.since = s.tick
+						alert.mover = int(npc.id)
+						alert.mover_until = s.tick + 150
+						npc.status = "Moving up to the next cover"
+						return
+					if no_view:
+						cycle.waits = int(cycle.get("waits", 0)) + 1
+						cycle.since = s.tick
+						if next.is_empty() and int(cycle.waits) >= 3 and _may_move(s, alert, npc):
+							# No cover with a view anywhere near: edge closer, still slowly.
+							cycle.phase = "advance"
+							cycle.target = [player[0] + signi(cell[0] - player[0]) * 6, player[1] + signi(cell[1] - player[1]) * 6]
+							cycle.since = s.tick
+							alert.mover = int(npc.id)
+							alert.mover_until = s.tick + 150
+						return
 				cycle.peek_to = corner
 				cycle.phase = "peek"
 				cycle.since = s.tick
@@ -228,11 +261,73 @@ static func engage(sim: RefCounted, npc: Dictionary, arrest: Dictionary, cell: A
 			if not bool(cycle.get("shot_done", false)):
 				cycle.shot_done = true
 				cycle.ammo = int(cycle.ammo) - 1
+				cycle.shots_here = int(cycle.get("shots_here", 0)) + 1
 				fire_at_player(sim, npc, cycle.peek_to if not cycle.peek_to.is_empty() else cell, lethal)
 			if age >= 8:
 				cycle.phase = "hide"
 				cycle.since = s.tick
 				cycle.peek_to = []
+		"advance":
+			# Low and slow between covers; back to hiding on arrival (or if it takes too long).
+			var arrived: bool = cell == cycle.target
+			if arrived or age > 150 or (Bleeding.bleeding(npc) and Inventory.amount(s, int(npc.id), "bandage") > 0):
+				cycle.phase = "hide"
+				cycle.cover = cycle.target.duplicate() if arrived and Cover.is_cover(s, cycle.target) else []
+				cycle.since = s.tick
+				cycle.shots_here = 0
+				cycle.waits = 0
+				if int(alert.get("mover", 0)) == int(npc.id): alert.mover = 0
+				return
+			npc.status = "Moving up to the next cover"
+			if (s.tick + int(npc.id)) % ADVANCE_STEP_TICKS == 0: _creep_to(s, npc, cycle.target)
+		"bandage":
+			# bleeding.gd ties the bandage; back to the fight once it is done (or interrupted).
+			npc.status = "Bandaging a wound behind cover"
+			if npc.get("bandaging", {}).is_empty():
+				cycle.phase = "hide"
+				cycle.since = s.tick
+
+## Moving is safe only while the gunman is quiet (or reloading), and one sheriff moves at a time.
+static func _may_move(s: Dictionary, alert: Dictionary, npc: Dictionary) -> bool:
+	var quiet: bool = s.tick - int(alert.get("last_shot", -1000)) >= SAFE_AFTER_SHOT or bool(s.get("shotgun", {}).get("reloading", false))
+	var mover: int = int(alert.get("mover", 0))
+	var free: bool = mover == 0 or mover == int(npc.id) or s.tick > int(alert.get("mover_until", 0))
+	return quiet and free
+
+## The next cover towards the gunman: hidden from them, with a corner that sees them, nearer than
+## where the sheriff is now (but not on top of them), and a short walk away. [] if there is none.
+static func next_cover(s: Dictionary, from: Array, target: Array) -> Array:
+	var here: float = Vector2(target[0] - from[0], target[1] - from[1]).length()
+	var best: Array = []
+	var best_score := 1.0e9
+	for dy in range(-COVER_SEARCH, COVER_SEARCH + 1):
+		for dx in range(-COVER_SEARCH, COVER_SEARCH + 1):
+			if dx == 0 and dy == 0: continue
+			var cell: Array = [from[0] + dx, from[1] + dy]
+			if not Cover.is_cover(s, cell) or not World.walkable(s, cell): continue
+			var look := Vector2(target[0] - cell[0], target[1] - cell[1])
+			if look.length() < 4.0 or look.length() > here - 1.5 or look.length() > SHOOT_RANGE + 6.0: continue
+			if Cover.line_clear(s, cell, target, true, false): continue   # in the open from where the gunman stands (a sheriff in cover crouches)
+			var corner: Array = Cover.peek_cell(s, cell, look)
+			if corner.is_empty() or not Cover.line_clear(s, corner, target, false, Cover.player_low(s)): continue
+			var score: float = float(absi(dx) + absi(dy)) + look.length() * 0.6
+			if score < best_score:
+				best_score = score
+				best = cell
+	if best.is_empty(): return best
+	var route = load("res://sim/movement/navigation.gd").request_path(s, from, best)
+	return best if route.ok and route.path.size() <= 14 else []
+
+## One careful step along a path (no running).
+static func _creep_to(s: Dictionary, npc: Dictionary, goal: Array) -> void:
+	var arrest: Dictionary = npc.arrest
+	if s.tick - int(arrest.get("path_tick", -100)) >= 12 or npc.path.is_empty():
+		var route = load("res://sim/movement/navigation.gd").request_path(s, s.entities[str(npc.id)].cell, goal)
+		arrest.path_tick = s.tick
+		npc.path = route.path if route.ok else []
+	if not npc.path.is_empty():
+		var next: Array = npc.path.pop_front()
+		if World.walkable(s, next): s.entities[str(npc.id)].cell = next
 
 static func _hands_ok(s: Dictionary, npc: Dictionary) -> bool:
 	return load("res://sim/combat/limbs.gd").arms_ok(s, int(npc.id)) == 2
@@ -263,9 +358,9 @@ static func find_cover(s: Dictionary, from: Array, target: Array, avoid_current:
 			if not Cover.is_cover(s, cell): continue
 			var look: Vector2 = Vector2(target[0] - cell[0], target[1] - cell[1])
 			if look.length() > SHOOT_RANGE or look.length() < 3.0: continue
-			if Cover.line_clear(s, cell, target): continue   # still in the open: not cover from them
+			if Cover.line_clear(s, cell, target, true, false): continue   # still in the open: not cover from them
 			var corner: Array = Cover.peek_cell(s, cell, look)
-			if corner.is_empty() or not Cover.line_clear(s, corner, target): continue
+			if corner.is_empty() or not Cover.line_clear(s, corner, target, false, Cover.player_low(s)): continue
 			var score: float = float(absi(dx) + absi(dy)) + look.length() * 0.2
 			if score < best_score:
 				best_score = score
@@ -285,8 +380,8 @@ static func fire_at_player(sim: RefCounted, npc: Dictionary, from: Array, lethal
 		s.shotgun.effects.append({"kind": "blast", "cell": from.duplicate(), "tick": s.tick, "dir": shot.duplicate()})
 	npc.shot_tick = s.tick
 	npc.shot_dir = shot
-	if distance > SHOOT_RANGE or not Cover.line_clear(s, from, player) or not Cover.player_exposed(s):
-		if s.has("shotgun"): s.shotgun.effects.append({"kind": "wall", "cell": Cover.first_block(s, from, player) if not Cover.first_block(s, from, player).is_empty() else player.duplicate(), "tick": s.tick, "dir": shot.duplicate()})
+	if distance > SHOOT_RANGE or not Cover.line_clear(s, from, player, false, Cover.player_low(s)) or not Cover.player_exposed(s):
+		if s.has("shotgun"): s.shotgun.effects.append({"kind": "wall", "cell": Cover.first_block(s, from, player, Cover.player_low(s)) if not Cover.first_block(s, from, player, Cover.player_low(s)).is_empty() else player.duplicate(), "tick": s.tick, "dir": shot.duplicate()})
 		return
 	var chance: int = (KILL_HIT_CHANCE if lethal else WOUND_HIT_CHANCE) - int(maxf(0.0, distance - 5.0) * 3.0)
 	if sim.random_int("gunfire", 0, 99) < chance:

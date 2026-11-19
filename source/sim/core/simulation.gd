@@ -44,9 +44,12 @@ const Unarmed = preload("res://sim/combat/unarmed.gd")
 const Probe = preload("res://sim/diagnostics/perf_probe.gd")
 const Sleep = preload("res://sim/player/sleep.gd")
 const Pace = preload("res://sim/movement/pace.gd")
+const Bleeding = preload("res://sim/combat/bleeding.gd")
+const FamilyEconomy = preload("res://sim/entities/family_economy.gd")
+const StallService = preload("res://sim/economy/stall_service.gd")
 ## Commands that are the player doing something: refused while down or restrained, and they wake
 ## a sleeping player.
-const PLAYER_ACTS := ["move_player", "player_strike", "interact", "shotgun_fire", "hotbar_use", "eat", "drink", "treat_body", "context_action", "walk_to", "travel", "loot_take", "loot_all", "loot_coins", "loot_strip", "loot_give", "wear_item", "take_off", "hold_item", "hotbar_assign", "crouch_toggle", "travel_run", "shotgun_toggle", "shotgun_reload", "person_trade", "take_item", "surrender"]
+const PLAYER_ACTS := ["move_player", "player_strike", "interact", "shotgun_fire", "hotbar_use", "eat", "drink", "treat_body", "context_action", "walk_to", "travel", "loot_take", "loot_all", "loot_coins", "loot_strip", "loot_give", "wear_item", "take_off", "hold_item", "hotbar_assign", "crouch_toggle", "travel_run", "shotgun_toggle", "shotgun_reload", "person_trade", "take_item", "surrender", "haggle"]
 var state: Dictionary
 
 func _init(seed_value: int = 417) -> void:
@@ -93,6 +96,7 @@ func start_game(population: int = 5) -> void:
 	TownLayout.generate(self)
 	Housing.settle(self)
 	Households.upgrade(self)
+	FamilyEconomy.ensure(state)
 	Chests.ensure_all(self)
 	World.lay_out_woodlands(self)
 	for town in state.settlements.values(): Professions.assign(state, town.id)
@@ -139,6 +143,10 @@ func step() -> void:
 		Probe.mark("gunfire")
 		Fear.update(self)
 		Probe.mark("fear")
+		Bleeding.update(self)
+		StallService.update(self)
+		FamilyEconomy.update(self)
+		Probe.mark("bleeding+stalls+families")
 		Speech.update(self)
 		Probe.mark("speech")
 		ContextActions.update(self)
@@ -216,6 +224,7 @@ func step() -> void:
 		Shotgun.update(self)
 		Probe.mark("player+needs+shotgun")
 		if state.has("households") and state.tick % 14400 == 7200: Households.daily(self)
+		if state.has("households") and state.tick % 14400 == 11400: FamilyEconomy.payday(self)   # 19:00
 		Crops.update(state)
 		Probe.mark("daily+crops")
 		if state.tick % 14400 == 0:
@@ -347,6 +356,9 @@ func apply_command(entry: Dictionary) -> void:
 	if entry.kind=="stop_travel":
 		state.player_path=[]; state.player_travel_goal=[]
 		if state.has("player_control"): state.player_control.travelling = 0
+		return
+	if entry.kind == "haggle" and state.has("player_control"):
+		StallService.haggle(self, int(entry.payload.get("target", 0)))
 		return
 	if entry.kind in ["interact","hold_item","take_item","person_trade","treat_body","debug_injury"] and state.has("player_control"):
 		match entry.kind:
@@ -526,6 +538,8 @@ func restore(snapshot_data: Dictionary) -> void:
 	World.upgrade_building_scale(state)
 	World.upgrade_forests(self)
 	World.Fixtures.upgrade(state)
+	if state.has("households") and state.has("accounts") and not state.accounts.keys().any(func(k): return String(k).begins_with("household:")):
+		FamilyEconomy.ensure(state)   # purses for saves made before families kept their own money
 	# After the layout upgrades, which may rebuild furniture: re-links the existing chests.
 	if state.has("households"): Chests.ensure_all(self)
 	if state.has("routes"):

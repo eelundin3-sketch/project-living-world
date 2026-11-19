@@ -83,10 +83,7 @@ static func interact(sim: RefCounted, preferred: int = 0) -> void:
 	var id: int=target(s,preferred)
 	var e: Dictionary=s.entities.get(str(id),{})
 	if e.get("kind", "") == "market_stall":
-		pc.ui_target = id
-		pc.ui_nonce += 1
-		pc.ui_kind = "trade"
-		pc.notice = "Trading at the " + e.name.to_lower()
+		load("res://sim/economy/stall_service.gd").request(sim, id)   # trade once the keeper is behind the counter
 		return
 	if pc.held_quantity>0:
 		var destination: int=0
@@ -187,10 +184,23 @@ static func trade(sim: RefCounted,payload: Dictionary) -> void:
 	if e.kind == "market_stall" and item not in e.sale_items:
 		pc.notice = "This stall does not trade that item."
 		return
+	var Stalls = load("res://sim/economy/stall_service.gd")
+	if e.kind == "market_stall" and not Stalls.staffed(s, e):
+		pc.notice = "Wait for someone to come to the counter."
+		return
 	var buy: bool=payload.get("buy",true)
-	var price: int=Market.quote(s,e.settlement,item,buy)
-	var result := Market.transact(s,id if buy else s.player,s.player if buy else id,item,1,price,e.settlement)
-	pc.notice="Trade complete." if result.ok else "Trade failed: "+result.error_code
+	var price: int=Stalls.price(s,int(e.settlement),item,buy,id)
+	# How many: the number asked for (or everything, -1), as far as stock, coins and room allow.
+	var seller: int = id if buy else s.player
+	var buyer: int = s.player if buy else id
+	var wanted: int = int(payload.get("quantity", 1))
+	var quantity: int = Inventory.amount(s, seller, item) if wanted < 0 else mini(wanted, Inventory.amount(s, seller, item))
+	quantity = mini(quantity, mini(int(s.accounts.get(str(buyer), 0)) / maxi(1, price), Inventory.available(s, buyer)))
+	if quantity <= 0:
+		pc.notice = "Nothing to trade: " + ("they have none, or you cannot pay or carry it." if buy else "you have none, or they cannot pay for it.")
+		return
+	var result := Market.transact(s,seller,buyer,item,quantity,price,e.settlement)
+	pc.notice=("You %s %d %s for %d coins." % ["buy" if buy else "sell", quantity, item, quantity * price]) if result.ok else "Trade failed: "+result.error_code
 	reconcile(s)
 static func update(sim: RefCounted) -> void:
 	var s: Dictionary=sim.state

@@ -96,7 +96,9 @@ static func options(s: Dictionary, id: int, part: String = "") -> Array:
 					else: result.append(_opt("help_up", "Help up", "hand", false, "Unconscious"))
 					result.append(_opt("kick", "Kick (1.5× a punch)", "fist"))
 			else:
-				result.append(_opt("trade", "Talk / trade", "talk"))
+				result.append(_opt("trade", "Trade", "bag"))
+				result.append(_opt("ask_family", "Ask about their family", "talk"))
+				result.append(_opt("ask_news", "Ask for news", "talk"))
 				result.append(_opt("punch", "Punch", "fist"))
 				result.append(_opt("shove", "Shove", "fist"))
 			if not npc.is_empty() and int(npc.get("bleeding_until", 0)) > s.tick:
@@ -176,7 +178,7 @@ static func describe(s: Dictionary, id: int, part: String = "") -> String:
 		"resident":
 			var npc: Dictionary = s.residents.get(str(id), {})
 			var mood: String = "calm" if int(npc.get("anger", 0)) < 30 else "angry"
-			return "%s, a %s. %s. They look %s. Wearing %s." % [e.name, String(npc.get("occupation", "villager")).to_lower(), npc.get("status", "Resting"), mood, Outfits.describe(s, id)]
+			return "%s, a %s. %s. They look %s. Wearing %s. %s" % [e.name, String(npc.get("occupation", "villager")).to_lower(), npc.get("status", "Resting"), mood, Outfits.describe(s, id), load("res://sim/entities/family_economy.gd").describe(s, npc)]
 		"tree":
 			var logs: int = int(_items(s, id).get("log", 0))
 			return "%s: %s." % [e.name, "only a stump" if logs == 0 else ("fallen, %d logs to gather" % logs if e.get("felled", false) else "standing, about %d logs of timber" % logs)]
@@ -307,6 +309,21 @@ static func perform(sim: RefCounted, id: int, action: String, part: String = "")
 			var npc: Dictionary = s.residents.get(str(id), {})
 			if not npc.is_empty(): Brawl.help_up(s, npc)
 			pc.notice = "You help %s to their feet." % e.name
+		"ask_family", "ask_news":
+			var npc: Dictionary = s.residents.get(str(id), {})
+			if npc.is_empty(): return
+			var first: String = String(e.name).split(" ")[0]
+			if action == "ask_family":
+				var Family = load("res://sim/entities/family_economy.gd")
+				var household: Dictionary = s.get("households", {}).get(str(npc.get("household", "")), {})
+				var line: String = "I'm a %s." % String(npc.occupation).to_lower()
+				if not household.is_empty() and household.members.size() > 1:
+					line += " There are %d of us in the %s household, and we get by on what we earn." % [household.members.size(), Family.family_name(s, household)]
+				else: line += " I keep house on my own."
+				pc.notice = "%s: %s" % [first, line]
+			else:
+				pc.notice = "%s: %s" % [first, load("res://sim/economy/stall_service.gd").news(s, npc)]
+			load("res://sim/law/law.gd")._say(sim, id, pc.notice.substr(first.length() + 2).left(60))
 		"wake":
 			var sleeper: Dictionary = s.residents.get(str(id), {})
 			if not sleeper.is_empty():

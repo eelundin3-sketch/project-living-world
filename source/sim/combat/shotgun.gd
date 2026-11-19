@@ -93,9 +93,24 @@ static func surface_at(s: Dictionary, cell: Array, owner: int) -> String:
 			break
 	if surface != "": return surface
 	if s.world.get("building_walls", {}).has(key): return "wall"
-	if s.world.get("fixture_cells", {}).has(key): return "wood"
-	if s.world.blocked.has(key): return "stone"
-	return ""
+	var solid: String = "wood" if s.world.get("fixture_cells", {}).has(key) else ("stone" if s.world.blocked.has(key) else "")
+	# A low thing (a bed, a chest, a counter, a small rock) only catches the shot when someone is
+	# crouched right behind it; otherwise the pellets fly over.
+	if solid != "" and Cover.height(s, cell) == Cover.LOW and not _crouched_beside(s, cell, owner): return ""
+	return solid
+
+static func _crouched_beside(s: Dictionary, cell: Array, owner: int) -> bool:
+	for dy in range(-1, 2):
+		for dx in range(-1, 2):
+			if dx == 0 and dy == 0: continue
+			for id in Spatial.actors_at(s, [cell[0] + dx, cell[1] + dy]):
+				if id == owner: continue
+				if id == int(s.get("player", -1)):
+					if Cover.player_low(s): return true
+					continue
+				var npc: Dictionary = s.get("residents", {}).get(str(id), {})
+				if not npc.get("cover_cycle", {}).is_empty() or bool(npc.get("fear", {}).get("arrived", false)) or load("res://sim/combat/brawl.gd").knocked(s, npc): return true
+	return false
 
 static func update(sim: RefCounted) -> void:
 	var s: Dictionary = sim.state

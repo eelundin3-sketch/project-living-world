@@ -147,7 +147,7 @@ static func _update_workshop(s: Dictionary, workshop: Dictionary, npc: Dictionar
 			return
 		workshop.progress += 2
 		npc.status = TRADES[workshop.get("kind", "sawmill")].label
-		finish(s, workshop)
+		if finish(s, workshop): npc.work_done = int(npc.get("work_done", 0)) + 1   # a batch earns the family a wage
 		return
 
 	var rack := World.Fixtures.stock_station(s, workshop.id)

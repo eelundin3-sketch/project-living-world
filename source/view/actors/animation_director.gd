@@ -98,6 +98,15 @@ static func action_for(s: Dictionary, entity: Dictionary, aim_held: bool = false
 			"pursue": result.action = "combat_idle"
 			_: result.action = "idle"
 		return result
+	# A villager binding a wound (bleeding.gd): the same motions as the player's bandaging.
+	if not npc.is_empty() and not npc.get("bandaging", {}).is_empty():
+		var binding: Dictionary = npc.bandaging
+		result.action = "treat"
+		result.phase = clampf(float(s.tick - int(binding.since)) / maxf(1.0, float(int(binding.until) - int(binding.since))), 0.0, 1.0)
+		result.duration = maxf(0.1, float(int(binding.until) - int(binding.since)) / 10.0)
+		result.treat_part = "left_forearm"
+		result.treat_kind = "bandage"
+		return result
 	# The player asleep in a bed.
 	if entity.kind == "player" and not s.get("player_control", {}).get("sleeping", {}).is_empty():
 		result.action = "rest"
@@ -511,6 +520,8 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 		# Crouching eases down in about a third of a second with a small dip past the final
 		# height, and rises again a little more slowly, so neither is a snap.
 		var wants_sneak: bool = is_player and bool(s.get("player_control", {}).get("crouching", false)) and action not in ["fall", "down", "getup", "treat", "rest"]
+		# A sheriff moving up between covers goes low (gunfire.gd "advance").
+		if not is_player and str(s.get("residents", {}).get(key, {}).get("cover_cycle", {}).get("phase", "")) == "advance": wants_sneak = true
 		# In cover the body is low against the wall; leaning out lifts it a little and shifts it towards the corner.
 		var in_cover: bool = false
 		var lean_to := Vector2.ZERO

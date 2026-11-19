@@ -268,6 +268,10 @@ func rebuild() -> void:
 	elif mode == "inventory":
 		pass   # the grid draws itself
 	else:
+		if mode != "inventory":
+			# Haggle once a visit; the terms show in the summary line.
+			var talk_row := HBoxContainer.new(); list.add_child(talk_row)
+			add_button(talk_row, "Haggle", func() -> void: simulation.submit("haggle", {"target": target}))
 		for item in ["log","plank","food","rye","bandage","antiseptic","shell","shotgun","tool","ore"]:
 			var row:=HBoxContainer.new(); list.add_child(row)
 			var label:=Label.new(); label.custom_minimum_size=Vector2(270,45); row.add_child(label); rows[item]=label
@@ -278,8 +282,10 @@ func rebuild() -> void:
 					hotbar_button.tooltip_text = "Put %s on hotbar slot %d" % [item,slot + 1]
 					hotbar_button.custom_minimum_size = Vector2(28,24)
 			else:
-				add_button(row,"Buy 1",func() -> void: simulation.submit("person_trade",{"target":target,"item":item,"buy":true}))
-				add_button(row,"Sell 1",func() -> void: simulation.submit("person_trade",{"target":target,"item":item,"buy":false}))
+				add_button(row,"Buy 1",func() -> void: simulation.submit("person_trade",{"target":target,"item":item,"buy":true,"quantity":1}))
+				add_button(row,"Buy 5",func() -> void: simulation.submit("person_trade",{"target":target,"item":item,"buy":true,"quantity":5}))
+				add_button(row,"Sell 1",func() -> void: simulation.submit("person_trade",{"target":target,"item":item,"buy":false,"quantity":1}))
+				add_button(row,"Sell all",func() -> void: simulation.submit("person_trade",{"target":target,"item":item,"buy":false,"quantity":-1}))
 				collect_buttons.append(add_button(row,"Collect",func() -> void: simulation.submit("take_item",{"target":target,"item":item})))
 		if mode=="inventory": add_button(list,"Stow held item · hands empty",func() -> void: simulation.submit("hold_item",{"item":""}))
 func refresh() -> void:
@@ -327,10 +333,17 @@ func refresh() -> void:
 		title.text="INTERACT · "+e.name
 		for button in collect_buttons: button.visible=e.kind in ["stash","sawmill"]
 		var npc: Dictionary=s.get("residents",{}).get(str(target),{})
-		summary.text=("“I’m %s.”\n" % npc.get("status","available").to_lower() if not npc.is_empty() else "Village supplies · buy or sell goods.\n")+"You: %d coins · Other party: %d coins" % [s.accounts.get(str(s.player),0),s.accounts.get(str(target),0)]
+		var Stalls = load("res://sim/economy/stall_service.gd")
+		var terms: Dictionary = pc.get("trade_terms", {})
+		var pct: int = int(terms.get("pct", 0)) if int(terms.get("target", 0)) == target else 0
+		var terms_text: String = "" if pct == 0 else ("  ·  Haggled: %d%% off" % -pct if pct < 0 else "  ·  Annoyed: %d%% dearer" % pct)
+		var keeper: Dictionary = Stalls.counterpart(s, target)
+		var who: String = String(s.entities.get(str(keeper.get("id", 0)), {}).get("name", "")) if not keeper.is_empty() else ""
+		var first_line: String = ("“I’m %s.”\n" % npc.get("status","available").to_lower()) if not npc.is_empty() else (("%s is minding the stall.\n" % who) if not who.is_empty() else "Village supplies · buy or sell goods.\n")
+		summary.text=first_line+"You: %d coins · Other party: %d coins%s" % [s.accounts.get(str(s.player),0),s.accounts.get(str(target),0),terms_text]
 		for item in rows:
 			rows[item].get_parent().visible = e.kind != "market_stall" or item in e.sale_items
-			rows[item].text="%s · You %d / Here %d\nBuy %d · Sell %d coins" % [item.capitalize(),Inventory.amount(s,s.player,item),Inventory.amount(s,target,item),Market.quote(s,e.settlement,item,true),Market.quote(s,e.settlement,item,false)]
+			rows[item].text="%s · You %d / Here %d\nBuy %d · Sell %d coins" % [item.capitalize(),Inventory.amount(s,s.player,item),Inventory.amount(s,target,item),Stalls.price(s,int(e.settlement),item,true,target),Stalls.price(s,int(e.settlement),item,false,target)]
 		detail.text = "Goods come from this stall’s stock. Stay at the counter to trade." if e.kind == "market_stall" else "Stay nearby to trade. People trade personal goods; work cargo is unavailable."
 		notice.text=pc.notice
 func _part_name(part: String) -> String:

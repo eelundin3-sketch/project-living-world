@@ -12,6 +12,8 @@ const Crops = preload("res://sim/farming/crops.gd")
 const Sheriff = preload("res://sim/law/sheriff.gd")
 const Brawl = preload("res://sim/combat/brawl.gd")
 const Limbs = preload("res://sim/combat/limbs.gd")
+const Bleeding = preload("res://sim/combat/bleeding.gd")
+const FamilyEconomy = preload("res://sim/entities/family_economy.gd")
 
 static func spawn(sim: RefCounted, count: int, settlement: int = 1, origin: Array = [60, 49]) -> void:
 	var s: Dictionary = sim.state
@@ -43,6 +45,8 @@ static func update(sim: RefCounted) -> void:
 		if not npc.get("migration", {}).is_empty():
 			continue
 		if not npc.get("fear", {}).is_empty(): continue   # running for cover or crouched behind it (fear.gd)
+		if not npc.get("serving", {}).is_empty(): continue   # minding a market tent for the player (stall_service.gd)
+		if not npc.get("bandaging", {}).is_empty(): continue   # binding a wound (bleeding.gd)
 		if not npc.get("arrest", {}).is_empty():
 			if npc.has("sitting"): Sheriff.stand_up(s, npc)
 			continue   # making an arrest (law.gd)
@@ -79,6 +83,17 @@ static func update(sim: RefCounted) -> void:
 						npc.fatigue = maxi(10, npc.fatigue - actions + 1)
 					_need_action(sim, npc)
 
+## Things a villager keeps on them rather than putting in the store.
+const KIT := ["bandage"]
+
+## What a villager carries that belongs in the store (everything but their own kit).
+static func cargo(s: Dictionary, npc: Dictionary) -> int:
+	var total := 0
+	var items: Dictionary = s.inventories[str(npc.id)].items
+	for item in items:
+		if not item in KIT: total += int(items[item])
+	return total
+
 static func _destination(s: Dictionary, npc: Dictionary, kind: String) -> int:
 	if s.has("settlements"):
 		return s.settlements[str(npc.settlement)][kind]
@@ -101,7 +116,7 @@ static func _decide(sim: RefCounted, npc: Dictionary) -> void:
 	if npc.job != 0 or not npc.goal.is_empty():
 		return
 	# Household chores run alongside the main trade: tending the garden in the morning and evening.
-	if s.has("households") and not npc.get("work_cargo", false) and not npc.get("production_delivery", false) and Inventory.used(s.inventories[str(npc.id)]) == 0 and Households.in_garden_hours(s):
+	if s.has("households") and not npc.get("work_cargo", false) and not npc.get("production_delivery", false) and cargo(s, npc) == 0 and Households.in_garden_hours(s):
 		var window: int = s.tick / 14400 * 2 + (1 if Households.minute_of_day(s) >= 720 else 0)
 		if npc.get("garden_window", -1) != window and not Households.garden_task(s, npc).is_empty():
 			set_goal(s, npc, "garden")
@@ -109,7 +124,7 @@ static func _decide(sim: RefCounted, npc: Dictionary) -> void:
 			return
 	if npc.occupation == "Builder" or npc.get("work_cargo", false) or npc.get("production_delivery", false):
 		return
-	if Inventory.used(s.inventories[str(npc.id)]) > 0:
+	if cargo(s, npc) > 0:
 		set_goal(s, npc, "deposit")
 	elif Professions.GATHERERS.has(npc.occupation):
 		Jobs.assign(s, npc.id)
@@ -127,6 +142,15 @@ static func set_goal(s: Dictionary, npc: Dictionary, goal: String) -> void:
 			npc.bed_target = bed
 			destination_cell = bed.approach
 	var target: int = _destination(s, npc, "home" if goal in ["rest", "sleep"] else "warehouse")
+	if goal in ["bandage", "shop", "stock_pantry"]:
+		# Errands for the household: a bandage from the pantry (or the storehouse), shopping at the
+		# storehouse, and carrying it home.
+		if npc.job != 0: Jobs.release(s, npc.job, "ERRAND")
+		var home: int = int(Households.household_of(s, npc).get("home", 0))
+		var has_home: bool = home != 0 and s.inventories.has(str(home))
+		if goal == "bandage" and has_home and Inventory.amount(s, home, "bandage") > 0: target = home
+		if goal == "stock_pantry" and has_home: target = home
+		npc.errand_target = target
 	if goal == "eat":
 		# Households eat from their own pantry first; the storehouse is the fallback.
 		var household: Dictionary = Households.household_of(s, npc)
@@ -149,7 +173,8 @@ static func set_goal(s: Dictionary, npc: Dictionary, goal: String) -> void:
 	npc.path = route.path
 	npc.nav_revision = s.world.nav_revision
 	npc.goal = goal
-	npc.status = {"eat": "Going to eat", "rest": "Going home to rest", "deposit": "Returning carried goods", "drink": "Going to drink", "garden": "Going to the garden", "patrol": "Patrolling the square", "sleep": "Going to bed"}.get(goal, "Walking")
+	npc.status = {"eat": "Going to eat", "rest": "Going home to rest", "deposit": "Returning carried goods", "drink": "Going to drink", "garden": "Going to the garden", "patrol": "Patrolling the square", "sleep": "Going to bed",
+		"bandage": "Bleeding: going for a bandage", "shop": "Going to buy food for the family", "stock_pantry": "Carrying the shopping home"}.get(goal, "Walking")
 
 static func _need_action(sim: RefCounted, npc: Dictionary) -> void:
 	var s: Dictionary = sim.state
@@ -189,10 +214,25 @@ static func _need_action(sim: RefCounted, npc: Dictionary) -> void:
 			if Inventory.consume(s, food_source, "food", 1):
 				npc.hunger = maxi(0, npc.hunger - 45)
 				npc.status = "Ate at home from the household pantry" if at_home else "Ate from communal stores"
+				if not at_home and food_source == store: FamilyEconomy.pay_for_meal(s, npc, store)
 			else:
 				npc.status = "Hungry: store has no food"
 				npc.retry_at = s.tick + 100
 			npc.goal = ""
+		"bandage":
+			var source: int = int(npc.get("errand_target", 0))
+			npc.goal = ""
+			if s.inventories.has(str(source)) and Inventory.amount(s, source, "bandage") > 0 and Inventory.transfer(s, source, npc.id, "bandage", 1).ok:
+				Bleeding.begin(s, npc)
+			else:
+				npc.status = "No bandage to be had"
+				npc.retry_at = s.tick + 300
+		"shop":
+			npc.goal = ""
+			FamilyEconomy.buy_food(sim, npc)
+		"stock_pantry":
+			npc.goal = ""
+			FamilyEconomy.stock_pantry(s, npc)
 		"drink":
 			npc.thirst = maxi(0, int(npc.get("thirst", 0)) - 60)
 			npc.status = "Drank from the well barrel"
@@ -220,6 +260,7 @@ static func _need_action(sim: RefCounted, npc: Dictionary) -> void:
 			var store: int = _destination(s, npc, "warehouse")
 			var items: Dictionary = s.inventories[str(npc.id)].items.duplicate()
 			for item in items:
+				if item in KIT: continue   # their own bandages stay with them
 				var moved := Inventory.transfer(s, npc.id, store, item, items[item])
 				if not moved.ok:
 					npc.status = "Carrying goods: " + moved.error_code
