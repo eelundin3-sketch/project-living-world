@@ -45,6 +45,7 @@ const Probe = preload("res://sim/diagnostics/perf_probe.gd")
 const Sleep = preload("res://sim/player/sleep.gd")
 const Pace = preload("res://sim/movement/pace.gd")
 const Encumbrance = preload("res://sim/player/encumbrance.gd")
+const Carrying = preload("res://sim/player/carrying.gd")
 const Bleeding = preload("res://sim/combat/bleeding.gd")
 const FamilyEconomy = preload("res://sim/entities/family_economy.gd")
 const StallService = preload("res://sim/economy/stall_service.gd")
@@ -220,6 +221,7 @@ func step() -> void:
 		Cover.update(state)
 		Probe.mark("body+cover")
 		PlayerActions.update(self)
+		Carrying.update(self)
 		Needs.update(state)
 		Sleep.update(state)
 		Hotbar.update(state)
@@ -270,6 +272,9 @@ func apply_command(entry: Dictionary) -> void:
 	# Taking over: any action of the player's own ends a travel to a town.
 	if entry.kind in PLAYER_ACTS and entry.kind not in ["travel", "travel_run"] and int(state.get("player_control", {}).get("travelling", 0)) != 0:
 		state.player_control.travelling = 0
+	if entry.kind in ["shotgun_fire", "player_strike", "shotgun_toggle", "shotgun_reload"] and Carrying.carried(state) != 0 and state.has("player_control"):
+		state.player_control.notice = "Put the body down first (F)."
+		return
 	var limb_problem: String = Limbs.action_problem(state, entry.kind)
 	if not limb_problem.is_empty() and state.has("player_control"):
 		state.player_control.notice = limb_problem

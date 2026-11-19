@@ -338,6 +338,9 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 			jumped=true
 		var motion: Vector2 = pose.position - before
 		pose.moving = motion.length() > 0.01 and not jumped
+		# Carried over someone's shoulder: drawn up at shoulder height (carrying.gd).
+		var shoulder: float = -20.0 if s.get("residents", {}).get(key, {}).has("carried_by") else 0.0
+		pose.shoulder = shoulder
 		# Sprint ramp: eases in over about 0.3 s and out over about 0.5 s after shift is released.
 		var old_blend: float = float(pose.get("run_blend", 0.0))
 		var wanted_blend: float = 1.0 if (sprinting and pose.moving) else 0.0
@@ -452,6 +455,8 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 				item = candidate
 				quantity = items[candidate]
 				break
+		if entity.kind == "player" and int(s.get("player_control", {}).get("carrying", {}).get("id", 0)) != 0:
+			quantity = 1   # a body over the shoulder: the carrying walk
 		pose.handling_age += dt
 		if not first and not paused and pose.items != items:
 			var old_total: int = 0

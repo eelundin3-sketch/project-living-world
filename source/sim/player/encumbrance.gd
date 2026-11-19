@@ -26,6 +26,8 @@ static func load_tenths(s: Dictionary, id: int) -> int:
 	var items: Dictionary = s.get("inventories", {}).get(str(id), {}).get("items", {})
 	for item in items:
 		total += int(items[item]) * item_tenths(str(item))
+	if id == int(s.get("player", -1)) and int(s.get("player_control", {}).get("carrying", {}).get("id", 0)) != 0:
+		total += 250   # a person over your shoulder (carrying.gd)
 	return total
 
 static func limit_tenths(s: Dictionary, id: int) -> int:
@@ -37,6 +39,8 @@ static func band(s: Dictionary, id: int = -1) -> int:
 	if id < 0: id = int(s.get("player", -1))
 	if id < 0: return 0
 	var percent: int = load_tenths(s, id) * 100 / maxi(1, limit_tenths(s, id))
+	if id == int(s.get("player", -1)) and int(s.get("player_control", {}).get("carrying", {}).get("id", 0)) != 0:
+		percent = maxi(percent, OVERLOADED_AT + 1)   # a body is always an overload: slow, and no running
 	if percent > CRUSHING_AT: return 3
 	if percent > OVERLOADED_AT: return 2
 	if percent > HEAVY_AT: return 1

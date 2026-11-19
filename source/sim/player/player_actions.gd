@@ -77,6 +77,7 @@ static func interact(sim: RefCounted, preferred: int = 0) -> void:
 	var s: Dictionary=sim.state
 	var pc: Dictionary=s.player_control
 	if not pc.work.is_empty(): stop(s); pc.notice="Stopped working."; return
+	if int(pc.get("carrying", {}).get("id", 0)) != 0: load("res://sim/player/carrying.gd").put_down(s); return   # F puts a carried body down
 	if not s.player_health.treatment.is_empty(): pc.notice="Finish treatment first, or move to cancel it."; return
 	if Health.incapacitated(s): pc.notice="Too injured to work. Press H to treat your injuries."; return
 	reconcile(s)

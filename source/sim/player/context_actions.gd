@@ -89,6 +89,9 @@ static func options(s: Dictionary, id: int, part: String = "") -> Array:
 			var asleep: bool = not npc.get("sleeping", {}).is_empty()
 			if down or asleep:
 				result.append(_opt("loot", "Search & loot", "hand"))
+				var Carrying = load("res://sim/player/carrying.gd")
+				if Carrying.carried(s) == int(npc.id): result.append(_opt("put_down", "Put them down", "hand"))
+				elif Carrying.can_carry(s, npc): result.append(_opt("carry", "Carry over your shoulder", "hand"))
 				if dead: pass
 				elif asleep: result.append(_opt("wake", "Wake up", "sun"))
 				else:
@@ -307,6 +310,8 @@ static func perform(sim: RefCounted, id: int, action: String, part: String = "")
 			if action == "trade" and s.residents.has(str(id)): load("res://sim/entities/speech.gd").say(sim, id, "greet_player")
 			Actions.interact(sim, id)
 		"loot": Looting.open(s, id)
+		"carry": load("res://sim/player/carrying.gd").pick_up(s, id)
+		"put_down": load("res://sim/player/carrying.gd").put_down(s)
 		"help_up":
 			var npc: Dictionary = s.residents.get(str(id), {})
 			if not npc.is_empty(): Brawl.help_up(s, npc)
