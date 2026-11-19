@@ -1,7 +1,9 @@
 extends RefCounted
-## Pump shotgun: ready/stow, shell-by-shell reloading, a spread of simulated pellets
-## and the surface each pellet strikes. Everything is tick-based and deterministic;
-## the view only reads `state.shotgun` to draw recoil, blasts and impact effects.
+## The player's long gun: ready/stow, round-by-round reloading, simulated shot and the surface
+## each round strikes. The RIFLE is the main gun (you start with one, office racks hold them): one
+## accurate, hard-hitting bullet that carries far and is heard far. The pump SHOTGUN (a spread of
+## pellets, short range) still works if you have one. `state.shotgun` keeps its name for saves; its
+## `kind` says which gun is in your hands. Tick-based and deterministic; the view only reads it.
 const World = preload("res://sim/world/world_db.gd")
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const Wounds = preload("res://sim/combat/wounds.gd")
@@ -22,56 +24,91 @@ const SPREAD := 0.17
 const Brawl = preload("res://sim/combat/brawl.gd")
 
 const HURT_ARM_SPREAD := 1.3   # a hurt arm widens the pattern by this much
+## Each gun: shot per trigger pull, spread (radians), range (cells), ticks between shots, ticks per
+## round loaded, rounds held, ammunition, how hard each projectile hits, its speed (cells per
+## tick), how far the shot is heard (cells), and how much it throws the aim.
+const WEAPONS := {
+	"rifle": {"name": "Rifle", "pellets": 1, "spread": 0.025, "range": 26, "cooldown": 30, "reload": 20, "capacity": 5, "ammo": "cartridge", "strength": 2.6, "speed": 4, "heard": 60, "bloom": 260},
+	"shotgun": {"name": "Shotgun", "pellets": PELLETS, "spread": SPREAD, "range": RANGE_CELLS, "cooldown": COOLDOWN_TICKS, "reload": RELOAD_TICKS_PER_SHELL, "capacity": CAPACITY, "ammo": "shell", "strength": 1.0, "speed": SPEED_CELLS_PER_TICK, "heard": 45, "bloom": BLOOM_PER_SHOT}}
+const GUNS := ["rifle", "shotgun"]   # the order a gun is picked up when you ready one
+
+## The gun in use: the one readied last if you still have it, else the first you carry.
+static func kind(s: Dictionary) -> String:
+	var current: String = str(s.get("shotgun", {}).get("kind", ""))
+	if not current.is_empty() and Inventory.amount(s, s.player, current) > 0: return current
+	for gun in GUNS:
+		if Inventory.amount(s, s.player, gun) > 0: return gun
+	return current if not current.is_empty() else "shotgun"
+
+static func spec(s: Dictionary) -> Dictionary:
+	return WEAPONS[kind(s)]
+
+## How far a shot from the gun in use is heard.
+static func heard_range(s: Dictionary) -> int:
+	return int(spec(s).heard)
 static func initialize(s: Dictionary) -> void:
 	if not s.has("shotgun"):
-		s.shotgun = {"equipped": false, "loaded": 0, "reloading": false, "reload_next": 0, "last_shot": -1000, "pellets": [], "effects": [], "kicks": 0, "bloom": 0, "last_dir": [0, 1000]}
+		s.shotgun = {"kind": "", "equipped": false, "loaded": 0, "reloading": false, "reload_next": 0, "last_shot": -1000, "pellets": [], "effects": [], "kicks": 0, "bloom": 0, "last_dir": [0, 1000]}
 
 static func owns(s: Dictionary) -> bool:
-	return Inventory.amount(s, s.player, "shotgun") > 0
+	for gun in GUNS:
+		if Inventory.amount(s, s.player, gun) > 0: return true
+	return false
 
 ## Raise or lower the weapon. Lowered, it hangs on the character's back.
 static func toggle(s: Dictionary) -> String:
-	if not owns(s): return "You do not have a shotgun. The sheriff's office rack stores them."
+	if not owns(s): return "You have no gun. The sheriff's office racks keep rifles."
+	var gun: String = kind(s)
+	if str(s.shotgun.get("kind", gun)) != gun:
+		# A different gun now: whatever was loaded goes back in your pocket as ammunition.
+		var old: Dictionary = WEAPONS.get(str(s.shotgun.get("kind", "shotgun")), WEAPONS.shotgun)
+		if int(s.shotgun.loaded) > 0: Inventory.produce(s, s.player, str(old.ammo), int(s.shotgun.loaded))
+		s.shotgun.loaded = 0
+	s.shotgun.kind = gun
 	s.shotgun.equipped = not s.shotgun.equipped
 	if not s.shotgun.equipped: s.shotgun.reloading = false
-	return "Shotgun ready. R reloads, aim with the right mouse and click to fire." if s.shotgun.equipped else "Shotgun slung on your back."
+	var name: String = str(WEAPONS[gun].name)
+	return "%s ready. R reloads, aim with the right mouse and click to fire." % name if s.shotgun.equipped else "%s slung on your back." % name
 
 static func start_reload(s: Dictionary) -> String:
 	var gun: Dictionary = s.shotgun
-	if not gun.equipped: return "Ready the shotgun first (its hotbar key)."
-	if gun.loaded >= CAPACITY: return "The shotgun is full."
-	if Inventory.amount(s, s.player, "shell") < 1: return "You have no shells."
+	var weapon: Dictionary = spec(s)
+	if not gun.equipped: return "Ready your gun first (its hotbar key)."
+	if gun.loaded >= int(weapon.capacity): return "The %s is full." % str(weapon.name).to_lower()
+	if Inventory.amount(s, s.player, str(weapon.ammo)) < 1: return "You have no %ss." % str(weapon.ammo)
 	gun.reloading = true
-	gun.reload_next = s.tick + RELOAD_TICKS_PER_SHELL
-	return "Loading shells."
+	gun.reload_next = s.tick + int(weapon.reload)
+	return "Loading %ss." % str(weapon.ammo)
 
 static func can_fire(s: Dictionary) -> bool:
 	var gun: Dictionary = s.get("shotgun", {})
-	return not gun.is_empty() and gun.equipped and gun.loaded > 0 and s.tick - int(gun.last_shot) >= COOLDOWN_TICKS
+	return not gun.is_empty() and gun.equipped and gun.loaded > 0 and s.tick - int(gun.last_shot) >= int(spec(s).cooldown)
 
 ## Fires one blast. `direction` is a unit vector in thousandths (as the strike command uses).
 static func fire(sim: RefCounted, direction: Array) -> bool:
 	var s: Dictionary = sim.state
 	if not can_fire(s) or direction.size() != 2: return false
 	var gun: Dictionary = s.shotgun
+	var weapon: Dictionary = spec(s)
 	var origin: Array = load("res://sim/combat/cover.gd").eye_cell(s).duplicate()   # leaning out of cover, the shot leaves from the corner
 	var base: float = Vector2(direction[0], direction[1]).angle()
 	gun.loaded -= 1
 	gun.reloading = false  # firing interrupts loading, as with a pump gun
 	gun.last_shot = s.tick
 	gun.kicks += 1
-	gun.bloom = mini(BLOOM_MAX, int(gun.get("bloom", 0)) + BLOOM_PER_SHOT)
+	gun.bloom = mini(BLOOM_MAX, int(gun.get("bloom", 0)) + int(weapon.bloom))
 	gun.last_dir = [int(direction[0]), int(direction[1])]
 	Brawl.event(s, "gunshot", origin, gun.last_dir)
-	load("res://sim/combat/gunfire.gd").on_player_shot(sim, origin)
+	load("res://sim/combat/gunfire.gd").on_player_shot(sim, origin, int(weapon.heard))
 	# A hurt (not yet useless) arm can't hold the gun steady: the pattern opens up.
 	var Limbs = load("res://sim/combat/limbs.gd")
 	var shaky: float = HURT_ARM_SPREAD if Limbs.state(s, int(s.player), "left_arm") == "hurt" or Limbs.state(s, int(s.player), "right_arm") == "hurt" else 1.0
-	for index in range(PELLETS):
-		var spread: float = (float(sim.random_int("shotgun", -1000, 1000)) / 1000.0) * SPREAD * shaky * (1.0 + 1.5 * float(gun.get("bloom", 0)) / 1000.0)
+	for index in range(int(weapon.pellets)):
+		var spread: float = (float(sim.random_int("shotgun", -1000, 1000)) / 1000.0) * float(weapon.spread) * shaky * (1.0 + 1.5 * float(gun.get("bloom", 0)) / 1000.0)
 		var angle: float = base + spread
-		var reach: float = RANGE_CELLS - float(sim.random_int("shotgun", 0, 200)) / 100.0
-		gun.pellets.append({"x": float(origin[0]) + 0.5 * cos(base), "y": float(origin[1]) + 0.5 * sin(base), "dx": cos(angle), "dy": sin(angle), "left": reach, "owner": s.player})
+		var reach: float = float(weapon.range) - float(sim.random_int("shotgun", 0, 200)) / 100.0
+		gun.pellets.append({"x": float(origin[0]) + 0.5 * cos(base), "y": float(origin[1]) + 0.5 * sin(base), "dx": cos(angle), "dy": sin(angle), "left": reach, "owner": s.player,
+			"strength": float(weapon.strength), "speed": int(weapon.speed)})
 	_effect(s, "blast", origin, [roundi(cos(base) * 1000.0), roundi(sin(base) * 1000.0)])
 	return true
 
@@ -123,14 +160,15 @@ static func update(sim: RefCounted) -> void:
 	if int(gun.get("bloom", 0)) > 0: gun.bloom = maxi(0, int(gun.bloom) - BLOOM_DECAY)
 	while not gun.effects.is_empty() and s.tick - int(gun.effects[0].tick) > EFFECT_TICKS: gun.effects.pop_front()
 	if gun.reloading and s.tick >= gun.reload_next:
-		if gun.loaded < CAPACITY and Inventory.consume(s, s.player, "shell", 1):
+		var weapon: Dictionary = spec(s)
+		if gun.loaded < int(weapon.capacity) and Inventory.consume(s, s.player, str(weapon.ammo), 1):
 			gun.loaded += 1
-			gun.reload_next = s.tick + RELOAD_TICKS_PER_SHELL
-		if gun.loaded >= CAPACITY or Inventory.amount(s, s.player, "shell") < 1: gun.reloading = false
+			gun.reload_next = s.tick + int(weapon.reload)
+		if gun.loaded >= int(weapon.capacity) or Inventory.amount(s, s.player, str(weapon.ammo)) < 1: gun.reloading = false
 	var live: Array = []
 	for pellet in gun.pellets:
 		var alive := true
-		for step in range(SPEED_CELLS_PER_TICK):
+		for step in range(int(pellet.get("speed", SPEED_CELLS_PER_TICK))):
 			if pellet.left <= 0.0: alive = false; break
 			pellet.x += pellet.dx * 0.5
 			pellet.y += pellet.dy * 0.5
@@ -161,10 +199,10 @@ static func _strike(sim: RefCounted, surface: String, cell: Array, pellet: Dicti
 			var was_alive: bool = not s.residents.has(key) or s.residents[key].health > 0
 			if s.residents.has(key) or entity.kind == "player":
 				if pellet.owner == s.player and s.residents.has(key): load("res://sim/combat/gunfire.gd").on_player_hit(sim, s.residents[key])
-				Wounds.shoot(sim, int(entity.id), cell, dir)
+				Wounds.shoot(sim, int(entity.id), cell, dir, float(pellet.get("strength", 1.0)))
 			var fighters: Dictionary = s.get("local_combat", {}).get("fighters", {})
 			if fighters.has(key):
-				fighters[key].health = maxi(0, int(fighters[key].health) - PELLET_DAMAGE)
+				fighters[key].health = maxi(0, int(fighters[key].health) - roundi(PELLET_DAMAGE * float(pellet.get("strength", 1.0))))
 				fighters[key].hit_tick = s.tick
 			if s.residents.has(key) and was_alive and s.residents[key].health == 0:
 				sim.record(entity.name + " was shot and is incapacitated.")

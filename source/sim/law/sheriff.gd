@@ -17,8 +17,8 @@ static func install(sim: RefCounted) -> void:
 		if town.has("office") or not OFFICE_CELLS.has(town.id): continue
 		var id := World.add_entity(sim, "office", "%s sheriff's office" % town.name, OFFICE_CELLS[town.id], town.id)
 		Inventory.create(s, id, 200)
-		Inventory.produce(s, id, "shotgun", RACK_SHOTGUNS)
-		Inventory.produce(s, id, "shell", RACK_SHELLS)
+		Inventory.produce(s, id, "rifle", RACK_SHOTGUNS)      # the office rack holds rifles
+		Inventory.produce(s, id, "cartridge", RACK_SHELLS)
 		Inventory.produce(s, id, "bandage", OFFICE_BANDAGES)   # the sheriffs' first-aid box
 		town.office = id
 

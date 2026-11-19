@@ -51,14 +51,53 @@ static func town_of(s: Dictionary, cell: Array) -> int:
 			best = int(town.id)
 	return best
 
+## The town that hears a shot at `origin` (0 when nobody official is in earshot).
+static func town_in_earshot(s: Dictionary, origin: Array, heard: int) -> int:
+	var nearest: int = 0
+	var nearest_gap := 1.0e9
+	for town in s.get("settlements", {}).values():
+		var store: Array = s.entities[str(town.warehouse)].cell
+		var gap: float = Vector2(store[0] - origin[0], store[1] - origin[1]).length()
+		if gap < nearest_gap: nearest_gap = gap; nearest = int(town.id)
+	if nearest == 0: return 0
+	if nearest_gap <= float(heard) + 25.0: return nearest   # in town, or near enough that the town hears it
+	for sheriff in Law().sheriffs(s, nearest):
+		var cell: Array = s.entities[str(sheriff.id)].cell
+		if Vector2(cell[0] - origin[0], cell[1] - origin[1]).length() <= float(heard): return nearest
+	return 0
+
+## Those who hear a shot without seeing it: a few nearby look up and say so (once per shot).
+static func _heard_by(sim: RefCounted, origin: Array, heard: int) -> void:
+	var s: Dictionary = sim.state
+	var Cover = load("res://sim/combat/cover.gd")
+	var keys: Array = s.get("residents", {}).keys()
+	keys.sort()
+	var spoken := 0
+	for key in keys:
+		if spoken >= 2: break
+		var npc: Dictionary = s.residents[key]
+		if int(npc.health) <= 0 or not npc.get("sleeping", {}).is_empty() or npc.occupation == "Sheriff": continue
+		if s.tick < int(npc.get("heard_shot_until", 0)): continue
+		var cell: Array = s.entities[key].cell
+		var gap: float = Vector2(cell[0] - origin[0], cell[1] - origin[1]).length()
+		if gap > float(heard) or gap <= 26.0 and Cover.line_clear(s, origin, cell): continue   # out of earshot, or saw it (fear.gd)
+		npc.heard_shot_until = s.tick + 300
+		Law()._say(sim, int(npc.id), ["Was that a gunshot?", "Shooting! Somewhere out there...", "Did you hear that?"][sim.random_int("speech", 0, 2)])
+		spoken += 1
+
 static func alert_of(s: Dictionary, town: int) -> Dictionary:
 	return _law(s).alert.get(str(town), {})
 
 ## The player fired. Raises or escalates the town's alert, and tells the villagers.
-static func on_player_shot(sim: RefCounted, origin: Array) -> void:
+## A shot is loud: it carries `heard` cells (a rifle further than a shotgun). The nearest town is
+## alarmed if the shot is within earshot of the town or of one of its sheriffs (then the sheriffs
+## come); out in the wilds, beyond anyone's hearing, nothing happens. People who hear it but can't
+## see where it came from look up and say so; only those who SEE it know who fired.
+static func on_player_shot(sim: RefCounted, origin: Array, heard: int = 45) -> void:
 	var s: Dictionary = sim.state
 	if not s.has("law") and not s.has("settlements"): return
-	var town := town_of(s, origin)
+	_heard_by(sim, origin, heard)
+	var town := town_in_earshot(s, origin, heard)
 	if town == 0: return
 	var alerts: Dictionary = _law(s).alert
 	var alert: Dictionary = alerts.get(str(town), {})

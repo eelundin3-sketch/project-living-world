@@ -15,7 +15,7 @@ const SLOT_WIDTH := 64.0
 const GRID_LEFT := SLOT_WIDTH + 22.0
 ## The equipment squares, top to bottom, and the outfit slot each one stands for.
 const EQUIPMENT: Array[Array] = [["hat", "Hat"], ["shirt", "Shirt"], ["pants", "Trousers"], ["boots", "Shoes"], ["pack", "Backpack"]]
-const PREFERRED: Array[String] = ["shotgun", "shell", "tool", "bandage", "antiseptic", "food", "rye", "log", "plank", "ore"]
+const PREFERRED: Array[String] = ["rifle", "cartridge", "shotgun", "shell", "tool", "bandage", "antiseptic", "food", "rye", "log", "plank", "ore"]
 const GOLD := Color("c79a3e")
 const WELL := Color("0f1715")
 const WELL_LIT := Color("1d2a27")

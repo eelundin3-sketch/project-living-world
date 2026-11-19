@@ -284,7 +284,7 @@ func rebuild() -> void:
 			# Haggle once a visit; the terms show in the summary line.
 			var talk_row := HBoxContainer.new(); list.add_child(talk_row)
 			add_button(talk_row, "Haggle", func() -> void: simulation.submit("haggle", {"target": target}))
-		for item in ["log","plank","food","rye","bandage","antiseptic","shell","shotgun","tool","ore"]:
+		for item in ["log","plank","food","rye","bandage","antiseptic","cartridge","rifle","shell","shotgun","tool","ore"]:
 			var row:=HBoxContainer.new(); list.add_child(row)
 			var label:=Label.new(); label.custom_minimum_size=Vector2(270,45); row.add_child(label); rows[item]=label
 			if mode=="inventory":

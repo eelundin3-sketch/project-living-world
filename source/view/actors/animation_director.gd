@@ -442,7 +442,7 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 		pose.ready = entity.kind == "player" and player_ready
 		# An unreadied shotgun, and every sheriff's, hangs from a sling across the back.
 		var carried_items: Dictionary = s.inventories.get(key, {}).get("items", {})
-		pose.slung = (int(carried_items.get("shotgun", 0)) > 0 and not (entity.kind == "player" and s.get("shotgun", {}).get("equipped", false))) or s.get("residents", {}).get(key, {}).get("occupation", "") == "Sheriff"
+		pose.slung = ((int(carried_items.get("shotgun", 0)) + int(carried_items.get("rifle", 0))) > 0 and not (entity.kind == "player" and s.get("shotgun", {}).get("equipped", false))) or s.get("residents", {}).get(key, {}).get("occupation", "") == "Sheriff"
 		var status: String = s.get("residents", {}).get(key, {}).get("status", "")
 		if status != pose.get("last_status", "") and status == "Ate from communal stores" and not first:
 			pose.eat_until = time + 0.8

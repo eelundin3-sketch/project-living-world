@@ -17,7 +17,7 @@ func run() -> void:
 	s.entities[str(s.player)].cell = [start[0] + 4, start[1] + 6]   # clear of the villagers at the lodge door
 	main.get_node("WorldView").snap_visuals()
 	main.get_node("ObserverCamera").zoom = Vector2.ONE * 4.0
-	for settle in range(12): await process_frame
+	for settle in range(40): await process_frame
 	await RenderingServer.frame_post_draw
 	root.get_texture().get_image().save_png(out.path_join("look_clean.png"))
 	var look: Dictionary = load("res://sim/player/look.gd").of(s)

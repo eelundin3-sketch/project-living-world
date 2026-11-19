@@ -105,18 +105,28 @@ static func interact(sim: RefCounted, preferred: int = 0) -> void:
 		pc.ui_target=id; pc.ui_nonce+=1; pc.ui_kind="trade"; pc.ui_tab="trade"; pc.notice="Interacting with "+e.name
 	elif e.kind=="stash": take(s,id,first_item(s,id))
 	elif e.kind=="office":
-		# The weapon rack: take a shotgun and shells, or return them.
-		if Inventory.amount(s,s.player,"shotgun")>0:
-			var shells: int=Inventory.amount(s,s.player,"shell")
-			Inventory.transfer(s,s.player,id,"shotgun",1)
-			if shells>0: Inventory.transfer(s,s.player,id,"shell",shells)
+		# The weapon rack: return the gun you carry (and its ammunition), or take one (a rifle first).
+		var Guns = load("res://sim/combat/shotgun.gd")
+		var mine: String = ""
+		for gun in Guns.GUNS:
+			if mine.is_empty() and Inventory.amount(s,s.player,gun)>0: mine = gun
+		if not mine.is_empty():
+			var ammo: String = str(Guns.WEAPONS[mine].ammo)
+			var rounds: int=Inventory.amount(s,s.player,ammo)
+			Inventory.transfer(s,s.player,id,mine,1)
+			if rounds>0: Inventory.transfer(s,s.player,id,ammo,rounds)
 			if s.has("shotgun"): s.shotgun.equipped=false; s.shotgun.reloading=false; s.shotgun.loaded=0
-			pc.notice="You return the shotgun and shells to the rack."
-		elif Inventory.amount(s,id,"shotgun")>0:
-			Inventory.transfer(s,id,s.player,"shotgun",1)
-			Inventory.transfer(s,id,s.player,"shell",mini(10,Inventory.amount(s,id,"shell")))
-			pc.notice="You take a shotgun and shells. X readies it, R reloads."
-		else: pc.notice="The rack is empty."
+			pc.notice="You return the %s and its %ss to the rack." % [mine, ammo]
+		else:
+			var taken: String = ""
+			for gun in Guns.GUNS:
+				if taken.is_empty() and Inventory.amount(s,id,gun)>0: taken = gun
+			if taken.is_empty(): pc.notice="The rack is empty."
+			else:
+				var ammo: String = str(Guns.WEAPONS[taken].ammo)
+				Inventory.transfer(s,id,s.player,taken,1)
+				Inventory.transfer(s,id,s.player,ammo,mini(10,Inventory.amount(s,id,ammo)))
+				pc.notice="You take a %s and %ss. X readies it, R reloads." % [taken, ammo]
 	elif e.kind=="chest":
 		Looting.open(s,id)
 	elif e.kind=="ore":

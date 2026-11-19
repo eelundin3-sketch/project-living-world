@@ -30,7 +30,7 @@ const BUY := Color("4f7a4a")
 const SELL := Color("9a5a2c")
 const DISABLED := Color(0.45, 0.4, 0.33, 0.45)
 const NAMES := {"log": "Logs", "plank": "Planks", "food": "Bread", "rye": "Rye", "bandage": "Bandages", "antiseptic": "Antiseptic",
-	"ore": "Iron ore", "tool": "Iron tools", "shell": "Shells", "shotgun": "Shotgun"}
+	"ore": "Iron ore", "tool": "Iron tools", "shell": "Shells", "shotgun": "Shotgun", "rifle": "Rifle", "cartridge": "Cartridges"}
 
 var simulation: RefCounted
 var target: int = 0

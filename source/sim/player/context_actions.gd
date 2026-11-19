@@ -21,7 +21,7 @@ const PART_NAMES := {"bed": "Bed", "table": "Table", "chair": "Chair", "lamp": "
 const PART_LINES := {"table": "A plain wooden table.", "chair": "A wooden chair.", "lamp": "An oil lamp.", "shelf": "Shelves of odds and ends.",
 	"booking_desk": "Where prisoners are booked in and the sheriff does his paperwork.", "locker": "Prisoners' belongings are kept in here.",
 	"toilet": "A bucket toilet.", "bed": "A bed.", "stockpile": "The town's goods, stacked.", "workshop_storage": "Materials waiting to be worked."}
-const ITEM_NAMES := {"log": "logs", "plank": "planks", "food": "food", "rye": "rye", "bandage": "bandages", "antiseptic": "antiseptic", "shell": "shells", "shotgun": "shotgun", "tool": "iron tools", "ore": "iron ore"}
+const ITEM_NAMES := {"log": "logs", "plank": "planks", "food": "food", "rye": "rye", "bandage": "bandages", "antiseptic": "antiseptic", "shell": "shells", "shotgun": "shotgun", "rifle": "rifle", "cartridge": "cartridges", "tool": "iron tools", "ore": "iron ore"}
 
 static func _opt(id: String, label: String, icon: String, enabled: bool = true, reason: String = "") -> Dictionary:
 	return {"id": id, "label": label, "icon": icon, "enabled": enabled, "reason": reason}
@@ -55,8 +55,8 @@ static func _part_options(s: Dictionary, building: Dictionary, part: String) -> 
 	if item.is_empty(): return result
 	match item.kind:
 		"weapon_rack":
-			var has_gun: bool = Inventory.amount(s, s.player, "shotgun") > 0
-			result.append(_opt("rack", "Return the shotgun" if has_gun else "Take a shotgun", "gun", has_gun or Inventory.amount(s, building.id, "shotgun") > 0, "The rack is empty"))
+			var has_gun: bool = load("res://sim/combat/shotgun.gd").owns(s)
+			result.append(_opt("rack", "Return your gun" if has_gun else "Take a rifle", "gun", has_gun or Inventory.amount(s, building.id, "rifle") > 0 or Inventory.amount(s, building.id, "shotgun") > 0, "The rack is empty"))
 		"stockpile":
 			if building.kind in ["warehouse", "market"]: result.append(_opt("trade", "Trade / take supplies", "talk"))
 		"saw", "oven", "forge", "workshop_storage":
@@ -107,6 +107,13 @@ static func options(s: Dictionary, id: int, part: String = "") -> Array:
 				result.append(_opt("ask_news", "Ask for news", "talk"))
 				result.append(_opt("punch", "Punch", "fist"))
 				result.append(_opt("shove", "Shove", "fist"))
+				if bool(s.player_control.get("crouching", false)):
+					# Sneaking: a silent takedown from behind (takedown.gd); greyed out with the reason
+					# when they would see you coming (being next to them is handled by walking up).
+					var Takedown = load("res://sim/combat/takedown.gd")
+					var aware: String = Takedown.aware_of_player(s, npc)
+					result.append(_opt("takedown_ko", "Knock out from behind", "fist", aware.is_empty(), aware))
+					result.append(_opt("takedown_kill", "Kill silently", "fist", aware.is_empty(), aware))
 			if not npc.is_empty() and int(npc.get("bleeding_until", 0)) > s.tick:
 				result.append(_opt("bandage", "Bandage wound", "heart", Inventory.amount(s, s.player, "bandage") > 0, "No bandages"))
 			result.append(_opt("examine", "Look at", "eye"))
@@ -142,8 +149,8 @@ static func options(s: Dictionary, id: int, part: String = "") -> Array:
 		"market_stall":
 			result.append(_opt("trade", "Trade", "talk"))
 		"office":
-			var has_gun: bool = Inventory.amount(s, s.player, "shotgun") > 0
-			result.append(_opt("rack", "Return the shotgun" if has_gun else "Take a shotgun", "gun", has_gun or Inventory.amount(s, id, "shotgun") > 0, "The rack is empty"))
+			var has_gun: bool = load("res://sim/combat/shotgun.gd").owns(s)
+			result.append(_opt("rack", "Return your gun" if has_gun else "Take a rifle", "gun", has_gun or Inventory.amount(s, id, "rifle") > 0 or Inventory.amount(s, id, "shotgun") > 0, "The rack is empty"))
 			result.append(_opt("examine", "Look at", "eye"))
 		"sawmill", "bakery", "forge":
 			result.append(_opt("operate", "Use / collect", "hand"))
@@ -178,7 +185,7 @@ static func describe(s: Dictionary, id: int, part: String = "") -> String:
 	if not item.is_empty():
 		if item.kind == "bed" and str(item.get("for", "")) == "prisoner": return "A hard cot in the jail cell."
 		if item.kind == "bed" and str(item.get("for", "")) == "sheriff": return "A sheriff's bed."
-		if item.kind == "weapon_rack": return "The %s's gun rack: %d shotgun%s." % [e.name, Inventory.amount(s, id, "shotgun"), "" if Inventory.amount(s, id, "shotgun") == 1 else "s"]
+		if item.kind == "weapon_rack": return "The %s's gun rack: %d rifle%s, %d shotgun%s." % [e.name, Inventory.amount(s, id, "rifle"), "" if Inventory.amount(s, id, "rifle") == 1 else "s", Inventory.amount(s, id, "shotgun"), "" if Inventory.amount(s, id, "shotgun") == 1 else "s"]
 		return String(PART_LINES.get(item.kind, "%s in %s." % [title(s, id, part), e.name]))
 	match e.get("kind", ""):
 		"resident":
@@ -315,6 +322,9 @@ static func perform(sim: RefCounted, id: int, action: String, part: String = "")
 			Actions.interact(sim, id)
 		"loot": Looting.open(s, id)
 		"carry": load("res://sim/player/carrying.gd").pick_up(s, id)
+		"takedown_ko", "takedown_kill":
+			var npc: Dictionary = s.residents.get(str(id), {})
+			pc.notice = load("res://sim/combat/takedown.gd").perform(sim, npc, action == "takedown_kill")
 		"put_down": load("res://sim/player/carrying.gd").put_down(s)
 		"help_up":
 			var npc: Dictionary = s.residents.get(str(id), {})

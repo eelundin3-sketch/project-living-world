@@ -100,17 +100,19 @@ static func remember_crime(s: Dictionary, town: int, kind: String, victim: int) 
 		load("res://sim/factions/society.gd").witnessed(s, victim, str(MEMORY_OF.get(kind, "assaulted")), int(s.player), text, entry.witnesses, "saw_murder" if kind == "murder" else "saw_crime")
 	return entry
 
-static func crime(s: Dictionary, town: int, kind: String, victim: int) -> void:
+## `silent`: nothing to hear (a takedown from behind), so a sheriff must actually see it.
+static func crime(s: Dictionary, town: int, kind: String, victim: int, silent: bool = false) -> void:
 	if not s.has("player_control") or not SENTENCE.has(kind): return
 	var entry: Dictionary = remember_crime(s, town, kind, victim)
 	var player: Array = s.entities[str(s.player)].cell
+	var Cover = load("res://sim/combat/cover.gd")
 	var witness: Dictionary = {}
 	var witnesses: Array = []
 	var nearest := 1.0e9
 	for sheriff in sheriffs(s, town):
 		var cell: Array = s.entities[str(sheriff.id)].cell
 		var d: float = Vector2(cell[0] - player[0], cell[1] - player[1]).length()
-		if sheriff.id == victim or d <= WITNESS_RANGE:
+		if sheriff.id == victim or (d <= WITNESS_RANGE and (not silent or (sheriff.get("sleeping", {}).is_empty() and Cover.line_clear(s, cell, player)))):
 			witnesses.append(sheriff)   # everyone who saw it (or was hit) comes
 			if d < nearest:
 				witness = sheriff       # the nearest takes the case
@@ -550,7 +552,7 @@ static func _return_property(s: Dictionary) -> void:
 		s.accounts[keeper] = int(s.accounts.get(keeper, 0)) - coins
 		s.accounts[str(s.player)] = int(s.accounts.get(str(s.player), 0)) + coins
 	Outfits.dress(s, s.player, property.outfit)
-	if s.has("shotgun") and int(property.get("gun_loaded", 0)) > 0 and Inventory.amount(s, s.player, "shotgun") > 0:
+	if s.has("shotgun") and int(property.get("gun_loaded", 0)) > 0 and load("res://sim/combat/shotgun.gd").owns(s):
 		s.shotgun.loaded = int(property.gun_loaded)
 	pc.erase("property")
 	pc.erase("booking")

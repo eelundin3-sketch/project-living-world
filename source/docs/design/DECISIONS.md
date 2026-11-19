@@ -455,3 +455,26 @@ travel grid. It stores the distance in paces and the heading in thousandths on
 the signpost entity. It runs at the end of `start_game`, and in `restore` for
 older saves (about 28 ms once). Signposts that already have `ways` are skipped,
 so it is stable across save and load.
+
+## 2026-11-19: The rifle is the main gun; shots are heard; silent takedowns
+
+**Rifle as the main gun.** At the owner's request, the player starts with a rifle
+and ten cartridges, and the office racks hold rifles. The rifle fires one
+accurate bullet to 26 cells at 2.6 times a pellet's force. It is slower and
+louder than the shotgun. The gun code became a weapon table
+(`Shotgun.WEAPONS`, `kind()`, `spec()`), so the shotgun keeps working for anyone
+who has one. The state key stays `s.shotgun`, now with a `kind` field, so old
+saves load unchanged. Each projectile carries its own strength and speed.
+
+**Shots are heard, not seen.** A rifle carries 60 cells and a shotgun 45.
+`Gunfire.town_in_earshot` decides whether a town reacts: the shot must be near
+enough to the town, or one of its sheriffs must be within earshot. Out in the
+wilds, beyond anyone's hearing, nothing happens. This replaces "anything
+within 70 cells of a storehouse". People who hear a shot but can't see it say
+so. Only those who see it are witnesses (chronicle and witness reports).
+
+**Silent takedowns.** `sim/combat/takedown.gd`: crouched, adjacent and not seen
+coming (the target isn't walking toward you and isn't already alert), you can
+kill or knock out without a sound. Such crimes call
+`Law.crime(..., silent = true)`, and then a sheriff counts as a witness only
+with a clear line of sight. Normally any sheriff within 24 cells counts.
