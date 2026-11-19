@@ -319,14 +319,24 @@ static func toilet(c: Node2D, p: Vector2) -> void:
 	Props.ellipse(c, p + Vector2(0, -6), Vector2(5.6, 4.2), Color("85888a"), 0.0, Color("5b5e60"), 0.5)
 	c.draw_line(p + Vector2(5, -19), p + Vector2(8, -23), Color("8e949a"), 1.2, true)
 
-## A signpost at a fork in the road: a weathered post with three pointing boards.
-static func signpost(c: Node2D, p: Vector2) -> void:
+## A signpost at a fork in the road: a weathered post with a board pointing down each road (the
+## sim measures `ways`: which way each road leaves the post). Older posts keep the three stock boards.
+static func signpost(c: Node2D, p: Vector2, ways: Array = []) -> void:
 	Props.ellipse(c, p + Vector2(0, 4), Vector2(9, 3.2), Color(0, 0, 0, 0.2), 0, INK, 0)
 	Character.limb(c, p + Vector2(0, 3), p + Vector2(0, -34), Color("6e5338"), 3.2)
-	for board in [[Vector2(1, -31), 1.0, Color("a98a5c")], [Vector2(-1, -25), -1.0, Color("9b7c50")], [Vector2(1, -19), 1.0, Color("a3845a")]]:
+	var boards: Array = [[Vector2(1, -31), 1.0, Color("a98a5c"), 0.0], [Vector2(-1, -25), -1.0, Color("9b7c50"), 0.0], [Vector2(1, -19), 1.0, Color("a3845a"), 0.0]]
+	if not ways.is_empty():
+		boards = []
+		var shades := [Color("a98a5c"), Color("9b7c50"), Color("a3845a")]
+		for index in range(mini(3, ways.size())):
+			var heading: Array = ways[index].get("dir", [1000, 0])
+			var side: float = 1.0 if int(heading[0]) >= 0 else -1.0
+			# A road heading north or south tilts its board a little up or down.
+			boards.append([Vector2(side, -31 + index * 6), side, shades[index], clampf(float(heading[1]) / 1000.0, -1.0, 1.0) * 4.0])
+	for board in boards:
 		var at: Vector2 = board[0] + p
 		var dir: float = board[1]
-		var tip := at + Vector2(dir * 17, 0)
+		var tip := at + Vector2(dir * 17, board[3])
 		var points := PackedVector2Array([at + Vector2(0, -2.6), tip + Vector2(-dir * 3, -2.6), tip, tip + Vector2(-dir * 3, 2.6), at + Vector2(0, 2.6)])
 		c.draw_colored_polygon(points, board[2])
 		c.draw_polyline(points + PackedVector2Array([points[0]]), INK, 0.8, true)

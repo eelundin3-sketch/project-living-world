@@ -103,6 +103,7 @@ func start_game(population: int = 5) -> void:
 	for town in state.settlements.values(): Professions.assign(state, town.id)
 	Sheriff.ensure(self)
 	Market.ensure_tents(self)
+	load("res://sim/world/road_planner.gd").ensure_ways(state)   # last: the roads, woods and towns are all in place
 
 func new_id() -> int:
 	var result: int = state.next_id
@@ -484,14 +485,7 @@ func _travel_to(town_id: int) -> void:
 	if Law.jailed(state) or Law.in_custody(state):
 		if not pc.is_empty(): pc.notice = "You are locked in a cell."
 		return
-	var store: Array = state.entities[str(town.warehouse)].cell
-	var goal: Array = [store[0], store[1] + 2]
-	if not World.walkable(state, goal):
-		var best := 9999
-		for dy in range(-3, 4):
-			for dx in range(-3, 4):
-				var candidate: Array = [store[0] + dx, store[1] + 2 + dy]
-				if World.walkable(state, candidate) and absi(dx) + absi(dy) < best: best = absi(dx) + absi(dy); goal = candidate
+	var goal: Array = load("res://sim/world/road_planner.gd").town_gate(state, town)
 	var from: Array = state.entities[str(state.player)].cell
 	if absi(from[0] - goal[0]) + absi(from[1] - goal[1]) <= 3:
 		if not pc.is_empty(): pc.notice = "You are already in %s." % town.name
@@ -547,6 +541,7 @@ func restore(snapshot_data: Dictionary) -> void:
 		FamilyEconomy.ensure(state)   # purses for saves made before families kept their own money
 	# After the layout upgrades, which may rebuild furniture: re-links the existing chests.
 	if state.has("households"): Chests.ensure_all(self)
+	load("res://sim/world/road_planner.gd").ensure_ways(state)   # signposts in older saves learn their distances
 	if state.has("routes"):
 		BodyHealth.initialize(state)
 		PlayerActions.initialize(state)

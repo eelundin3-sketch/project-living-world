@@ -240,3 +240,43 @@ static func place_signposts(sim: RefCounted, junctions: Array) -> void:
 static func _compass(v: Vector2) -> String:
 	var names := ["east", "south-east", "south", "south-west", "west", "north-west", "north", "north-east"]
 	return names[posmod(roundi(v.angle() / (PI / 4.0)), 8)]
+
+## The street cell in front of a town's storehouse that a traveller walks to (the nearest walkable
+## cell when that spot is built over).
+static func town_gate(s: Dictionary, town: Dictionary) -> Array:
+	var store: Array = s.entities[str(town.warehouse)].cell
+	var goal: Array = [store[0], store[1] + 2]
+	if World.walkable(s, goal): return goal
+	var best := 9999
+	for dy in range(-3, 4):
+		for dx in range(-3, 4):
+			var candidate: Array = [store[0] + dx, store[1] + 2 + dy]
+			if World.walkable(s, candidate) and absi(dx) + absi(dy) < best: best = absi(dx) + absi(dy); goal = candidate
+	return goal
+
+## Each signpost learns, once, how far each town is along the roads and which way that road leaves
+## the post: `ways` = [{town, name, paces, dir: [x, y] in thousandths}], nearest first. Measured on
+## the travel grid (the one auto-travel walks), so the boards agree with the road you will take.
+## Runs after the world is built, and for older saves on load; signposts already measured are skipped.
+static func ensure_ways(s: Dictionary) -> void:
+	if not s.has("settlements"): return
+	var Navigation = load("res://sim/movement/navigation.gd")   # loaded lazily: navigation depends on the roads
+	for post in World.of_kind(s, "signpost"):
+		if post.has("ways"): continue
+		var ways: Array = []
+		var towns: Array = s.settlements.keys()
+		towns.sort()
+		for key in towns:
+			var town: Dictionary = s.settlements[key]
+			var route: Dictionary = Navigation.request_travel_path(s, post.cell, town_gate(s, town))
+			if not route.ok or route.path.size() < 2: continue
+			var ahead: Array = route.path[mini(8, route.path.size() - 1)]
+			var heading := Vector2(ahead[0] - post.cell[0], ahead[1] - post.cell[1]).normalized()
+			ways.append({"town": int(town.id), "name": str(town.name), "paces": route.path.size() - 1,
+				"dir": [roundi(heading.x * 1000.0), roundi(heading.y * 1000.0)]})
+		ways.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.paces < b.paces or (a.paces == b.paces and a.town < b.town))
+		post.ways = ways
+		var lines: Array = []
+		for way in ways:
+			lines.append("%s: %d paces, along the road %s" % [way.name, way.paces, _compass(Vector2(way.dir[0], way.dir[1]))])
+		if not lines.is_empty(): post.directions = "; ".join(lines)
