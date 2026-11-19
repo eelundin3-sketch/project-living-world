@@ -9,7 +9,8 @@ func _initialize() -> void:
 	var sim := Sim.new(); sim.start_game(); var s: Dictionary = sim.state
 	var lodge: Dictionary = s.entities[str(s.home)]
 	var beds: Array = lodge.furniture.filter(func(f: Dictionary) -> bool: return f.kind == "bed")
-	check(beds.size() == 4, "The common lodge has four beds: %d" % beds.size())
+	# The lodge sleeps six (fixtures.gd _bed_count), the most a home can hold.
+	check(beds.size() == 6, "The common lodge has six beds: %d" % beds.size())
 	for bed in beds:
 		check(bed.has("rot") and bed.rot >= 0 and bed.rot <= 3, "Every bed has an orientation")
 		var rect: Array = bed.rect

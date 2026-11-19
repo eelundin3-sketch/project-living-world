@@ -66,7 +66,8 @@ func _initialize() -> void:
 	for tick in range(3000):
 		sim.step()
 		for worker in s.residents.values():
-			check(World.walkable(s,s.entities[str(worker.id)].cell),"Worker never stands in a machine or pile")
+			var cell: Array = s.entities[str(worker.id)].cell
+			check(World.walkable(s,cell) or _on_seat_or_bed(s,cell),"Worker never stands in a machine or pile")
 		for workshop in s.workshops.values():
 			if workshop.progress>0:
 				worked=true
@@ -83,3 +84,13 @@ func _initialize() -> void:
 	check(phases==director.phases,"Disabled machine stops independently of worker pose")
 	print("Fixtures: %s" % ("PASS" if failures==0 else "FAIL"))
 	quit(0 if failures==0 else 1)
+
+## Sitting in a chair (the sheriff at the booking desk) or lying in a bed is meant: furniture
+## shares the solid fixture cells, but only machines and piles must never be stood in.
+func _on_seat_or_bed(s: Dictionary, cell: Array) -> bool:
+	var owner_id: int = int(s.world.get("fixture_cells",{}).get("%d,%d" % [cell[0],cell[1]],0))
+	var building: Dictionary = s.entities.get(str(owner_id),{})
+	for item in building.get("furniture",[]):
+		var r: Array = item.rect
+		if item.kind in ["chair","bed"] and cell[0]>=r[0] and cell[0]<r[0]+r[2] and cell[1]>=r[1] and cell[1]<r[1]+r[3]: return true
+	return false

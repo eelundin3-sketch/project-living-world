@@ -66,7 +66,8 @@ static func install(s: Dictionary, building: Dictionary) -> void:
 					{"kind": "locker", "rect": [left+6, top+1, 2, 1], "rot": 2},
 					{"kind": "toilet", "rect": [left+4, top+1, 1, 1], "rot": 2},
 					{"kind": "lamp", "rect": [left+13, top+1, 1, 1], "rot": 2},
-					{"kind": "chest", "rect": [right-3, top+4, 2, 1], "rot": 2},
+					# One row lower than the lodge's chest: at top+4 it shut off the floor behind the weapon rack.
+					{"kind": "chest", "rect": [right-3, top+5, 2, 1], "rot": 2},
 				]
 			"sawmill", "bakery", "forge":
 				building.furniture = [

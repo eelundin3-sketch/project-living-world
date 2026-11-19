@@ -1,4 +1,6 @@
 extends SceneTree
+## The region: towns joined by a road, trade carried by a walking trader (a real villager; see
+## trader_test for the trips themselves), levels of detail, and a save that continues exactly.
 const Sim = preload("res://sim/core/simulation.gd")
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const Regional = preload("res://sim/economy/regional_trade.gd")
@@ -11,25 +13,24 @@ func check(ok: bool, message: String) -> void:
 		failures += 1
 		printerr("FAIL: " + message)
 func _initialize() -> void:
+	# The real game: a world built by the smaller test setups (start_village + enable_region) lacks
+	# the version markers a new game carries, so loading one would run the old-save upgrades.
 	var sim := Sim.new()
-	sim.start_village(20)
-	sim.enable_production()
-	sim.enable_economy()
-	sim.enable_region()
+	sim.start_game()
 	var s: Dictionary = sim.state
-	var caravan: Dictionary = s.caravans.values()[0]
-	Inventory.produce(s, s.warehouse, "log", 200)
-	var totals := Inventory.totals(s)
-	check(Regional.dispatch(sim, caravan), "Profitable route dispatch")
-	check(Inventory.amount(s, caravan.id, caravan.item) == 20 and Inventory.totals(s) == totals, "Single custody in transit")
-	s.routes["1"].blocked = true
-	for tick in range(600):
-		sim.step()
-	check(caravan.in_transit and caravan.status.contains("Waiting"), "Route blockage delays arrival without duplicating cargo")
-	s.routes["1"].blocked = false
+	check(s.settlements.size() >= 2 and s.routes.has("1"), "The region has a second town and a road to it")
+	var trader: Dictionary = {}
+	for key in s.caravans: check(s.residents.has(key), "Trade is carried by villagers, not an abstract cart")
+	check(not s.caravans.is_empty(), "A villager takes up trading while prices differ")
+	if not s.caravans.is_empty():
+		trader = s.caravans.values()[0]
+		var totals := Inventory.totals(s)
+		s.routes["1"].blocked = true
+		check(not Regional.dispatch(sim, trader) and trader.status == "Route blocked", "A blocked road keeps the trader at home")
+		check(Inventory.totals(s) == totals, "Waiting on a blocked road moves no goods")
+		s.routes["1"].blocked = false
 	for tick in range(100):
 		sim.step()
-	check(not caravan.in_transit and caravan.deliveries > 0, "Arrival sells actual cargo")
 	var inventories: Dictionary = s.inventories.duplicate(true)
 	var residents: Dictionary = s.residents.duplicate(true)
 	Fidelity.transition(s, 1, "aggregate")
@@ -46,5 +47,6 @@ func _initialize() -> void:
 		replay.step()
 	check(sim.state_hash() == replay.state_hash(), "Regional/LOD deterministic continuation")
 	check(Checks.validate(s).is_empty(), "Regional resource invariants")
-	print("Regional: %s; caravan deliveries=%d" % ["PASS" if failures == 0 else "FAIL", caravan.deliveries])
+	var deliveries: int = int(trader.get("deliveries", 0))
+	print("Regional: %s; trader deliveries=%d" % ["PASS" if failures == 0 else "FAIL", deliveries])
 	quit(0 if failures == 0 else 1)

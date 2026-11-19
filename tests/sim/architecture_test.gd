@@ -12,8 +12,11 @@ func _initialize() -> void:
 	var buildings: Array = s.entities.values().filter(func(e: Dictionary) -> bool: return e.has("footprint"))
 	for building in buildings:
 		var rect := World.building_rect(building)
-		check(rect.size.x >= 15 and rect.size.y >= 13, "Full-sized architecture")
-		check(not building.interior_walls.is_empty(), "Rooms contain authoritative partitions")
+		# The town buildings are full sized with rooms; house types (housing.gd) carry their own
+		# size, and the small ones (a shack, a lean-to, a hut) are a single room.
+		if not building.has("house_type"):
+			check(rect.size.x >= 15 and rect.size.y >= 13, "Full-sized architecture")
+			check(not building.interior_walls.is_empty(), "Rooms contain authoritative partitions")
 		for wall in building.interior_walls:
 			check(not World.walkable(s, wall), "Internal wall blocks movement")
 		# Flood every interior walkable cell, including both sides of the partition.
