@@ -19,6 +19,7 @@ const PerfOverlay = preload("res://view/ui/perf_overlay.gd")
 const ContextMenu = preload("res://view/ui/context_menu.gd")
 const ContextActions = preload("res://sim/player/context_actions.gd")
 const MainMenu = preload("res://view/ui/main_menu.gd")
+const JournalWindow = preload("res://view/ui/journal_window.gd")
 const KnockoutScreen = preload("res://view/ui/knockout_screen.gd")
 const Law = preload("res://sim/law/law.gd")
 const Probe = preload("res://sim/diagnostics/perf_probe.gd")
@@ -63,6 +64,7 @@ var knockout: CanvasLayer
 var skipping: bool = false
 const SLEEP_SPEED := 8
 var medieval_map: Control
+var journal: Control
 var context_part: String = ""   # the furniture or fixture the open menu is about
 var skip_previous_speed: int = 1
 var menu_active: bool = false
@@ -118,6 +120,10 @@ func _ready() -> void:
 	context_menu = ContextMenu.new()
 	context_menu.chosen.connect(_on_context_chosen)
 	menu_layer.add_child(context_menu)
+	journal = JournalWindow.new()   # J: people met, news heard, favours, your standing
+	journal.simulation = simulation
+	journal.visible = false
+	menu_layer.add_child(journal)
 	var perf_layer := CanvasLayer.new()
 	perf_layer.layer = 8
 	add_child(perf_layer)
@@ -297,6 +303,7 @@ func refresh_view() -> void:
 	$DebugHUD.refresh(simulation, clock, selected_id, tick_ms)
 	t = _lap("u:debug_hud", t)
 	player_panels.refresh()
+	if journal != null: journal.refresh()
 	t = _lap("u:panels", t)
 	if moodles != null: moodles.refresh()
 	t = _lap("u:moodles", t)
@@ -486,8 +493,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_R: simulation.submit("shotgun_reload")
 			KEY_Q: simulation.submit("drink")
 			KEY_F: handle_action("interact")
+			KEY_J: journal.toggle()
 			KEY_ESCAPE:
-				if map_mode: toggle_map()   # Esc closes the map first, then stops a travel, then closes panels
+				if journal.visible: journal.visible = false
+				elif map_mode: toggle_map()   # Esc closes the map first, then stops a travel, then closes panels
 				elif int(simulation.state.get("player_control", {}).get("travelling", 0)) != 0: simulation.submit("stop_travel")
 				else: player_panels.show_mode("")
 			KEY_SPACE:

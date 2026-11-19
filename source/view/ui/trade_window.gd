@@ -9,6 +9,8 @@ const Market = preload("res://sim/economy/market.gd")
 const ItemIcons = preload("res://view/ui/item_icons.gd")
 const Dialogue = preload("res://sim/player/dialogue.gd")
 const TABS := 32.0   # the Trade / Talk tab row
+const TALK_ROW := 36.0   # a line on the Talk tab (seven fit where five trade rows do)
+const TALK_MAX := 7
 
 signal close_requested
 signal minimize_requested
@@ -70,7 +72,7 @@ func refresh(s: Dictionary) -> void:
 		var tabs: Array = Dialogue.tabs(s, target)
 		if not tab in tabs: tab = tabs[0]
 		if tab == "talk":
-			_fit(clampi(Dialogue.options(s, target).size(), 2, 5))
+			_fit(clampi(ceili(Dialogue.options(s, target).size() * TALK_ROW / ROW), 2, 5))
 		else:
 			var goods: Array = _goods(s)
 			_fit(clampi(maxi(goods[0].size(), goods[1].size()), 2, 5))
@@ -319,15 +321,15 @@ func _talk(area: Rect2, s: Dictionary, npc: Dictionary) -> void:
 	if talk_options.is_empty():
 		draw_string(_serif, area.position + Vector2(0, 30), "There's nobody here to talk to.", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, INK_SOFT)
 		return
-	for index in range(mini(talk_options.size(), 5)):
+	for index in range(mini(talk_options.size(), TALK_MAX)):
 		var option: Dictionary = talk_options[index]
-		var y: float = area.position.y + index * ROW
-		var row := Rect2(Vector2(area.position.x, y), Vector2(area.size.x, ROW - 6))
+		var y: float = area.position.y + index * TALK_ROW
+		var row := Rect2(Vector2(area.position.x, y), Vector2(area.size.x, TALK_ROW - 4))
 		if index % 2 == 0: draw_rect(row, Color(PAPER_SHADE, 0.55))
-		draw_string(_serif, row.position + Vector2(16, 29), "“%s”" % str(option.label), HORIZONTAL_ALIGNMENT_LEFT, row.size.x - 140, 16, INK if bool(option.enabled) else INK_SOFT)
+		draw_string(_serif, row.position + Vector2(16, 21), "“%s”" % str(option.label), HORIZONTAL_ALIGNMENT_LEFT, row.size.x - 260, 15, INK if bool(option.enabled) else INK_SOFT)
 		if not str(option.get("reason", "")).is_empty() and not bool(option.enabled):
 			draw_string(_sans, row.position + Vector2(row.size.x - 250, 29), str(option.reason), HORIZONTAL_ALIGNMENT_RIGHT, 120, 11, INK_SOFT)
-		_button(Rect2(row.position + Vector2(row.size.x - 100, 9), Vector2(92, 28)), "Say it", "context",
+		_button(Rect2(row.position + Vector2(row.size.x - 100, 4), Vector2(92, 24)), "Say it", "context",
 			{"target": int(npc.get("id", 0)), "action": str(option.id)}, bool(option.enabled), Color("5b4429"))
 
 func _coin(c: Vector2) -> void:

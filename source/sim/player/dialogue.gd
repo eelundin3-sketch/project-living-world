@@ -25,11 +25,16 @@ static func tabs(s: Dictionary, target: int) -> Array:
 static func options(s: Dictionary, target: int) -> Array:
 	var npc: Dictionary = person(s, target)
 	if npc.is_empty(): return []
-	var result: Array = [
+	# A sheriff with his gun on you: talking your way out comes first (talk.gd).
+	var Talk = load("res://sim/player/talk.gd")
+	var trouble: Array = Talk.trouble_options(s, npc)
+	if not trouble.is_empty(): return trouble
+	var result: Array = load("res://sim/player/requests.gd").talk_options(s, npc)
+	result += [
 		{"id": "ask_work", "label": "What do you do for a living?", "enabled": true, "reason": ""},
 		{"id": "ask_family", "label": "How is your family keeping?", "enabled": true, "reason": ""},
 		{"id": "ask_news", "label": "Heard any news?", "enabled": true, "reason": ""}]
-	return result
+	return result + Talk.tone_options(s, npc)
 
 ## How this person feels about the player, in a word and a colour name for the window.
 static func feeling(s: Dictionary, npc: Dictionary) -> Array:

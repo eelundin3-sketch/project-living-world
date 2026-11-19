@@ -242,7 +242,7 @@ static func request(sim: RefCounted, id: int, action: String, part: String = "")
 	if not s.entities.has(str(id)): return
 	var e: Dictionary = s.entities[str(id)]
 	pc.pending = {}
-	var talking_distance: bool = action in ["ask_family", "ask_news", "ask_work", "talk"] and Actions.distance(s.entities[str(s.player)].cell, e.cell) <= 4
+	var talking_distance: bool = (action in ["ask_family", "ask_news", "ask_work", "talk", "persuade", "ask_help", "accept_request", "hand_over"] or action.begins_with("say_") or action.begins_with("bribe_")) and Actions.distance(s.entities[str(s.player)].cell, e.cell) <= 4
 	if id == s.player or action in ["examine", "inventory", "health", "wardrobe"] or talking_distance or _within_reach(s, e, part):
 		perform(sim, id, action, part)
 		return
@@ -322,6 +322,17 @@ static func perform(sim: RefCounted, id: int, action: String, part: String = "")
 			Actions.interact(sim, id)
 		"loot": Looting.open(s, id)
 		"carry": load("res://sim/player/carrying.gd").pick_up(s, id)
+		"say_friendly", "say_firm", "say_threaten", "persuade", "bribe_10", "bribe_25", "bribe_50", "ask_help", "accept_request", "hand_over":
+			var npc: Dictionary = s.residents.get(str(id), {})
+			if npc.is_empty(): return
+			_met(s, id)
+			var Talk = load("res://sim/player/talk.gd")
+			if action.begins_with("say_"): pc.notice = Talk.say(sim, npc, action.substr(4))
+			elif action == "persuade": pc.notice = Talk.persuade(sim, npc)
+			elif action.begins_with("bribe_"): pc.notice = Talk.bribe(sim, npc, int(action.substr(6)))
+			else:
+				var answer: String = load("res://sim/player/requests.gd").perform(sim, npc, action)
+				if not answer.is_empty(): pc.notice = answer
 		"takedown_ko", "takedown_kill":
 			var npc: Dictionary = s.residents.get(str(id), {})
 			pc.notice = load("res://sim/combat/takedown.gd").perform(sim, npc, action == "takedown_kill")
@@ -336,6 +347,7 @@ static func perform(sim: RefCounted, id: int, action: String, part: String = "")
 			if npc.is_empty(): return
 			load("res://sim/entities/speech.gd").say(sim, id, "greet_player")
 			pc.ui_target = id; pc.ui_nonce = int(pc.get("ui_nonce", 0)) + 1; pc.ui_kind = "trade"; pc.ui_tab = "talk"
+			_met(s, id)
 		"ask_family", "ask_news", "ask_work":
 			var npc: Dictionary = s.residents.get(str(id), {})
 			if npc.is_empty(): return
@@ -353,7 +365,13 @@ static func perform(sim: RefCounted, id: int, action: String, part: String = "")
 				else: line += " I keep house on my own."
 				pc.notice = "%s: %s" % [first, line]
 			else:
-				pc.notice = "%s: %s" % [first, load("res://sim/economy/stall_service.gd").news(s, npc)]
+				var told: String = load("res://sim/economy/stall_service.gd").news(s, npc)
+				pc.notice = "%s: %s" % [first, told]
+				# Written in the journal (newest 30).
+				var heard: Array = load("res://sim/player/player_status.gd").part(s, "heard", [])
+				if heard.is_empty() or str(heard[-1].text) != told: heard.append({"text": told, "tick": int(s.tick), "from": String(e.name)})
+				while heard.size() > 30: heard.pop_front()
+			_met(s, id)
 			load("res://sim/law/law.gd")._say(sim, id, pc.notice.substr(first.length() + 2).left(60))
 		"wake":
 			var sleeper: Dictionary = s.residents.get(str(id), {})
@@ -392,3 +410,8 @@ static func _take_everything(sim: RefCounted, id: int) -> void:
 		taken.append("%d coins" % coins)
 	if e.get("kind", "") == "resident" and s.has("factions") and not taken.is_empty(): Society.remember(s, id, "robbed", s.player, "The traveller went through my pockets.", -20)
 	pc.notice = ("You take " + ", ".join(taken) + ".") if not taken.is_empty() else "There is nothing to take."
+
+## Remembers that the player has met this person (for the journal).
+static func _met(s: Dictionary, id: int) -> void:
+	var met: Dictionary = load("res://sim/player/player_status.gd").part(s, "met", {})
+	if not met.has(str(id)): met[str(id)] = int(s.tick)

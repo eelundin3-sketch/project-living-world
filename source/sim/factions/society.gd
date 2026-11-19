@@ -24,7 +24,8 @@ static func initialize(s: Dictionary) -> void:
 const MEMORY_KINDS := {
 	"robbed": [-25, 21], "shot_at": [-35, 21], "assaulted": [-20, 14], "killed_kin": [-60, 0],
 	"saw_crime": [-10, 14], "saw_murder": [-30, 21], "threatened": [-15, 14], "insulted": [-8, 3],
-	"helped": [10, 7], "saved_life": [40, 28], "paid_well": [3, 3], "delivered_goods": [5, 7], "gift": [8, 7]}
+	"helped": [10, 7], "saved_life": [40, 28], "paid_well": [3, 3], "delivered_goods": [5, 7], "gift": [8, 7],
+	"pleasant": [4, 5], "bribed": [10, 14]}
 const DAY := 14400
 
 ## Records that `npc_id` remembers `kind` about `subject`. Listed kinds fade over their days; a

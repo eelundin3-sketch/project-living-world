@@ -168,6 +168,15 @@ func _draw() -> void:
 		draw_string_outline(_serif, baseline, text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, 6, Color(PARCHMENT, 0.85))
 		draw_string(_serif, baseline, text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, INK)
 		draw_line(rect.position + Vector2(0, extent.y + 2), rect.position + Vector2(extent.x, extent.y + 2), INK_FAINT, 1.0)
+		if not away:
+			# How the town sees you, in small italic-ish lettering under its name (reputation.gd).
+			var Reputation = load("res://sim/factions/reputation.gd")
+			var standing: String = "You are %s here" % Reputation.label(Reputation.value(state, int(town.id)))
+			var note_size: int = maxi(12, size / 2)
+			var note_extent: Vector2 = _serif.get_string_size(standing, HORIZONTAL_ALIGNMENT_LEFT, -1, note_size)
+			var note_at: Vector2 = Vector2(rect.get_center().x - note_extent.x * 0.5, rect.end.y + note_extent.y + 2)
+			draw_string_outline(_serif, note_at, standing, HORIZONTAL_ALIGNMENT_LEFT, -1, note_size, 4, Color(PARCHMENT, 0.85))
+			draw_string(_serif, note_at, standing, HORIZONTAL_ALIGNMENT_LEFT, -1, note_size, INK_FAINT.darkened(0.3))
 		town_rects.append({"town": int(town.id), "rect": rect})
 	# The waypoint pin and the player's mark.
 	if waypoint != Vector2.INF:
