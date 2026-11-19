@@ -221,6 +221,7 @@ func animate(delta: float, paused: bool, speed: int) -> void:
 	_sync_landscape()
 	_sync_decor(delta)
 	t = _lap("v:landscape+decor", t)
+	motion.track_trees = not is_far()
 	var tracked := view_bounds().grow(200)
 	motion.view_cells = Rect2i(floori(tracked.position.x / CELL), floori(tracked.position.y / CELL), ceili(tracked.size.x / CELL) + 1, ceili(tracked.size.y / CELL) + 1)
 	motion.update(simulation.state, delta, paused, speed)
@@ -324,7 +325,13 @@ func _sync_characters(delta: float = -1.0) -> void:
 			character.setup(entity.id, entity.kind == "player", entity.kind == "raider")
 			character_models[key] = character
 		character_models[key].z_index = 2 if pose.get("action", "") == "rest" and int(pose.get("rest_rot", -1)) >= 0 else 0  # sleepers lie on top of the bed
-		character_models[key].set_pose(pose, delta)
+		# On the map a figure is a few pixels tall: it still moves every frame, but its pose is
+		# repainted on one frame in four (staggered), which is not visible at that size.
+		var zoom: float = get_viewport().get_camera_2d().zoom.x if get_viewport().get_camera_2d() != null else 1.0
+		if zoom < 0.6 and (depth_frame + entity.id) % 4 != 0 and character_models[key].position.distance_to(pose.position) < 96.0:
+			character_models[key].position = pose.position
+		else:
+			character_models[key].set_pose(pose, delta)
 	for key in character_models.keys():
 		if not keep.has(key):
 			character_models[key].queue_free()

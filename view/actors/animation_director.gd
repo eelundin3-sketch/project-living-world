@@ -524,7 +524,9 @@ static func _actor_keys(s: Dictionary) -> Array:
 ## near the screen are ever drawn, so the pass runs on a new tick or a new view, over the chunks
 ## the view covers. A tree seen for the first time (or again after being off screen) starts in
 ## its current state, so a tree felled out of sight lies there already rather than toppling.
+var track_trees: bool = true   # off on the map view, where trees are plain dots
 func _update_trees(s: Dictionary, first: bool) -> void:
+	if not track_trees: return
 	if not first and s.tick == tree_pass_tick and view_cells == tree_pass_view: return
 	tree_pass += 1
 	tree_pass_tick = s.tick

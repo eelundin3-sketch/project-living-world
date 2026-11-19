@@ -12,6 +12,26 @@ static func box(c: Node2D, r: Rect2, color: Color, border: float = 2.0) -> void:
 	c.draw_rect(r, color)
 	c.draw_rect(r, INK, false, border)
 
+## A convex 3- or 4-cornered fill drawn as a primitive, which the renderer batches with its
+## neighbours (a polygon is a draw call of its own). The pixels are the same.
+static func _fill(c: Node2D, points: PackedVector2Array, color: Color) -> void:
+	if points.size() <= 4 and _convex(points):
+		c.draw_primitive(points, PackedColorArray([color]), PackedVector2Array())
+	else:
+		c.draw_colored_polygon(points, color)
+
+static func _convex(points: PackedVector2Array) -> bool:
+	var sign := 0.0
+	for i in range(points.size()):
+		var a := points[i]
+		var b := points[(i + 1) % points.size()]
+		var d := points[(i + 2) % points.size()]
+		var cross := (b - a).cross(d - b)
+		if is_zero_approx(cross): return false
+		if sign == 0.0: sign = signf(cross)
+		elif signf(cross) != sign: return false
+	return true
+
 static func poly(c: Node2D, points: PackedVector2Array, color: Color) -> void:
 	c.draw_colored_polygon(points, color)
 	var edge := points.duplicate()
@@ -335,13 +355,13 @@ static func cutaway_wall(c: Node2D, neighbours: Dictionary) -> void:
 	var edge := Color("51341f")
 	c.draw_rect(Rect2(-12, -24, 24, 24), top_color)
 	if not west:
-		c.draw_colored_polygon(PackedVector2Array([
+		_fill(c, PackedVector2Array([
 			Vector2(-12, -24), Vector2(left, -24), Vector2(left, front), Vector2(-12, 0),
 		]), Color("b49264"))
 		c.draw_line(Vector2(-12, -24), Vector2(-12, 0), edge, 1)
 		c.draw_line(Vector2(left, -24), Vector2(left, front), Color("896540"), 0.8)
 	if not east:
-		c.draw_colored_polygon(PackedVector2Array([
+		_fill(c, PackedVector2Array([
 			Vector2(right, -24), Vector2(12, -24), Vector2(12, 0), Vector2(right, front),
 		]), Color("ad875a"))
 		c.draw_line(Vector2(12, -24), Vector2(12, 0), edge, 1)
@@ -350,10 +370,10 @@ static func cutaway_wall(c: Node2D, neighbours: Dictionary) -> void:
 		c.draw_rect(Rect2(-12, 0, 24, 3), Color(0.16, 0.09, 0.04, 0.22))
 		var ridge_left := lerpf(left, -12.0, 0.55)
 		var ridge_right := lerpf(right, 12.0, 0.55)
-		c.draw_colored_polygon(PackedVector2Array([
+		_fill(c, PackedVector2Array([
 			Vector2(left, front), Vector2(right, front), Vector2(ridge_right, -4), Vector2(ridge_left, -4),
 		]), bevel)
-		c.draw_colored_polygon(PackedVector2Array([
+		_fill(c, PackedVector2Array([
 			Vector2(ridge_left, -4), Vector2(ridge_right, -4), Vector2(12, 0), Vector2(-12, 0),
 		]), lip)
 		c.draw_line(Vector2(left, front), Vector2(right, front), Color("8f6943"), 0.8)
@@ -368,14 +388,14 @@ static func cutaway_wall(c: Node2D, neighbours: Dictionary) -> void:
 				var corner := Vector2(side * 12, 0)
 				var inset := Vector2(side * 8, -9)
 				var ridge := Vector2(side * 12, -4)
-				c.draw_colored_polygon(PackedVector2Array([corner, ridge, inset, Vector2(side * 8, 0)]), Color("b49264") if side < 0 else Color("ad875a"))
-				c.draw_colored_polygon(PackedVector2Array([corner, Vector2(side * 12, -9), inset]), bevel)
+				_fill(c, PackedVector2Array([corner, ridge, inset, Vector2(side * 8, 0)]), Color("b49264") if side < 0 else Color("ad875a"))
+				_fill(c, PackedVector2Array([corner, Vector2(side * 12, -9), inset]), bevel)
 	if north:
 		for side in [-1, 1]:
 			var connected: bool = west if side < 0 else east
 			var diagonal: bool = neighbours.get("northwest" if side < 0 else "northeast", false)
 			if connected and not diagonal:
-				c.draw_colored_polygon(PackedVector2Array([
+				_fill(c, PackedVector2Array([
 					Vector2(side * 8, -24), Vector2(side * 12, -24), Vector2(side * 12, -20),
 				]), Color("b49264") if side < 0 else Color("ad875a"))
 	else:
