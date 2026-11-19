@@ -9,7 +9,14 @@ func _initialize() -> void:
 	var sim := Sim.new(); sim.start_game()
 	var s: Dictionary = sim.state
 	var player: Dictionary = s.entities[str(s.player)]
-	# Crouch toggles, slows walking, and a sprint stands you up.
+	# Crouch toggles, slows walking, and a sprint stands you up (measured off the roads, where
+	# walking has no road bonus: see pace.gd).
+	var TownLayout = load("res://sim/world/town_layout.gd")
+	for dy in range(0, 40):
+		var probe: Array = [player.cell[0], player.cell[1] + dy]
+		if World.walkable(s, probe) and World.walkable(s, [probe[0] + 1, probe[1]]) and not TownLayout.on_road(s, probe) and not TownLayout.on_road(s, [probe[0] + 1, probe[1]]):
+			player.cell = probe
+			break
 	sim.submit("crouch_toggle"); sim.step()
 	check(s.player_control.crouching, "X crouches")
 	var start: Array = player.cell.duplicate()

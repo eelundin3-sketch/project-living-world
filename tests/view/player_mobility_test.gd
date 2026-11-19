@@ -3,12 +3,26 @@ const Sim = preload("res://sim/core/simulation.gd")
 const Motion = preload("res://view/actors/animation_director.gd")
 const Health = preload("res://sim/combat/body_health.gd")
 const World = preload("res://sim/world/world_db.gd")
+const TownLayout = preload("res://sim/world/town_layout.gd")
+## A walkable straight run of `length` cells east of the town, all off the roads (or all on one).
+func corridor(s: Dictionary, length: int, want_road: bool) -> Array:
+	for y in range(-40, 120):
+		for x in range(-40, 300):
+			var clear: bool = true
+			for dx in range(length):
+				if not World.walkable(s, [x + dx, y]) or TownLayout.on_road(s, [x + dx, y]) != want_road or (want_road and TownLayout.road_kind(s, [x + dx, y]) != 2): clear = false; break
+			if clear: return [x, y]
+	return []
 var failures: int=0
 func check(value: bool,label: String) -> void:
 	if not value: failures+=1; printerr("FAIL: "+label)
 func _initialize() -> void:
 	var walking:=Sim.new(); walking.start_game()
 	var running:=Sim.new(); running.start_game()
+	# Off the roads: five cells a second walking, ten running.
+	var open_ground: Array = corridor(walking.state, 12, false)
+	walking.state.entities[str(walking.state.player)].cell = open_ground.duplicate()
+	running.state.entities[str(running.state.player)].cell = open_ground.duplicate()
 	var walk_start: Array=walking.state.entities[str(walking.state.player)].cell.duplicate()
 	for tick in range(6):
 		walking.submit("move_player", {"direction":[1,0],"run":false}); walking.step()
@@ -16,6 +30,17 @@ func _initialize() -> void:
 	var walked: int=walking.state.entities[str(walking.state.player)].cell[0]-walk_start[0]
 	var ran: int=running.state.entities[str(running.state.player)].cell[0]-walk_start[0]
 	check(walked==3 and ran==6,"Sprint travels twice the distance of walking over the same ticks")
+	# On a road between the towns walking is about a third quicker.
+	var road_walk:=Sim.new(); road_walk.start_game()
+	var on_link: Array = corridor(road_walk.state, 16, true)
+	check(not on_link.is_empty(), "A straight stretch of road between towns exists")
+	if not on_link.is_empty():
+		road_walk.state.entities[str(road_walk.state.player)].cell = on_link.duplicate()
+		for tick in range(20):
+			if road_walk.state.tick + 1 >= road_walk.state.player_control.next_move: road_walk.submit("move_player", {"direction":[1,0],"run":false})
+			road_walk.step()
+		var road_cells: int = road_walk.state.entities[str(road_walk.state.player)].cell[0] - on_link[0]
+		check(road_cells >= 12 and road_cells <= 14, "Walking a road between towns is about 30%% quicker (%d cells in 20 ticks, 10 off the roads)" % road_cells)
 	var blocked_cell: Array=[running.state.entities[str(running.state.player)].cell[0]+1,walk_start[1]]
 	World.apply_mutation(running.state,blocked_cell,true)
 	var stamina_before: int=running.state.player_health.stamina
@@ -37,14 +62,7 @@ func _initialize() -> void:
 	# Exercise the real input queue, fixed simulation clock and visual interpolation
 	# together at 60 FPS; each frame after startup should advance the player.
 	var live_state: Dictionary = main_scene.simulation.state
-	var start_cell: Array = []
-	for y in range(55, 85):
-		for x in range(30, 90):
-			var clear: bool = true
-			for dx in range(14):
-				if not World.walkable(live_state, [x + dx, y]): clear = false; break
-			if clear: start_cell = [x, y]; break
-		if not start_cell.is_empty(): break
+	var start_cell: Array = corridor(live_state, 14, false)
 	check(not start_cell.is_empty(), "A clear walking corridor is available")
 	if not start_cell.is_empty():
 		live_state.entities[str(live_state.player)].cell = start_cell.duplicate()

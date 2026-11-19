@@ -11,10 +11,11 @@ extends RefCounted
 ##   reach  how many cells either side of the line stay clear of buildings and trees
 ## world.layout[town] = {"archetype", "centre", "street_y", "extent": [x_lo, x_hi]}
 const World = preload("res://sim/world/world_db.gd")
+const RoadPlanner = preload("res://sim/world/road_planner.gd")
 const ARCHETYPES: Array[String] = ["crossroads", "winding", "ring", "hamlets"]
-const VERSION := 1
+const VERSION := 2   # 2: link roads planned around obstacles, with junctions
 const LOT_SPACING := 5.0
-const MAX_LOT_DISTANCE := 62.0   # how far from a town's square its lots reach
+const MAX_LOT_DISTANCE := 80.0   # how far from a town's square its lots reach (out along the roads leaving town)
 
 # --- small helpers ----------------------------------------------------------------------------
 
@@ -86,25 +87,11 @@ static func generate(sim: RefCounted) -> void:
 		layout[str(town)] = {"archetype": pool[index % pool.size()], "centre": [store[0], store[1]], "street_y": street_y, "extent": extent}
 		_segment(segments, "main", town, _curve(Vector2(extent[0], street_y), Vector2(extent[1], street_y), 0.5, 4.0, 0.7, 4.0), 17.0, 4.0)
 		_lanes(sim, segments, town, str(layout[str(town)].archetype), store, extent, street_y)
-	# Roads between the towns.
-	if layout.has("1") and layout.has("2"):
-		var a: Dictionary = layout["1"]
-		var b: Dictionary = layout["2"]
-		_segment(segments, "link", 1, _curve(Vector2(a.extent[1], a.street_y), Vector2(b.extent[0], b.street_y), _rf(sim, "town_layout:links", 5.0, 9.0), _rf(sim, "town_layout:links", 1.6, 3.4), _rf(sim, "town_layout:links", 0.0, 6.0)), 17.0, 4.0)
-	if layout.has("1") and layout.has("3"):
-		var a: Dictionary = layout["1"]
-		var c: Dictionary = layout["3"]
-		var from: Vector2 = Vector2(float(a.centre[0]) + _rf(sim, "town_layout:links", 2.0, 14.0), float(a.street_y))
-		var to: Vector2 = Vector2(float(c.extent[0]), float(c.street_y))
-		_segment(segments, "link", 1, _curve(from, to, _rf(sim, "town_layout:links", 5.0, 10.0), _rf(sim, "town_layout:links", 1.4, 3.0), _rf(sim, "town_layout:links", 0.0, 6.0)), 16.0, 4.0)
-	if layout.has("2") and layout.has("3"):
-		var b: Dictionary = layout["2"]
-		var c: Dictionary = layout["3"]
-		var from: Vector2 = Vector2(float(b.extent[0]), float(b.street_y))
-		var to: Vector2 = Vector2(float(c.extent[1]), float(c.street_y))
-		_segment(segments, "link", 2, _curve(from, to, _rf(sim, "town_layout:links", 6.0, 11.0), _rf(sim, "town_layout:links", 1.4, 3.0), _rf(sim, "town_layout:links", 0.0, 6.0)), 16.0, 4.0)
-	s.world.roads = {"version": VERSION, "segments": segments}
+	# Roads between the towns, planned around what is in the way (road_planner.gd).
+	var junctions: Array = RoadPlanner.plan(sim, segments, layout)
+	s.world.roads = {"version": VERSION, "segments": segments, "junctions": junctions}
 	s.world.layout = layout
+	RoadPlanner.place_signposts(sim, junctions)
 
 ## The lanes that give a town its character, all leaving the main street.
 static func _lanes(sim: RefCounted, segments: Array, town: int, archetype: String, store: Array, extent: Array, street_y: int) -> void:
@@ -234,6 +221,48 @@ static func road_cells(s: Dictionary) -> Dictionary:
 
 static func on_road(s: Dictionary, cell: Array) -> bool:
 	return road_cells(s).has("%d,%d" % [cell[0], cell[1]])
+
+## What kind of road each cell is on: {"kind": {"x,y": 2 on a road between towns, 1 on a town
+## street or lane}, "centre": {"x,y": true within a cell of a road's line}}. Memoised like road_cells.
+static var _map_cache: Dictionary = {}
+static func road_map(s: Dictionary) -> Dictionary:
+	var cells := road_cells(s)   # refreshes _cell_cache.signature for this layout
+	var signature: String = _cell_cache.get("signature", "")
+	if _map_cache.get("signature", "") == signature: return _map_cache.map
+	var kind: Dictionary = {}
+	var centre: Dictionary = {}
+	for pass_link in [false, true]:   # links last, so where a link runs down a street it counts as the link
+		for segment in segments(s):
+			if (segment.kind == "link") != pass_link: continue
+			var value: int = 2 if pass_link else 1
+			var reach: int = ceili(float(segment.reach))
+			var previous: Vector2 = _vec(segment.points[0])
+			for index in range(segment.points.size()):
+				var p: Vector2 = _vec(segment.points[index])
+				var steps: int = maxi(1, ceili(previous.distance_to(p)))
+				for step in range(steps + 1):
+					var q: Vector2 = previous.lerp(p, float(step) / float(steps))
+					var cx: int = roundi(q.x)
+					var cy: int = roundi(q.y)
+					for dy in range(-reach, reach + 1):
+						for dx in range(-reach, reach + 1):
+							if dx * dx + dy * dy > reach * reach + reach: continue
+							var key := "%d,%d" % [cx + dx, cy + dy]
+							kind[key] = value
+							if absi(dx) <= 1 and absi(dy) <= 1: centre[key] = true
+				previous = p
+	var map := {"kind": kind, "centre": centre, "cells": cells.size()}
+	_map_cache = {"signature": signature, "map": map}
+	return map
+
+## 2 on a road between towns, 1 on a town street or lane, 0 off the roads.
+static func road_kind(s: Dictionary, cell: Array) -> int:
+	return int(road_map(s).kind.get("%d,%d" % [cell[0], cell[1]], 0))
+
+## A short text that changes whenever the roads do (for caches built on them).
+static func road_signature(s: Dictionary) -> String:
+	road_cells(s)
+	return String(_cell_cache.get("signature", ""))
 
 ## Coarse rectangles over the road corridors (a box around every few points), for code that wants rectangles.
 static func corridors(s: Dictionary) -> Array[Rect2i]:

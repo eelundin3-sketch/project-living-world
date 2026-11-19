@@ -5,12 +5,20 @@ const NavGrid = preload("res://sim/movement/nav_grid.gd")
 ## Deterministic four-neighbour shortest paths on the derived walkability grid (nav_grid.gd).
 ## The path excludes the start cell and ends on the goal.
 static func request_path(state: Dictionary, start: Array, goal: Array) -> Dictionary:
+	return _search(state, start, goal, false)
+
+## A path for a long walk (a trader's trip, the player's travel to a town): it keeps to the roads,
+## leaving them only where that saves a lot (nav_grid.gd travel_grid).
+static func request_travel_path(state: Dictionary, start: Array, goal: Array) -> Dictionary:
+	return _search(state, start, goal, true)
+
+static func _search(state: Dictionary, start: Array, goal: Array, by_road: bool) -> Dictionary:
 	if not World.walkable(state, start) or not World.walkable(state, goal):
 		return {"ok": false, "error_code": "BLOCKED_ENDPOINT", "path": []}
 	if start == goal:
 		return {"ok": true, "error_code": "", "path": []}
 	Probe.count("astar_calls")
-	var grid := NavGrid.grid(state)
+	var grid := NavGrid.travel_grid(state) if by_road else NavGrid.grid(state)
 	var cells: Array[Vector2i] = grid.get_id_path(Vector2i(start[0], start[1]), Vector2i(goal[0], goal[1]))
 	if cells.size() < 2:
 		return {"ok": false, "error_code": "UNREACHABLE", "path": []}

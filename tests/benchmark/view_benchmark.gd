@@ -1,5 +1,6 @@
 extends SceneTree
-## Windowed frame benchmark of the real game at several zoom levels. For each zoom it records
+## Windowed frame benchmark of the real game at several zoom levels, and with the map open (M).
+## For each it records
 ## frame-time percentiles, render CPU and GPU time, draw calls, and where the script time went
 ## (the perf probe's sections, per frame). Not headless: rendering is what it measures.
 ## Run: godot --path . --script res://tests/benchmark/view_benchmark.gd
@@ -23,8 +24,12 @@ func run() -> void:
 	var camera: Camera2D = main.get_node("ObserverCamera")
 	for warm in range(90): await process_frame
 	var rows: Array = []
-	for zoom in [2.0, 1.0, 0.5, 0.2]:
-		camera.zoom = Vector2.ONE * zoom
+	for zoom in [2.0, 1.0, 0.5, 0.2, "map"]:
+		if zoom is String:
+			camera.zoom = Vector2.ONE * 2.0
+			main.toggle_map()
+		else:
+			camera.zoom = Vector2.ONE * zoom
 		for warm in range(45): await process_frame
 		perf.cumulative = {}
 		perf.cumulative_counts = {}
@@ -59,6 +64,7 @@ func run() -> void:
 			"draw_calls": draw_calls / maxi(1, reads), "render_cpu_ms": snappedf(render_cpu / maxf(1.0, reads), 0.01), "render_gpu_ms": snappedf(render_gpu / maxf(1.0, reads), 0.01), "ms_per_frame": sections, "per_frame": counts}
 		rows.append(row)
 		print(JSON.stringify(row))
+		if zoom is String: main.toggle_map()
 	var label := OS.get_environment("SOLO_BENCH_LABEL")
 	if label != "":
 		var file := FileAccess.open("res://docs/validation".path_join("view_benchmark_%s.json" % label), FileAccess.WRITE)

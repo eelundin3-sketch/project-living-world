@@ -13,6 +13,14 @@ const Nav = preload("res://sim/movement/navigation.gd")
 const Society = preload("res://sim/factions/society.gd")
 const Looting = preload("res://sim/player/looting.gd")
 const Outfits = preload("res://sim/entities/outfits.gd")
+const Sleep = preload("res://sim/player/sleep.gd")
+## What a piece of furniture or a fixture is called in the menu, and a line about it.
+const PART_NAMES := {"bed": "Bed", "table": "Table", "chair": "Chair", "lamp": "Lamp", "chest": "Chest", "shelf": "Shelves",
+	"booking_desk": "Booking desk", "locker": "Locker", "toilet": "Toilet", "weapon_rack": "Weapon rack", "stockpile": "Stockpile",
+	"saw": "Saw bench", "oven": "Oven", "forge": "Forge", "workshop_storage": "Material rack", "stall": "Stall"}
+const PART_LINES := {"table": "A plain wooden table.", "chair": "A wooden chair.", "lamp": "An oil lamp.", "shelf": "Shelves of odds and ends.",
+	"booking_desk": "Where prisoners are booked in and the sheriff does his paperwork.", "locker": "Prisoners' belongings are kept in here.",
+	"toilet": "A bucket toilet.", "bed": "A bed.", "stockpile": "The town's goods, stacked.", "workshop_storage": "Materials waiting to be worked."}
 const ITEM_NAMES := {"log": "logs", "plank": "planks", "food": "food", "rye": "rye", "bandage": "bandages", "antiseptic": "antiseptic", "shell": "shells", "shotgun": "shotgun", "tool": "iron tools", "ore": "iron ore"}
 
 static func _opt(id: String, label: String, icon: String, enabled: bool = true, reason: String = "") -> Dictionary:
@@ -21,11 +29,51 @@ static func _opt(id: String, label: String, icon: String, enabled: bool = true, 
 static func _items(s: Dictionary, id: int) -> Dictionary:
 	return s.inventories.get(str(id), {}).get("items", {})
 
-## Menu entries for a target. `icon` names a pictogram drawn by the menu.
-static func options(s: Dictionary, id: int) -> Array:
+## The furniture or fixture a click landed on: part is "furniture:<index>" or "fixture:<index>".
+static func part_item(s: Dictionary, id: int, part: String) -> Dictionary:
+	var e: Dictionary = s.entities.get(str(id), {})
+	var bits := part.split(":")
+	if bits.size() != 2 or not bits[0] in ["furniture", "fixture"]: return {}
+	var list: Array = e.get("furniture" if bits[0] == "furniture" else "fixtures", [])
+	var index := int(bits[1])
+	return list[index] if index >= 0 and index < list.size() else {}
+
+static func part_index(part: String) -> int:
+	var bits := part.split(":")
+	return int(bits[1]) if bits.size() == 2 else -1
+
+## The menu title for a click: the piece of furniture when there is one, else the thing itself.
+static func title(s: Dictionary, id: int, part: String = "") -> String:
+	var item := part_item(s, id, part)
+	if not item.is_empty(): return PART_NAMES.get(item.kind, String(item.kind).capitalize())
+	return String(s.entities.get(str(id), {}).get("name", ""))
+
+## Options for one piece of furniture or one fixture inside a building: only what that thing does.
+static func _part_options(s: Dictionary, building: Dictionary, part: String) -> Array:
+	var result: Array = []
+	var item := part_item(s, int(building.id), part)
+	if item.is_empty(): return result
+	match item.kind:
+		"weapon_rack":
+			var has_gun: bool = Inventory.amount(s, s.player, "shotgun") > 0
+			result.append(_opt("rack", "Return the shotgun" if has_gun else "Take a shotgun", "gun", has_gun or Inventory.amount(s, building.id, "shotgun") > 0, "The rack is empty"))
+		"stockpile":
+			if building.kind in ["warehouse", "market"]: result.append(_opt("trade", "Trade / take supplies", "talk"))
+		"saw", "oven", "forge", "workshop_storage":
+			result.append(_opt("operate", "Use / collect", "hand"))
+		"bed":
+			var reason := Sleep.problem(s, int(building.id), part_index(part))
+			result.append(_opt("sleep", "Sleep", "sun", reason.is_empty(), reason))
+	result.append(_opt("examine", "Look at", "eye"))
+	return result
+
+## Menu entries for a target. `icon` names a pictogram drawn by the menu. Inside a building only
+## the furniture or fixture that was clicked has actions (`part`); bare floor has none.
+static func options(s: Dictionary, id: int, part: String = "") -> Array:
 	var result: Array = []
 	if not s.entities.has(str(id)): return result
 	var e: Dictionary = s.entities[str(id)]
+	if e.has("footprint") and id != s.player: return _part_options(s, e, part)
 	if id == s.player:
 		result.append(_opt("eat", "Eat", "food", Inventory.amount(s, s.player, "food") > 0, "No food"))
 		result.append(_opt("drink", "Drink", "drop", Needs.near_water(s), "Stand by a well"))
@@ -115,9 +163,15 @@ static func subtitle(s: Dictionary, id: int) -> String:
 		"stash": return "Dropped items"
 	return ""
 
-static func describe(s: Dictionary, id: int) -> String:
+static func describe(s: Dictionary, id: int, part: String = "") -> String:
 	var e: Dictionary = s.entities.get(str(id), {})
 	if e.is_empty(): return ""
+	var item := part_item(s, id, part)
+	if not item.is_empty():
+		if item.kind == "bed" and str(item.get("for", "")) == "prisoner": return "A hard cot in the jail cell."
+		if item.kind == "bed" and str(item.get("for", "")) == "sheriff": return "A sheriff's bed."
+		if item.kind == "weapon_rack": return "The %s's gun rack: %d shotgun%s." % [e.name, Inventory.amount(s, id, "shotgun"), "" if Inventory.amount(s, id, "shotgun") == 1 else "s"]
+		return String(PART_LINES.get(item.kind, "%s in %s." % [title(s, id, part), e.name]))
 	match e.get("kind", ""):
 		"resident":
 			var npc: Dictionary = s.residents.get(str(id), {})
@@ -130,11 +184,21 @@ static func describe(s: Dictionary, id: int) -> String:
 			return "%s: %d iron ore left." % [e.name, int(_items(s, id).get("ore", 0))]
 		"farm":
 			return "%s." % e.name
+		"signpost":
+			return "A signpost: %s." % e.get("directions", "")
 	return String(e.name)
 
-## Adjacent cells from which `e` can be worked.
-static func _stand_cells(s: Dictionary, e: Dictionary) -> Array:
+## Adjacent cells from which `e` (or the clicked piece of furniture in it) can be used.
+static func _stand_cells(s: Dictionary, e: Dictionary, part: String = "") -> Array:
 	var cells: Array = []
+	if part.begins_with("furniture:"):
+		var item := part_item(s, int(e.id), part)
+		if not item.is_empty():
+			var r: Array = item.rect
+			for y in range(r[1] - 1, r[1] + r[3] + 1):
+				for x in range(r[0] - 1, r[0] + r[2] + 1):
+					if x < r[0] or x >= r[0] + r[2] or y < r[1] or y >= r[1] + r[3]: cells.append([x, y])
+			return cells
 	if e.has("rock_rect"):
 		var r: Array = e.rock_rect
 		for y in range(r[1] - 1, r[1] + r[3] + 1):
@@ -146,20 +210,30 @@ static func _stand_cells(s: Dictionary, e: Dictionary) -> Array:
 		for offset in [[0, 1], [0, -1], [1, 0], [-1, 0]]: cells.append([e.cell[0] + offset[0], e.cell[1] + offset[1]])
 	return cells
 
+## Beside the target: the clicked piece of furniture when there is one, else the thing itself.
+static func _within_reach(s: Dictionary, e: Dictionary, part: String) -> bool:
+	if part.begins_with("furniture:"):
+		var item := part_item(s, int(e.id), part)
+		if item.is_empty(): return false
+		var p: Array = s.entities[str(s.player)].cell
+		var r: Array = item.rect
+		return p[0] >= r[0] - 1 and p[0] <= r[0] + r[2] and p[1] >= r[1] - 1 and p[1] <= r[1] + r[3]
+	return Actions.near(s, e)
+
 ## Perform now when in reach, otherwise walk there and perform on arrival.
-static func request(sim: RefCounted, id: int, action: String) -> void:
+static func request(sim: RefCounted, id: int, action: String, part: String = "") -> void:
 	var s: Dictionary = sim.state
 	var pc: Dictionary = s.player_control
 	if not s.entities.has(str(id)): return
 	var e: Dictionary = s.entities[str(id)]
 	pc.pending = {}
-	if id == s.player or action in ["examine", "inventory", "health", "wardrobe"] or Actions.near(s, e):
-		perform(sim, id, action)
+	if id == s.player or action in ["examine", "inventory", "health", "wardrobe"] or _within_reach(s, e, part):
+		perform(sim, id, action, part)
 		return
 	var from: Array = s.entities[str(s.player)].cell
 	var best: Array = []
 	var best_distance := 9999
-	for cell in _stand_cells(s, e):
+	for cell in _stand_cells(s, e, part):
 		if not World.walkable(s, cell): continue
 		var distance: int = absi(cell[0] - from[0]) + absi(cell[1] - from[1])
 		if distance < best_distance:
@@ -172,8 +246,8 @@ static func request(sim: RefCounted, id: int, action: String) -> void:
 		pc.notice = "You cannot reach %s." % e.name
 		return
 	s.player_path = best
-	pc.pending = {"target": id, "action": action, "since": s.tick, "repath": s.tick + 12}
-	pc.notice = "Walking to %s…" % e.name
+	pc.pending = {"target": id, "action": action, "part": part, "since": s.tick, "repath": s.tick + 12}
+	pc.notice = "Walking to the %s…" % title(s, id, part).to_lower() if not part.is_empty() else "Walking to %s…" % e.name
 
 ## Finishes a pending walk-then-act, re-aiming at targets that move.
 static func update(sim: RefCounted) -> void:
@@ -186,16 +260,17 @@ static func update(sim: RefCounted) -> void:
 		pc.pending = {}
 		return
 	var e: Dictionary = s.entities[str(id)]
-	if Actions.near(s, e):
+	var part: String = str(pending.get("part", ""))
+	if _within_reach(s, e, part):
 		s.player_path = []
 		pc.pending = {}
-		perform(sim, id, str(pending.action))
+		perform(sim, id, str(pending.action), part)
 	elif s.player_path.is_empty() or s.tick >= int(pending.repath):
 		pending.repath = s.tick + (5 if pc.get("travel_run", false) else 10)
 		var from: Array = s.entities[str(s.player)].cell
 		var best: Array = []
 		var best_distance := 9999
-		for cell in _stand_cells(s, e):
+		for cell in _stand_cells(s, e, part):
 			if not World.walkable(s, cell): continue
 			var distance: int = absi(cell[0] - from[0]) + absi(cell[1] - from[1])
 			if distance < best_distance:
@@ -206,7 +281,7 @@ static func update(sim: RefCounted) -> void:
 		if best.is_empty() and s.player_path.is_empty(): pc.pending = {}
 		elif not best.is_empty(): s.player_path = best
 
-static func perform(sim: RefCounted, id: int, action: String) -> void:
+static func perform(sim: RefCounted, id: int, action: String, part: String = "") -> void:
 	var s: Dictionary = sim.state
 	var pc: Dictionary = s.player_control
 	var e: Dictionary = s.entities.get(str(id), {})
@@ -217,7 +292,8 @@ static func perform(sim: RefCounted, id: int, action: String) -> void:
 		pc.notice = "Picked up the %s." % ITEM_NAMES.get(item, item) if moved.ok else "Your pack is full."
 		return
 	match action:
-		"examine": pc.notice = describe(s, id)
+		"examine": pc.notice = describe(s, id, part)
+		"sleep": Sleep.lie_down(s, id, part_index(part))
 		"eat": pc.notice = Needs.eat(s)
 		"drink": pc.notice = Needs.drink(s)
 		"inventory", "health": pass   # opened by the interface

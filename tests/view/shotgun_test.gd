@@ -96,7 +96,6 @@ func _check_controls() -> void:
 	root.add_child(main)
 	main.set_process(false)
 	main.world_audio.enabled = false
-	main.world_audio.wind.stop()
 	var sim: RefCounted = main.simulation
 	var s: Dictionary = sim.state
 	Inventory.produce(s, s.player, "shotgun", 1)

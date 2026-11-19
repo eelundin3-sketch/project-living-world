@@ -127,6 +127,17 @@ func _draw() -> void:
 			draw_rect(rect, Color(0.08, 0.07, 0.05, 0.8))
 			draw_string(font, rect.position + Vector2(10, size.y - 7), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("f3e7cc"))
 
+	# Travelling to a town by yourself: say where, and how to take over.
+	var travelling: int = int(state.get("player_control", {}).get("travelling", 0))
+	if travelling != 0 and not active:
+		var name: String = str(state.get("settlements", {}).get(str(travelling), {}).get("name", "town"))
+		var text: String = "Travelling to %s  ·  move or press Esc to stop" % name
+		var size: Vector2 = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 15) + Vector2(24, 10)
+		var rect := Rect2(Vector2((screen.x - size.x) * 0.5, 18.0), size)
+		draw_rect(rect, Color(0.08, 0.07, 0.05, 0.82))
+		draw_rect(rect, Color("e2b55a", 0.7), false, 1.2)
+		draw_string(font, rect.position + Vector2(12, size.y - 8), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("f3e7cc"))
+
 func _draw_legend(font: Font, list: Array) -> void:
 	var kinds: Array = legend_kinds(list)
 	var rows: int = kinds.size()
