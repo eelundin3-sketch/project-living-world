@@ -5,10 +5,8 @@ extends RefCounted
 ## The search itself is Godot's built-in AStarGrid2D (C++), four-neighbour with Manhattan costs.
 const World = preload("res://sim/world/world_db.gd")
 const Probe = preload("res://sim/diagnostics/perf_probe.gd")
-
-static var astar: AStarGrid2D
-static var world_ref: Dictionary = {}
-static var signature: Array = []
+const DerivedCache = preload("res://sim/core/derived_cache.gd")
+static var _grids: Array = []
 
 ## What the grid was built from. Any write that changes walkability either bumps nav_revision or
 ## changes one of the three tables' sizes (or replaces a table), so this catches every change.
@@ -24,11 +22,13 @@ static func _parse(key: String) -> Vector2i:
 ## The grid for this state, rebuilt only when the world's walkability has changed.
 static func grid(state: Dictionary) -> AStarGrid2D:
 	var sig := _signature(state)
-	if astar != null and is_same(world_ref, state.world) and sig == signature:
-		return astar
+	var cache: Dictionary = DerivedCache.slot(_grids, state.world)
+	if cache.get("signature") == sig:
+		return cache.astar
 	var started := Time.get_ticks_usec()
 	var bounds: Array = sig[0]
-	if astar == null: astar = AStarGrid2D.new()
+	if not cache.has("astar"): cache.astar = AStarGrid2D.new()
+	var astar: AStarGrid2D = cache.astar
 	var region := Rect2i(bounds[0], bounds[1], bounds[2] - bounds[0], bounds[3] - bounds[1])
 	astar.region = region
 	astar.cell_size = Vector2.ONE
@@ -37,18 +37,16 @@ static func grid(state: Dictionary) -> AStarGrid2D:
 	astar.default_estimate_heuristic = AStarGrid2D.HEURISTIC_MANHATTAN
 	astar.jumping_enabled = false
 	astar.update()
+	astar.fill_solid_region(region, false)   # update() may keep old solids when nothing else changed
 	for table in [state.world.blocked, state.world.get("building_walls", {}), state.world.get("fixture_cells", {})]:
 		for key in table:
 			var cell := _parse(key)
 			if region.has_point(cell): astar.set_point_solid(cell, true)
-	world_ref = state.world
-	signature = sig
+	cache.signature = sig
 	Probe.add("nav_grid_rebuild", Time.get_ticks_usec() - started)
 	Probe.count("nav_grid_rebuilds")
 	return astar
 
 ## Forget the grid (tests that swap worlds in place can call this; normal play never needs to).
 static func reset() -> void:
-	astar = null
-	world_ref = {}
-	signature = []
+	_grids.clear()

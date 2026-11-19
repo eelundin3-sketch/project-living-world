@@ -4,6 +4,7 @@ const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const Names = preload("res://sim/entities/names.gd")
 const Crops = preload("res://sim/farming/crops.gd")
 const Terrain = preload("res://sim/world/terrain.gd")
+const DerivedCache = preload("res://sim/core/derived_cache.gd")
 const CHUNK_SIDE: int = 64
 const WIDTH: int = 128
 const HEIGHT: int = 96
@@ -24,6 +25,9 @@ static func in_reserved_plot(plots: Array[Rect2i], cell: Array) -> bool:
 	return false
 
 const WORKSHOP_KINDS: Array[String] = ["sawmill", "bakery", "forge"]
+## Counts entity additions and removals in this process, so derived caches (outside the game
+## state) know when to rebuild. Not part of the state and never saved.
+static var entity_serial: int = 0
 
 static func cell_key(cell: Array) -> String:
 	return "%d,%d" % [cell[0], cell[1]]
@@ -59,6 +63,7 @@ static func apply_mutation(state: Dictionary, cell: Array, blocked: bool) -> voi
 
 static func add_entity(sim: RefCounted, kind: String, name_value: String, cell: Array, settlement: int = 0, extra: Dictionary = {}) -> int:
 	var id: int = sim.new_id()
+	entity_serial += 1
 	if settlement > 0 and (kind in ["sawmill", "bakery", "forge", "office"] or (kind == "home" and "lodge" in name_value.to_lower())):
 		# Each town's lodge, office and workshops sit back from the road by their own amount, so a
 		# street is not one straight row. Only backwards: the road in front always stays clear.
@@ -264,15 +269,40 @@ static func interior_doorways(entity: Dictionary) -> Array:
 	return result
 
 static func inside_building(s: Dictionary, cell: Array) -> int:
-	for entity in s.entities.values():
-		if entity.has("footprint") and building_contains(entity, cell):
+	for entity in buildings(s):
+		if building_contains(entity, cell):
 			return entity.id
 	return 0
+
+## Entities with a footprint, and entities by kind, in entity-table order. Derived lists (never
+## saved) rebuilt when entities are added, removed or converted (entity_serial), so the dozens
+## of buildings can be found without walking thousands of trees.
+static var _lists_cache: Array = []
+static func _entity_lists(s: Dictionary) -> Dictionary:
+	var cache: Dictionary = DerivedCache.slot(_lists_cache, s.entities)
+	var signature := [s.entities.size(), entity_serial]
+	if cache.get("signature") == signature: return cache.lists
+	var lists := {"__footprint": []}
+	for entity in s.entities.values():
+		var kind: String = entity.get("kind", "")
+		if not lists.has(kind): lists[kind] = []
+		lists[kind].append(entity)
+		if entity.has("footprint"): lists["__footprint"].append(entity)
+	cache.lists = lists
+	cache.signature = signature
+	return lists
+
+static func buildings(s: Dictionary) -> Array:
+	return _entity_lists(s)["__footprint"]
+
+static func of_kind(s: Dictionary, kind: String) -> Array:
+	return _entity_lists(s).get(kind, [])
 
 static func install_building(s: Dictionary, id: int) -> void:
 	var entity: Dictionary = s.entities[str(id)]
 	var rect := plot_rect(entity, entity.kind)
 	entity.footprint = [rect.position.x, rect.position.y, rect.size.x, rect.size.y]
+	entity_serial += 1   # a new building (or a site turned into one): derived lists rebuild
 	entity.door = entity.cell.duplicate()
 	if not s.world.has("building_walls"):
 		s.world.building_walls = {}
@@ -333,6 +363,7 @@ static func upgrade_layouts(s: Dictionary) -> void:
 ## Removes an entity whose inventory has already been emptied (its goods moved elsewhere first,
 ## so conservation holds): its chunk entry, fixture cells and inventory record go with it.
 static func remove_entity(s: Dictionary, id: int) -> void:
+	entity_serial += 1
 	var entity: Dictionary = s.entities.get(str(id), {})
 	if entity.is_empty(): return
 	var coord := chunk_coord(entity.cell[0], entity.cell[1])
@@ -345,6 +376,7 @@ static func remove_entity(s: Dictionary, id: int) -> void:
 	s.world.nav_revision += 1
 
 static func move_record(s: Dictionary, entity: Dictionary, destination: Array) -> void:
+	if entity.get("kind", "") not in ["resident", "player", "raider"]: entity_serial += 1   # derived caches by cell
 	var old := chunk_coord(entity.cell[0], entity.cell[1])
 	var new_coord := chunk_coord(destination[0], destination[1])
 	if old != new_coord:

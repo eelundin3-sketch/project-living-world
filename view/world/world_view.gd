@@ -29,6 +29,8 @@ var fixture_motion := Fixtures.new()
 var background: Node2D
 var shadows: Node2D
 var actor_shadows: Node2D
+var speech_was_live: bool = true
+var speech_style := StyleBoxFlat.new()   # one bubble style, recoloured per bubble (not a new one each frame)
 var speech_layer: Node2D
 var sun_overcast: float = 0.0
 var roofs: Array[Rect2] = []
@@ -239,7 +241,12 @@ func animate(delta: float, paused: bool, speed: int) -> void:
 	daylight.color = Color("8797b0").lerp(Color("fff1d5"), light).darkened(overcast)
 	sun_overcast = overcast
 	_update_shadow_layers()
-	speech_layer.queue_redraw()
+	# Speech bubbles only while someone is talking (plus one redraw to clear the last one).
+	var talking: bool = false
+	for line in simulation.state.get("speech", []):
+		if int(line.until) >= simulation.state.tick: talking = true; break
+	if talking or speech_was_live: speech_layer.queue_redraw()
+	speech_was_live = talking
 	refresh_age += delta
 	var camera := get_viewport().get_camera_2d()
 	if camera != null and (camera.position.distance_to(last_camera) > BACKGROUND_MARGIN * 0.4 or camera.zoom != last_zoom or refresh_age > 1.0):
@@ -262,7 +269,14 @@ func _sync_landscape() -> void:
 		Vector2(limits[2] - limits[0], limits[3] - limits[1]) * CELL)
 	var seed_value: int = int(state.seed) % 9973
 	var completed: int = state.get("completed_buildings", 0)
+	var finished_mask := roads.poll()
+	if finished_mask != null: landscape.material.set_shader_parameter("road_mask", finished_mask)
 	if landscape_region == region and landscape_seed == seed_value and road_buildings == completed: return
+	if landscape_region == region and landscape_seed == seed_value and road_buildings >= 0:
+		# A building was finished: its new path is drawn in the background (no frame freeze).
+		road_buildings = completed
+		roads.bake_async(state, region)
+		return
 	road_buildings = completed
 	landscape_region = region
 	landscape_seed = seed_value
@@ -961,7 +975,7 @@ func draw_speech(canvas: Node2D) -> void:
 		var measured: Vector2 = font.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, wrap, 12)
 		var box := Rect2(pose.position + Vector2(-measured.x * 0.5 - 8, -68 - measured.y - 12), measured + Vector2(16, 12))
 		var anchor: Vector2 = pose.position + Vector2(0, -58)
-		var style := StyleBoxFlat.new()
+		var style := speech_style
 		style.bg_color = Color(0.98, 0.95, 0.86, 0.96 * fade)
 		style.border_color = Color(0.23, 0.17, 0.11, fade)
 		style.set_border_width_all(1)

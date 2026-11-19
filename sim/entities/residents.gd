@@ -239,5 +239,6 @@ static func remove(sim: RefCounted, id: int) -> void:
 		Jobs.release(s, npc.job, "WORKER_REMOVED")
 	# Keep the inventory at its exact cell as a recoverable stash, never destroy goods.
 	s.entities[str(id)].kind = "stash"
+	World.entity_serial += 1
 	s.entities[str(id)].name += "'s belongings"
 	s.residents.erase(str(id))

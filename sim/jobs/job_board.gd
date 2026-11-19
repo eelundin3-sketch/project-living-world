@@ -17,21 +17,70 @@ static func refresh(sim: RefCounted) -> void:
 			release(s, job.id, "LEASE_EXPIRED")
 	var targets: Dictionary = {}
 	for job in s.jobs.values():
-		targets[str(job.target)] = true
-	for entity in s.entities.values():
-		if entity.kind not in ["tree", "farm", "ore"] or targets.has(str(entity.id)):
-			continue
+		targets[int(job.target)] = true
+	for id in _resource_ids(s):
+		if targets.has(id): continue
+		var entity: Dictionary = s.entities.get(str(id), {})
+		if entity.is_empty(): continue
 		var item: String = "log" if entity.kind == "tree" else ("ore" if entity.kind == "ore" else "food" if Inventory.amount(s, entity.id, "food") >= 1 else "rye")
 		if Inventory.amount(s, entity.id, item) < 1:
 			continue
 		var destination: int = s.warehouse
 		if s.has("settlements") and s.settlements.has(str(entity.settlement)):
 			destination = s.settlements[str(entity.settlement)].warehouse
-		var id: int = sim.new_id()
-		s.jobs[str(id)] = {"id": id, "kind": "gather", "target": entity.id,
+		var job_id: int = sim.new_id()
+		var fresh := _index_valid(s)
+		s.jobs[str(job_id)] = {"id": job_id, "kind": "gather", "target": entity.id,
 			"destination": destination, "item": item, "quantity": 5, "owner": 0,
 			"state": "OPEN", "lease_until": 0, "retry_count": 0, "retry_at": 0,
 			"reason": "", "progress": 0, "settlement": entity.settlement}
+		if fresh: _index_add(s, s.jobs[str(job_id)])
+
+## Jobs grouped by settlement, so a resident looking for work only walks their own town's jobs.
+## Derived (never saved): kept up to date where jobs are created and removed, and rebuilt from
+## the job table whenever it does not match (a load, or a change made elsewhere).
+static var _town_cache: Array = []
+static func _index_valid(s: Dictionary) -> bool:
+	return World.DerivedCache.slot(_town_cache, s.jobs).get("count", -1) == s.jobs.size()
+
+static func _index_add(s: Dictionary, job: Dictionary) -> void:
+	var cache: Dictionary = World.DerivedCache.slot(_town_cache, s.jobs)
+	var town: int = int(job.get("settlement", 0))
+	if not cache.towns.has(town): cache.towns[town] = []
+	cache.towns[town].append(job)
+	cache.count = s.jobs.size()
+
+static func _index_remove(s: Dictionary, job: Dictionary) -> void:
+	var cache: Dictionary = World.DerivedCache.slot(_town_cache, s.jobs)
+	cache.towns.get(int(job.get("settlement", 0)), []).erase(job)
+	cache.count = s.jobs.size()
+
+static func jobs_of_town(s: Dictionary, town: int) -> Array:
+	var cache: Dictionary = World.DerivedCache.slot(_town_cache, s.jobs)
+	if cache.get("count", -1) != s.jobs.size():
+		var towns := {}
+		for job in s.jobs.values():
+			var key: int = int(job.get("settlement", 0))
+			if not towns.has(key): towns[key] = []
+			towns[key].append(job)
+		cache.towns = towns
+		cache.count = s.jobs.size()
+	return cache.towns.get(town, [])
+
+## Ids of every tree, farm and ore deposit, in entity-table order. Derived from the state and
+## cached until entities are added or removed (resources never change kind).
+static var _resources_cache: Array = []
+static func _resource_ids(s: Dictionary) -> Array:
+	var cache: Dictionary = World.DerivedCache.slot(_resources_cache, s.entities)
+	var signature := [s.entities.size(), World.entity_serial]
+	if cache.get("signature") == signature: return cache.ids
+	var ids: Array = []
+	for entity in s.entities.values():
+		var kind: String = entity.get("kind", "")
+		if kind == "tree" or kind == "farm" or kind == "ore": ids.append(int(entity.id))
+	cache.ids = ids
+	cache.signature = signature
+	return ids
 
 static func release(state: Dictionary, job_id: int, reason: String) -> void:
 	if not state.jobs.has(str(job_id)):
@@ -90,19 +139,32 @@ static func try_claim(state: Dictionary, job_id: int, npc_id: int) -> bool:
 static func assign(state: Dictionary, npc_id: int) -> bool:
 	var npc: Dictionary = state.residents[str(npc_id)]
 	var cell: Array = state.entities[str(npc_id)].cell
-	var candidates: Array = []
-	for job in state.jobs.values():
-		if job.owner == 0 and job.retry_at <= state.tick and job.settlement == npc.settlement and Inventory.amount(state, job.destination, job.item) < (800 if job.item == "log" else 200):
-			if not Professions.gathers(npc, state.entities[str(job.target)].kind): continue
-			var target: Array = state.entities[str(job.target)].cell
-			var distance: int = absi(cell[0] - target[0]) + absi(cell[1] - target[1])
-			var threshold: int = 200 if state.get("settlements", {}).get(str(npc.settlement), {}).get("policy", "") == "Food first" else 100
-			var priority: int = 100 if job.item == "food" and Inventory.amount(state, job.destination, "food") < threshold else 0
-			candidates.append({"id": job.id, "score": priority - distance})
-	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		return a.score > b.score or (a.score == b.score and a.id < b.id))
-	for candidate in candidates:
-		if try_claim(state, candidate.id, npc_id):
+	var threshold: int = 200 if state.get("settlements", {}).get(str(npc.settlement), {}).get("policy", "") == "Food first" else 100
+	# Store levels and trade rules are the same for every job of a kind: look each up once.
+	var store_open: Dictionary = {}
+	var food_short: Dictionary = {}
+	var gathers: Dictionary = {}
+	# Candidates as one sortable number each: best score first, then lowest id (as before).
+	var order := PackedInt64Array()
+	for job in jobs_of_town(state, int(npc.settlement)):
+		if job.owner != 0 or job.retry_at > state.tick or job.settlement != npc.settlement: continue
+		var store_key: String = "%d:%s" % [job.destination, job.item]
+		if not store_open.has(store_key):
+			store_open[store_key] = Inventory.amount(state, job.destination, job.item) < (800 if job.item == "log" else 200)
+		if not store_open[store_key]: continue
+		var target: Dictionary = state.entities[str(job.target)]
+		var kind: String = target.kind
+		if not gathers.has(kind): gathers[kind] = Professions.gathers(npc, kind)
+		if not gathers[kind]: continue
+		var distance: int = absi(cell[0] - target.cell[0]) + absi(cell[1] - target.cell[1])
+		var priority: int = 0
+		if job.item == "food":
+			if not food_short.has(job.destination): food_short[job.destination] = Inventory.amount(state, job.destination, "food") < threshold
+			priority = 100 if food_short[job.destination] else 0
+		order.append((int(1 << 20) - (priority - distance)) * (int(1) << 32) + int(job.id))
+	order.sort()
+	for key in order:
+		if try_claim(state, int(key & 0xFFFFFFFF), npc_id):
 			return true
 	npc.status = "No reachable work / store full"
 	return false
@@ -176,7 +238,9 @@ static func advance(sim: RefCounted, npc_id: int) -> void:
 			s.job_archive.append(job.duplicate(true))
 			if s.job_archive.size() > 64:
 				s.job_archive.pop_front()
+			var indexed := _index_valid(s)
 			s.jobs.erase(str(job.id))
+			if indexed: _index_remove(s, job)
 			npc.job = 0
 			npc.status = "Delivered " + job.item
 			if s.completed_jobs % 10 == 0:

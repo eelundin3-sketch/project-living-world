@@ -5,6 +5,8 @@ extends RefCounted
 const World = preload("res://sim/world/world_db.gd")
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const Wounds = preload("res://sim/combat/wounds.gd")
+const Spatial = preload("res://sim/world/spatial.gd")
+const Cover = preload("res://sim/combat/cover.gd")
 const CAPACITY := 5
 const PELLETS := 7
 const PELLET_DAMAGE := 9
@@ -75,11 +77,21 @@ static func _effect(s: Dictionary, kind: String, cell: Array, dir: Array = [0, 0
 
 ## What a pellet strikes at `cell`: "" means open air.
 static func surface_at(s: Dictionary, cell: Array, owner: int) -> String:
-	var key := World.cell_key(cell)
-	for entity in s.entities.values():
-		if entity.get("cell", []) == cell and entity.id != owner:
-			if entity.kind in ["resident", "raider", "player"]: return "body"
-			if entity.kind == "tree": return "tree"
+	var key: String = "%d,%d" % [cell[0], cell[1]]
+	# The first person or tree on the cell (lowest id), as a scan of the entity table would find.
+	var first: int = -1
+	var surface: String = ""
+	for id in Spatial.actors_at(s, cell):
+		if id != owner:
+			first = id
+			surface = "body"
+			break
+	for id in Cover._trees_by_cell(s).get(Vector2i(int(cell[0]), int(cell[1])), []):
+		if id != owner and (first < 0 or id < first) and s.entities.get(str(id), {}).get("cell", []) == cell:
+			first = id
+			surface = "tree"
+			break
+	if surface != "": return surface
 	if s.world.get("building_walls", {}).has(key): return "wall"
 	if s.world.get("fixture_cells", {}).has(key): return "wood"
 	if s.world.blocked.has(key): return "stone"
@@ -123,8 +135,9 @@ static func _strike(sim: RefCounted, surface: String, cell: Array, pellet: Dicti
 	var dir: Array = [roundi(pellet.dx * 1000.0), roundi(pellet.dy * 1000.0)]
 	_effect(s, {"body": "blood", "tree": "bark", "wall": "wall", "wood": "wood", "stone": "spark"}[surface], cell, dir)
 	if surface != "body": return
-	for entity in s.entities.values():
-		if entity.get("cell", []) == cell and entity.kind in ["resident", "raider", "player"]:
+	for id in Spatial.actors_at(s, cell):
+		var entity: Dictionary = s.entities[str(id)]
+		if true:
 			var key := str(entity.id)
 			var was_alive: bool = not s.residents.has(key) or s.residents[key].health > 0
 			if s.residents.has(key) or entity.kind == "player":

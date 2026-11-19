@@ -4,6 +4,7 @@ extends RefCounted
 ## people it must feed and protect. Farmers and a sheriff emerge from the food and
 ## safety terms in the same way a miner emerges from nearby ore.
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
+const World = preload("res://sim/world/world_db.gd")
 const GATHERERS: Array[String] = ["Gatherer", "Woodsman", "Farmer", "Miner"]
 const WORKSHOP_TRADES: Array[String] = ["Sawyer", "Baker", "Blacksmith"]
 ## Which resource entity kinds each gathering profession works.
@@ -27,7 +28,7 @@ static func settlement_resources(s: Dictionary, settlement: int) -> Dictionary:
 	var town: Dictionary = s.settlements[str(settlement)]
 	var center: Array = s.entities[str(town.warehouse)].cell
 	var result := {"trees": 0, "ore": 0, "fields": 0, "population": 0, "danger": 0, "workshops": {}}
-	for entity in s.entities.values():
+	for entity in World.of_kind(s, "tree") + World.of_kind(s, "ore") + World.of_kind(s, "farm"):
 		if not entity.has("cell"): continue
 		var near: bool = absi(entity.cell[0] - center[0]) <= 62 and absi(entity.cell[1] - center[1]) <= 40
 		match entity.kind:

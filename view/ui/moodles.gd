@@ -32,6 +32,7 @@ func refresh() -> void:
 		if not active.has(key) and pop[key] <= 0.0: pop.erase(key)
 	queue_redraw()
 
+var last_hovered: int = -1
 func _process(delta: float) -> void:
 	clock += delta
 	var changed := false
@@ -40,7 +41,14 @@ func _process(delta: float) -> void:
 		var next: float = move_toward(pop[key], target, delta * 5.0)
 		if next != pop[key]: changed = true
 		pop[key] = next
-	if changed or not shown.is_empty(): queue_redraw()
+	var pulsing: bool = false
+	for key in shown:
+		if int(levels.get(key, 0)) >= 4: pulsing = true
+	# Repaint while icons pop in or out, while a severe one pulses, or when the hover (tooltip) moves.
+	var hovered: int = _hovered_slot() if not pop.is_empty() else -1
+	if hovered != last_hovered: changed = true
+	last_hovered = hovered
+	if changed or pulsing: queue_redraw()
 
 static func level_color(level: int) -> Color:
 	return [Color("d6c48a"), Color("e3b64f"), Color("e08a38"), Color("d4492f"), Color("b8212a")][clampi(level, 0, 4)]

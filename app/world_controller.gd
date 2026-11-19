@@ -61,6 +61,8 @@ var menu_time: float = 0.0
 var intro_tween: Tween
 var last_right_press: int = -10000
 var last_right_position: Vector2 = Vector2.ZERO
+var overlay_was_live: bool = true
+var pointer_was_shown: bool = true
 
 func _ready() -> void:
 	SaveMigration.migrate()   # saves from before the game was renamed come across once
@@ -226,7 +228,10 @@ func _process(delta: float) -> void:
 	$WorldView.overlay_labels = map_mode
 	map_overlay.zoom = $ObserverCamera.zoom.x
 	map_overlay.player_world = $WorldView.motion.actors.get(str(simulation.state.player), {}).get("position", Vector2.ZERO)
-	map_overlay.queue_redraw()
+	# The overlay draws only on the map or with a waypoint set; otherwise one last clearing redraw.
+	var overlay_live: bool = map_mode or map_overlay.waypoint != Vector2.INF
+	if overlay_live or overlay_was_live: map_overlay.queue_redraw()
+	overlay_was_live = overlay_live
 	var view_started := Time.get_ticks_usec()
 	$WorldView.animate(delta, clock.paused, clock.speed)
 	Probe.add("f:animate", Time.get_ticks_usec() - view_started)
@@ -565,8 +570,10 @@ func _update_pointer() -> void:
 	action_pointer.active = show
 	if not show:
 		if Input.mouse_mode != Input.MOUSE_MODE_VISIBLE: Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-		action_pointer.queue_redraw()
+		if pointer_was_shown: action_pointer.queue_redraw()   # one redraw to clear it
+		pointer_was_shown = false
 		return
+	pointer_was_shown = true
 	if Input.mouse_mode != Input.MOUSE_MODE_HIDDEN: Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
 	var player_pos: Vector2 = $WorldView.motion.actors.get(str(s.player), {}).get("position", Vector2.ZERO)
 	var transform: Transform2D = get_viewport().get_canvas_transform()

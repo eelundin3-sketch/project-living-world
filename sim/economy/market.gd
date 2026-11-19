@@ -129,9 +129,11 @@ static func _tent_cell(s: Dictionary, store: Array) -> Array:
 				for cx in range(x - 3, x + 5):
 					if not World.walkable(s, [cx, cy]): clear = false
 			if not clear: continue
-			for entity in s.entities.values():
-				if entity.get("kind", "") in ["market_stall", "farm", "construction"] and Vector2(entity.cell[0] - x, entity.cell[1] - y).length() < 7.0: clear = false; break
-				if entity.has("footprint") and World.building_rect(entity).grow(2).intersects(Rect2i(x - 1, y, 4, 2)): clear = false; break
+			for entity in World.of_kind(s, "market_stall") + World.of_kind(s, "farm") + World.of_kind(s, "construction"):
+				if Vector2(entity.cell[0] - x, entity.cell[1] - y).length() < 7.0: clear = false; break
+			for entity in World.buildings(s):
+				if not clear: break
+				if World.building_rect(entity).grow(2).intersects(Rect2i(x - 1, y, 4, 2)): clear = false
 			for plot in s.get("crops", {}).values():
 				if Rect2i(plot.rect[0], plot.rect[1], plot.rect[2], plot.rect[3]).grow(2).intersects(Rect2i(x - 1, y, 4, 2)): clear = false
 			if clear: return [x, y]

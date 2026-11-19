@@ -309,8 +309,8 @@ static func _work_at_tile(s: Dictionary, npc: Dictionary, site: Dictionary, tile
 	return false
 
 static func _actor_occupies(s: Dictionary, cell: Array) -> bool:
-	for entity in s.entities.values():
-		if entity.get("kind", "") in ["resident", "player", "caravan"] and entity.get("cell", []) == cell:
+	for entity in World.of_kind(s, "resident") + World.of_kind(s, "player") + World.of_kind(s, "caravan"):
+		if entity.get("cell", []) == cell:
 			return true
 	return false
 

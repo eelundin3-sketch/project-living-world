@@ -204,8 +204,8 @@ func step() -> void:
 		Crops.update(state)
 		Probe.mark("daily+crops")
 		if state.tick % 14400 == 0:
-			for entity in state.entities.values():
-				if entity.kind == "tree":
+			for entity in World.of_kind(state, "tree"):
+				if true:
 					if entity.get("felled", false):
 						# A stump sprouts a new tree after a week; a fallen trunk waits to be gathered.
 						if Inventory.amount(state, entity.id, "log") == 0 and state.tick - int(entity.get("felled_tick", 0)) >= 7 * 14400:
