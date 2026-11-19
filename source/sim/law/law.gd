@@ -102,7 +102,7 @@ static func remember_crime(s: Dictionary, town: int, kind: String, victim: int) 
 
 static func crime(s: Dictionary, town: int, kind: String, victim: int) -> void:
 	if not s.has("player_control") or not SENTENCE.has(kind): return
-	remember_crime(s, town, kind, victim)
+	var entry: Dictionary = remember_crime(s, town, kind, victim)
 	var player: Array = s.entities[str(s.player)].cell
 	var witness: Dictionary = {}
 	var witnesses: Array = []
@@ -115,12 +115,14 @@ static func crime(s: Dictionary, town: int, kind: String, victim: int) -> void:
 			if d < nearest:
 				witness = sheriff       # the nearest takes the case
 				nearest = d
-	# Murder and theft get reported; other crimes count only if the sheriff saw them or was the victim.
-	if witness.is_empty() and kind not in ["murder", "theft"]: return
-	var record: Dictionary = _law(s).wanted.get(str(town), {"hours": 0, "crimes": [], "since": s.tick})
-	record.hours = mini(MAX_HOURS, int(record.hours) + int(SENTENCE[kind]))
-	record.crimes.append(kind)
-	_law(s).wanted[str(town)] = record
+	# No sheriff saw it: whoever did see it (or the victim) runs to tell one, and only then is it on
+	# the books (witness_reports.gd). Nobody saw it at all: nobody knows who did it.
+	if witness.is_empty():
+		if kind in ["discharge", "shooting"]: return   # answered by the gunfight (gunfire.gd)
+		var Reports = load("res://sim/law/witness_reports.gd")
+		if not Reports.send(s, town, kind, victim, entry) and kind in ["murder", "theft"]: Reports.hide(s, town, kind, victim)
+		return
+	file(s, town, kind, {}, true)
 	# Gunfire is answered by the gunfight (gunfire.gd), not by a chase.
 	if kind in ["discharge", "shooting"] or in_custody(s): return
 	for sheriff in witnesses:
@@ -131,6 +133,31 @@ static func crime(s: Dictionary, town: int, kind: String, victim: int) -> void:
 		sheriff.path = []
 		sheriff.status = "Arresting the traveller"
 		load("res://sim/law/sheriff.gd").stand_up(s, sheriff)
+
+## Puts a crime on the town's books: more hours wanted, and how the culprit is known: by face (a
+## sheriff saw it) or by the clothes a witness described.
+static func file(s: Dictionary, town: int, kind: String, outfit: Dictionary, face: bool) -> void:
+	var record: Dictionary = _law(s).wanted.get(str(town), {"hours": 0, "crimes": [], "since": s.tick})
+	record.hours = mini(MAX_HOURS, int(record.hours) + int(SENTENCE.get(kind, 1)))
+	record.crimes.append(kind)
+	if face: record.face = true
+	elif not outfit.is_empty(): record.outfit = outfit.duplicate()
+	_law(s).wanted[str(town)] = record
+
+## Whether the sheriffs of `town` know the player on sight: by face, or because enough of what
+## the player is wearing matches what witnesses described (change clothes and they may not).
+static func recognised(s: Dictionary, town: int) -> bool:
+	var record: Dictionary = _law(s).wanted.get(str(town), {})
+	if bool(record.get("face", false)) or not record.has("outfit"): return true
+	var described: Dictionary = record.outfit
+	var now: Dictionary = Outfits.worn(s, int(s.player))
+	var pieces := 0
+	var matches := 0
+	for slot in described:
+		if str(described[slot]).is_empty(): continue
+		pieces += 1
+		if str(now.get(slot, "")) == str(described[slot]): matches += 1
+	return matches >= mini(3, pieces)
 
 static func surrender(s: Dictionary) -> void:
 	var pc: Dictionary = s.player_control
@@ -180,6 +207,7 @@ static func update(sim: RefCounted) -> void:
 	var s: Dictionary = sim.state
 	if not s.has("player_control") or not s.has("residents"): return
 	var pc: Dictionary = s.player_control
+	load("res://sim/law/witness_reports.gd").update(sim)   # witnesses hurrying to tell a sheriff
 	var jail: Dictionary = pc.get("jail", {})
 	if not jail.is_empty() and s.tick >= int(jail.until): _start_release(sim, jail)
 	# In the cells the keeper keeps an eye on the wounds, so nobody bleeds out in custody.
@@ -200,7 +228,7 @@ static func update(sim: RefCounted) -> void:
 		var gap := Vector2(player[0] - cell[0], player[1] - cell[1]).length()
 		if arrest.is_empty():
 			# A wanted player who comes into view is held at gunpoint by the nearest sheriff; the rest cover him.
-			if wanted_hours(s, npc.settlement) > 0 and gap <= SEE_RANGE and not in_custody(s) and not restrained(s) and not Brawl.player_down(s) and npc.get("sleeping", {}).is_empty():
+			if wanted_hours(s, npc.settlement) > 0 and gap <= SEE_RANGE and recognised(s, int(npc.settlement)) and not in_custody(s) and not restrained(s) and not Brawl.player_down(s) and npc.get("sleeping", {}).is_empty():
 				if _nearer_sheriff(s, npc, player) != 0:
 					npc.arrest = {"phase": "backup", "since": s.tick}
 					npc.goal = ""

@@ -1,6 +1,7 @@
 extends SceneTree
 ## The sheriff's office and cell, arrests after a crime (chase, tackle, cuffs, escort, jail),
 ## being recognised later (gun drawn), surrendering, and running from a standoff.
+const Reports = preload("res://sim/law/witness_reports.gd")
 const Sim = preload("res://sim/core/simulation.gd")
 const Law = preload("res://sim/law/law.gd")
 const Brawl = preload("res://sim/combat/brawl.gd")
@@ -104,7 +105,7 @@ func _initialize() -> void:
 	var made2 := setup(); var sim2: RefCounted = made2[0]; var s2: Dictionary = made2[1]; var sheriff2: Dictionary = made2[2]
 	var away2: Array = s2.entities[str(sheriff2.id)].cell
 	s2.entities[str(s2.player)].cell = [away2[0] + 40, away2[1]]
-	Law.crime(s2, 1, "theft", 0)   # reported, not witnessed: wanted, no chase yet
+	Law.file(s2, 1, "theft", Reports.description(s2), false)   # a witness reported it (described your clothes): wanted, no chase yet
 	check(Law.wanted_hours(s2, 1) > 0 and sheriff2.get("arrest", {}).is_empty(), "A reported crime makes you wanted")
 	var cell2: Array = s2.entities[str(sheriff2.id)].cell
 	s2.entities[str(s2.player)].cell = [cell2[0] + 6, cell2[1]]
@@ -120,7 +121,7 @@ func _initialize() -> void:
 	var made3 := setup(); var sim3: RefCounted = made3[0]; var s3: Dictionary = made3[1]; var sheriff3: Dictionary = made3[2]
 	var away3: Array = s3.entities[str(sheriff3.id)].cell
 	s3.entities[str(s3.player)].cell = [away3[0] + 40, away3[1]]
-	Law.crime(s3, 1, "theft", 0)
+	Law.file(s3, 1, "theft", Reports.description(s3), false)
 	var cell3: Array = s3.entities[str(sheriff3.id)].cell
 	s3.entities[str(s3.player)].cell = [cell3[0] + 6, cell3[1]]
 	sim3.step()
