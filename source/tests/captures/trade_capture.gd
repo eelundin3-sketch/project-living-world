@@ -1,0 +1,32 @@
+extends SceneTree
+## Screenshot of the trade window at a market tent once its keeper has hurried over, after a
+## haggle. Writes trade_window.png to SOLO_SHEET_DIR.
+func _initialize() -> void: call_deferred("run")
+func run() -> void:
+	root.size = Vector2i(1280, 720)
+	var out := OS.get_environment("SOLO_SHEET_DIR")
+	if out.is_empty(): out = OS.get_temp_dir()
+	var main: Node = load("res://app/main.tscn").instantiate()
+	root.add_child(main)
+	for warm in range(5): await process_frame
+	main.menu_active = false
+	if main.menu != null: main.menu.visible = false
+	var sim = main.simulation
+	var s: Dictionary = sim.state
+	s.tick = 14400 + 10 * 600
+	var tent: Dictionary = {}
+	for e in load("res://sim/world/world_db.gd").of_kind(s, "market_stall"):
+		if e.has("keeper") and int(e.settlement) == 1: tent = e; break
+	s.residents[str(tent.keeper)].sleeping = {}
+	s.entities[str(s.player)].cell = load("res://sim/world/world_db.gd").Fixtures.interaction_cell(s, tent.id).duplicate()
+	main.get_node("WorldView").snap_visuals()
+	sim.submit("interact", {"target": tent.id})
+	for i in range(80):
+		sim.step()
+		if load("res://sim/economy/stall_service.gd").staffed(s, tent): break
+	sim.submit("haggle", {"target": tent.id}); sim.step()
+	main.clock.paused = true
+	for settle in range(12): await process_frame
+	await RenderingServer.frame_post_draw
+	root.get_texture().get_image().save_png(out.path_join("trade_window.png"))
+	quit(0)

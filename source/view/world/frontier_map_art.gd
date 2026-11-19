@@ -132,7 +132,7 @@ static func big_rock(c: Node2D, area: Rect2, ore_left: int, id: int) -> void:
 		poly(c, PackedVector2Array([base + Vector2(-5, 2), base + Vector2(-2, -4), base + Vector2(4, -3), base + Vector2(6, 2)]), Color("7b6e62"))
 
 static func crate(c: Node2D, p: Vector2) -> void:
-	c.draw_rect(Rect2(p - Vector2(8, 11), Vector2(24, 19)), Color(0, 0, 0, 0.19))
+	c.draw_rect(Rect2(p - Vector2(10, 14), Vector2(20, 17)), Color(0, 0, 0, 0.16))   # contact only
 	Furniture.timber(c, Rect2(p - Vector2(10, 16), Vector2(20, 18)), Color("a67a4b"), 2.0)
 	Props.polygon(c, PackedVector2Array([p + Vector2(-10, -16), p + Vector2(-6, -22),
 		p + Vector2(14, -22), p + Vector2(10, -16)]), Color("c6a16f"))

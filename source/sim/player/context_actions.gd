@@ -229,7 +229,8 @@ static func request(sim: RefCounted, id: int, action: String, part: String = "")
 	if not s.entities.has(str(id)): return
 	var e: Dictionary = s.entities[str(id)]
 	pc.pending = {}
-	if id == s.player or action in ["examine", "inventory", "health", "wardrobe"] or _within_reach(s, e, part):
+	var talking_distance: bool = action in ["ask_family", "ask_news"] and Actions.distance(s.entities[str(s.player)].cell, e.cell) <= 4
+	if id == s.player or action in ["examine", "inventory", "health", "wardrobe"] or talking_distance or _within_reach(s, e, part):
 		perform(sim, id, action, part)
 		return
 	var from: Array = s.entities[str(s.player)].cell

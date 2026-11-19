@@ -6,6 +6,8 @@ const BodyDiagram = preload("res://view/ui/body_diagram.gd")
 const Outfits = preload("res://sim/entities/outfits.gd")
 const HealthWindow = preload("res://view/ui/health_window.gd")
 const InventoryWindow = preload("res://view/ui/inventory_window.gd")
+const TradeWindow = preload("res://view/ui/trade_window.gd")
+var trade_window: Control
 var inventory_window: Control
 var inventory_moved := false
 var loot_window: Control
@@ -141,6 +143,12 @@ func _ready() -> void:
 	add_child(loot_window)
 	loot_window.close_requested.connect(func() -> void: show_mode(""))
 	loot_window.minimize_requested.connect(minimize_window)
+	trade_window = TradeWindow.new()
+	trade_window.simulation = simulation
+	trade_window.visible = false
+	add_child(trade_window)
+	trade_window.close_requested.connect(func() -> void: show_mode(""))
+	trade_window.minimize_requested.connect(minimize_window)
 	show_mode("")
 func _build_meter() -> void:
 	meter_column = VBoxContainer.new()
@@ -206,12 +214,16 @@ func restore_window() -> void:
 	_apply_visibility()
 func _apply_visibility() -> void:
 	var shown := not minimized and not mode.is_empty()
-	panel.visible = shown and mode not in ["health", "inventory", "loot", "wardrobe"]
+	panel.visible = shown and mode not in ["health", "inventory", "loot", "wardrobe", "trade"]
 	shade.visible = shown and mode not in ["inventory", "loot", "wardrobe"]
 	shade.color = Color(0.02, 0.03, 0.035, 0.55) if mode == "health" else Color(0.02, 0.03, 0.025, 0.62)
 	if health_window != null: health_window.visible = shown and mode == "health"
 	if inventory_window != null: inventory_window.visible = shown and mode in ["inventory", "loot", "wardrobe"]
 	if loot_window != null: loot_window.visible = shown and mode == "loot"
+	if trade_window != null:
+		var opening_trade: bool = shown and mode == "trade" and not trade_window.visible
+		trade_window.visible = shown and mode == "trade"
+		if opening_trade: trade_window.position = trade_window.home_position()
 
 func show_mode(value: String) -> void:
 	treatment_menu.hide()
@@ -327,6 +339,11 @@ func refresh() -> void:
 		loot_window.refresh(s)
 		if inventory_window.position != inventory_window.home_position(): inventory_moved = true
 		if loot_window.position != inventory_window.position + Vector2(inventory_window.size.x + 18.0, 0.0): loot_moved = true
+	elif mode == "trade":
+		if not s.entities.has(str(target)): show_mode(""); return
+		trade_window.simulation = simulation
+		trade_window.show_for(target)
+		trade_window.refresh(s)
 	else:
 		var e: Dictionary=s.entities.get(str(target),{})
 		if e.is_empty(): show_mode(""); return

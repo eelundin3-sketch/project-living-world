@@ -17,7 +17,7 @@ static func timber(c: Node2D, r: Rect2, color: Color, depth: float = 4.0) -> voi
 		Props.grain(c, r.grow(-1), color.darkened(0.18))
 
 static func bed(c: Node2D, p: Vector2, color: Color) -> void:
-	c.draw_rect(Rect2(p + Vector2(3, 7), Vector2(65, 32)), Color(0, 0, 0, 0.23))
+	c.draw_rect(Rect2(p + Vector2(0, 2), Vector2(64, 33)), Color(0, 0, 0, 0.16))   # contact only: no sun indoors
 	timber(c, Rect2(p, Vector2(64, 33)), Color("795332"))
 	for leg in [Vector2(3, 30), Vector2(59, 30)]:
 		timber(c, Rect2(p + leg, Vector2(4, 5)), Color("725034"), 1.5)
@@ -194,7 +194,7 @@ static func weapon_rack(c: Node2D, p: Vector2, shotguns: int, shells: int) -> vo
 static func bed_vertical(c: Node2D, p: Vector2, color: Color, head_up: bool) -> void:
 	var w := 33.0
 	var h := 64.0
-	c.draw_rect(Rect2(p + Vector2(7, 3), Vector2(w + 2, h)), Color(0, 0, 0, 0.23))
+	c.draw_rect(Rect2(p + Vector2(0, 2), Vector2(w, h)), Color(0, 0, 0, 0.16))   # contact only: no sun indoors
 	timber(c, Rect2(p, Vector2(w, h)), Color("795332"))
 	slab(c, Rect2(p + Vector2(4, 5), Vector2(w - 8, h - 10)), Color("d8cfb2"), 2.0)
 	var head_y: float = 6.0 if head_up else h - 26.0
