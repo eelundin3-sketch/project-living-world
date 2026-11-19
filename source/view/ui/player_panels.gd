@@ -309,6 +309,7 @@ func refresh() -> void:
 		if (wanted in ["inventory", "loot", "wardrobe"]) != (mode in ["inventory", "loot", "wardrobe"]):
 			simulation.submit("rummage", {"open": wanted in ["inventory", "loot", "wardrobe"]})
 		mode=wanted; minimized=false; dock_button.visible=false; visible=true
+		if mode == "trade": trade_window.tab = str(pc.get("ui_tab", "trade"))   # Talk opens on the Talk tab
 		if mode == "loot" and not loot_moved: loot_window.position = inventory_window.position + Vector2(inventory_window.size.x + 18.0, 0.0)
 	if mode.is_empty(): return
 	if cached_mode!=mode: rebuild()

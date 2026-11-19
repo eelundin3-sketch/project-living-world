@@ -1,6 +1,7 @@
 extends SceneTree
 ## Screenshot of the trade window at a market tent once its keeper has hurried over, after a
-## haggle. Writes trade_window.png to SOLO_SHEET_DIR.
+## haggle, then its Talk tab after asking about work. Writes trade_window.png and
+## talk_window.png to SOLO_SHEET_DIR.
 func _initialize() -> void: call_deferred("run")
 func run() -> void:
 	root.size = Vector2i(1280, 720)
@@ -29,4 +30,10 @@ func run() -> void:
 	for settle in range(12): await process_frame
 	await RenderingServer.frame_post_draw
 	root.get_texture().get_image().save_png(out.path_join("trade_window.png"))
+	var window = main.player_panels.trade_window
+	window.tab = "talk"
+	sim.submit("context_action", {"target": int(tent.keeper), "action": "ask_work"}); sim.step()
+	for settle in range(8): await process_frame
+	await RenderingServer.frame_post_draw
+	root.get_texture().get_image().save_png(out.path_join("talk_window.png"))
 	quit(0)

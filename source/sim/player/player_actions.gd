@@ -101,7 +101,7 @@ static func interact(sim: RefCounted, preferred: int = 0) -> void:
 		return
 	if e.is_empty(): pc.notice="Move next to an object or person, then press F."; return
 	if e.kind in ["resident","warehouse","market"]:
-		pc.ui_target=id; pc.ui_nonce+=1; pc.ui_kind="trade"; pc.notice="Interacting with "+e.name
+		pc.ui_target=id; pc.ui_nonce+=1; pc.ui_kind="trade"; pc.ui_tab="trade"; pc.notice="Interacting with "+e.name
 	elif e.kind=="stash": take(s,id,first_item(s,id))
 	elif e.kind=="office":
 		# The weapon rack: take a shotgun and shells, or return them.

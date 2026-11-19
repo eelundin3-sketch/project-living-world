@@ -7,6 +7,8 @@ extends Control
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const Market = preload("res://sim/economy/market.gd")
 const ItemIcons = preload("res://view/ui/item_icons.gd")
+const Dialogue = preload("res://sim/player/dialogue.gd")
+const TABS := 32.0   # the Trade / Talk tab row
 
 signal close_requested
 signal minimize_requested
@@ -32,6 +34,7 @@ const NAMES := {"log": "Logs", "plank": "Planks", "food": "Bread", "rye": "Rye",
 
 var simulation: RefCounted
 var target: int = 0
+var tab: String = "trade"         # "trade" or "talk": view state only (the panels set it on opening)
 var buttons: Array = []          # [{rect, kind, payload, enabled}]
 var hover: int = -1
 var dragging := false
@@ -53,7 +56,7 @@ func home_position() -> Vector2:
 
 ## The window fits its longest column (two to five rows).
 func _fit(rows: int) -> void:
-	var wanted := Vector2(WIDTH, BAR + 6 + 16 + 96 + 30 + rows * ROW + 78)
+	var wanted := Vector2(WIDTH, BAR + 6 + 16 + 96 + 30 + TABS + rows * ROW + 78)
 	if size != wanted:
 		size = wanted
 		custom_minimum_size = wanted
@@ -64,8 +67,13 @@ func show_for(id: int) -> void:
 
 func refresh(s: Dictionary) -> void:
 	if s.get("entities", {}).has(str(target)):
-		var goods: Array = _goods(s)
-		_fit(clampi(maxi(goods[0].size(), goods[1].size()), 2, 5))
+		var tabs: Array = Dialogue.tabs(s, target)
+		if not tab in tabs: tab = tabs[0]
+		if tab == "talk":
+			_fit(clampi(Dialogue.options(s, target).size(), 2, 5))
+		else:
+			var goods: Array = _goods(s)
+			_fit(clampi(maxi(goods[0].size(), goods[1].size()), 2, 5))
 	queue_redraw()
 
 # --- what is shown -------------------------------------------------------------------------------
@@ -115,7 +123,10 @@ func _draw() -> void:
 	frame.anti_aliasing = true
 	draw_style_box(frame, Rect2(Vector2.ZERO, size))
 	var stall_name: String = String(e.name)
+	var tabs: Array = Dialogue.tabs(s, target)
+	if not tab in tabs: tab = tabs[0]
 	var title: String = ("Trading at %s" % stall_name if "'s " in stall_name else "Trading at the %s" % stall_name) if e.kind == "market_stall" else "Trading with %s" % e.name
+	if tab == "talk": title = "Talking with %s" % String(person.get("name", e.name))
 	draw_string(_serif, Vector2(0, BAR * 0.5 + 6.0), title, HORIZONTAL_ALIGNMENT_CENTER, size.x, 16, Color("e9dcbc"))
 	_window_buttons()
 	var sheet := Rect2(Vector2(12, BAR + 6), size - Vector2(24, BAR + 18))
@@ -139,9 +150,23 @@ func _draw() -> void:
 		draw_string(_sans, top + Vector2(146, 69), "at the counter", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, INK_SOFT)
 	var said: String = _last_words(s, first)
 	_speech(Rect2(top + Vector2(400, 0), Vector2(sheet.size.x - 436, 78)), said)
+	# Tabs: Trade and Talk.
+	var tab_x: float = sheet.position.x + 18
+	for name in tabs:
+		var label: String = "Trade" if name == "trade" else "Talk"
+		var w: float = _sans.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x + 34
+		_tab(Rect2(Vector2(tab_x, top.y + 90), Vector2(w, 26)), label, name)
+		tab_x += w + 6
+	draw_line(Vector2(sheet.position.x + 18, top.y + 116), Vector2(sheet.end.x - 18, top.y + 116), RULE, 1.0)
+	var columns_top: float = top.y + 96 + TABS
+	if tab == "talk":
+		_talk(Rect2(Vector2(sheet.position.x + 18, columns_top), Vector2(sheet.size.x - 36, sheet.end.y - columns_top - 64)), s, npc)
+		var talk_foot: float = sheet.end.y - 52
+		draw_line(Vector2(sheet.position.x + 18, talk_foot - 10), Vector2(sheet.end.x - 18, talk_foot - 10), RULE, 1.0)
+		draw_string(_serif, Vector2(sheet.position.x + 22, talk_foot + 22), Dialogue.standing_line(s, npc), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, INK_SOFT)
+		return
 	# The two ledgers.
 	var goods: Array = _goods(s)
-	var columns_top: float = top.y + 96
 	var column_width: float = (sheet.size.x - 54) * 0.5
 	_ledger(Rect2(Vector2(sheet.position.x + 18, columns_top), Vector2(column_width, 300)), "FOR SALE", goods[0], true, s)
 	_ledger(Rect2(Vector2(sheet.position.x + 36 + column_width, columns_top), Vector2(column_width, 300)), "YOU CAN SELL", goods[1], false, s)
@@ -157,7 +182,7 @@ func _draw() -> void:
 	_terms_chip(Vector2(sheet.position.x + 300, foot_y + 6), s)
 	var talk_to: int = int(npc.get("id", 0))
 	var x: float = sheet.end.x - 18
-	for spec in [["Ask for news", "ask_news"], ["Ask about family", "ask_family"], ["Haggle", "haggle"]]:
+	for spec in [["Haggle", "haggle"]]:   # asking questions lives on the Talk tab
 		var w: float = _sans.get_string_size(spec[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x + 26
 		x -= w
 		var kind: String = spec[1]
@@ -193,9 +218,9 @@ func _portrait(c: Vector2, person: Dictionary, npc: Dictionary) -> void:
 
 func _mood_chip(at: Vector2, npc: Dictionary) -> void:
 	if npc.is_empty(): return
-	var anger: int = int(npc.get("anger", 0))
-	var liking: int = int(npc.get("relations", {}).get(str(_state().get("player", 0)), 0))
-	var mood: Array = ["Angry", Color("a2382c")] if anger >= 40 else (["Wary", Color("b0812f")] if anger >= 15 or liking < -10 else (["Friendly", Color("4f7a4a")] if liking > 10 else ["Calm", Color("6b7f8c")]))
+	var feeling: Array = Dialogue.feeling(_state(), npc)   # what they remember of you (society.gd opinion)
+	var tints := {"angry": Color("a2382c"), "wary": Color("b0812f"), "friendly": Color("4f7a4a"), "calm": Color("6b7f8c")}
+	var mood: Array = [feeling[0], tints.get(feeling[1], Color("6b7f8c"))]
 	var w: float = _sans.get_string_size(mood[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x + 18
 	var chip := StyleBoxFlat.new()
 	chip.bg_color = Color(mood[1], 0.16)
@@ -273,6 +298,38 @@ func _button(rect: Rect2, text: String, kind: String, payload: Dictionary, enabl
 	draw_style_box(box, rect)
 	draw_string(_sans, rect.position + Vector2(0, rect.size.y * 0.5 + 4.5), text, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 12, Color("fbf4e2") if enabled else Color(1, 1, 1, 0.6))
 
+## A tab at the top of the sheet; the open one looks like part of the page.
+func _tab(rect: Rect2, label: String, name: String) -> void:
+	var open: bool = name == tab
+	buttons.append({"rect": rect, "kind": "tab", "payload": {"tab": name}, "enabled": true})
+	var box := StyleBoxFlat.new()
+	box.bg_color = Color("fbf4e2") if open else Color(PAPER_SHADE, 0.9 if buttons.size() - 1 == hover else 0.6)
+	box.border_color = Color(0.42, 0.31, 0.18, 0.55 if open else 0.3)
+	box.set_border_width_all(1)
+	box.border_width_bottom = 0 if open else 1
+	box.corner_radius_top_left = 7
+	box.corner_radius_top_right = 7
+	box.anti_aliasing = true
+	draw_style_box(box, rect)
+	draw_string(_serif if open else _sans, rect.position + Vector2(0, 18), label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x, 14 if open else 13, INK if open else INK_SOFT)
+
+## The Talk tab: what you can say, one ruled row each (dialogue.gd decides the list).
+func _talk(area: Rect2, s: Dictionary, npc: Dictionary) -> void:
+	var talk_options: Array = Dialogue.options(s, target)
+	if talk_options.is_empty():
+		draw_string(_serif, area.position + Vector2(0, 30), "There's nobody here to talk to.", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, INK_SOFT)
+		return
+	for index in range(mini(talk_options.size(), 5)):
+		var option: Dictionary = talk_options[index]
+		var y: float = area.position.y + index * ROW
+		var row := Rect2(Vector2(area.position.x, y), Vector2(area.size.x, ROW - 6))
+		if index % 2 == 0: draw_rect(row, Color(PAPER_SHADE, 0.55))
+		draw_string(_serif, row.position + Vector2(16, 29), "“%s”" % str(option.label), HORIZONTAL_ALIGNMENT_LEFT, row.size.x - 140, 16, INK if bool(option.enabled) else INK_SOFT)
+		if not str(option.get("reason", "")).is_empty() and not bool(option.enabled):
+			draw_string(_sans, row.position + Vector2(row.size.x - 250, 29), str(option.reason), HORIZONTAL_ALIGNMENT_RIGHT, 120, 11, INK_SOFT)
+		_button(Rect2(row.position + Vector2(row.size.x - 100, 9), Vector2(92, 28)), "Say it", "context",
+			{"target": int(npc.get("id", 0)), "action": str(option.id)}, bool(option.enabled), Color("5b4429"))
+
 func _coin(c: Vector2) -> void:
 	draw_circle(c, 8, Color("d9b45a"))
 	draw_arc(c, 8, 0, TAU, 20, Color("8a6a2a"), 1.2, true)
@@ -323,5 +380,8 @@ func _press(button: Dictionary) -> void:
 		"minimize": minimize_requested.emit()
 		"trade": simulation.submit("person_trade", button.payload)
 		"haggle": simulation.submit("haggle", button.payload)
+		"tab":
+			tab = str(button.payload.tab)
+			refresh(_state())
 		_: simulation.submit("context_action", button.payload)
 	queue_redraw()

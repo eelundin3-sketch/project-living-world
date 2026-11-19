@@ -101,6 +101,7 @@ static func _open(sim: RefCounted, stall: Dictionary, keeper: Dictionary) -> voi
 	pc.ui_target = int(stall.id)
 	pc.ui_nonce = int(pc.get("ui_nonce", 0)) + 1
 	pc.ui_kind = "trade"
+	pc.ui_tab = "trade"
 	if int(pc.get("trade_terms", {}).get("target", 0)) != int(stall.id): pc.trade_terms = {"target": int(stall.id), "pct": 0, "haggled": false}
 	var first: String = String(s.entities[str(keeper.id)].name).split(" ")[0]
 	pc.notice = "%s: What can I get you?" % first
