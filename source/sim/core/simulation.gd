@@ -44,6 +44,7 @@ const Unarmed = preload("res://sim/combat/unarmed.gd")
 const Probe = preload("res://sim/diagnostics/perf_probe.gd")
 const Sleep = preload("res://sim/player/sleep.gd")
 const Pace = preload("res://sim/movement/pace.gd")
+const Encumbrance = preload("res://sim/player/encumbrance.gd")
 const Bleeding = preload("res://sim/combat/bleeding.gd")
 const FamilyEconomy = preload("res://sim/entities/family_economy.gd")
 const StallService = preload("res://sim/economy/stall_service.gd")
@@ -170,7 +171,7 @@ func step() -> void:
 				state.player_control.last_dir = [signi(next[0] - from_cell[0]), signi(next[1] - from_cell[1])]
 				state.entities[str(state.player)].cell = next
 				if not run_route and state.has("player_control"):
-					state.player_control.route_next = state.tick + Pace.delay(state, next, 3 if sneaking_route else 2, state.player_control)
+					state.player_control.route_next = state.tick + Pace.delay(state, next, 3 if sneaking_route else 2, state.player_control, "stride_carry", Encumbrance.slower_percent(state))
 				if run_route:
 					state.player_control.running = true
 					state.player_control.running_tick = state.tick
@@ -243,7 +244,7 @@ func _stamina_allows_run() -> bool:
 	return state.player_health.stamina > 0 and not state.player_health.get("exhausted", false)
 
 func _can_run_route() -> bool:
-	return state.has("player_control") and state.has("player_health") and state.player_control.get("travel_run", false) and _stamina_allows_run() and BodyHealth.move_delay(state) == 1 and Limbs.mode(state, state.player) == "walk" and not Brawl.player_down(state)
+	return state.has("player_control") and state.has("player_health") and state.player_control.get("travel_run", false) and _stamina_allows_run() and BodyHealth.move_delay(state) == 1 and Limbs.mode(state, state.player) == "walk" and not Brawl.player_down(state) and Encumbrance.can_run(state)
 
 func _drain(queue_name: String, is_command: bool) -> void:
 	if state[queue_name].size() > 1:   # an empty or single-entry queue is already in order
@@ -391,7 +392,11 @@ func apply_command(entry: Dictionary) -> void:
 			var diagonal: bool = direction[0] != 0 and direction[1] != 0
 			if Law.inside_cell(state, next) and World.walkable(state, next) and (not diagonal or (World.walkable(state, [cell[0] + direction[0], cell[1]]) and World.walkable(state, [cell[0], cell[1] + direction[1]]))):
 				if state.has("player_control"):
-					var requested_run: bool=bool(entry.payload.get("run",false)) and _stamina_allows_run() and BodyHealth.move_delay(state)==1 and Limbs.mode(state, state.player)=="walk"
+					var load_band: int = Encumbrance.band(state)
+					if bool(entry.payload.get("run",false)) and load_band >= 2 and state.tick >= int(state.player_control.get("load_notice_tick", -1000)) + 300:
+						state.player_control.notice = "You can hardly move under this load." if load_band == 3 else "Too much to carry to run. Drop something (I)."
+						state.player_control.load_notice_tick = state.tick
+					var requested_run: bool=bool(entry.payload.get("run",false)) and _stamina_allows_run() and BodyHealth.move_delay(state)==1 and Limbs.mode(state, state.player)=="walk" and load_band < 2
 					# Sprinting from a crouch stands you up; otherwise a crouch is a slow, quiet walk.
 					if requested_run: state.player_control.crouching=false
 					var sneaking: bool=bool(state.player_control.get("crouching",false))
@@ -401,7 +406,7 @@ func apply_command(entry: Dictionary) -> void:
 					state.player_control.running_tick=state.tick if requested_run else -1
 					state.player_control.last_dir=[direction[0],direction[1]]
 					var walk_ticks: int = maxi(maxi(3 if sneaking else 2, BodyHealth.move_delay(state)+(1 if sneaking else 0)), Limbs.step_ticks(state, state.player))+(1 if diagonal else 0)
-					state.player_control.next_move=state.tick+(2 if tired_run else (1 if requested_run else Pace.delay(state, next, walk_ticks, state.player_control)))
+					state.player_control.next_move=state.tick+(2 if tired_run else (1 if requested_run else Pace.delay(state, next, walk_ticks, state.player_control, "stride_carry", Encumbrance.SLOWER[load_band])))
 					if requested_run: state.player_health.stamina=maxi(0,state.player_health.stamina-1)
 				state.entities[str(state.player)].cell = next
 	elif entry.kind == "cancel_job" and state.has("jobs"):

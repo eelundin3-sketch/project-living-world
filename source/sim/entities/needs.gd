@@ -4,12 +4,13 @@ extends RefCounted
 const BodyHealth = preload("res://sim/combat/body_health.gd")
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const World = preload("res://sim/world/world_db.gd")
+const Encumbrance = preload("res://sim/player/encumbrance.gd")
 
 ## Severity thresholds (levels 1..4) for 0-100 gauges.
 const GAUGE_STEPS: Array[int] = [35, 55, 75, 90]
 const PAIN_STEPS: Array[int] = [8, 22, 42, 66]
 const MOOD_STEPS: Array[int] = [60, 45, 30, 15]  # mood falls; lower is worse
-const ORDER: Array[String] = ["bleeding", "pain", "hungry", "thirsty", "tired", "stressed", "unhappy", "wet", "cold"]
+const ORDER: Array[String] = ["bleeding", "pain", "hungry", "thirsty", "tired", "stressed", "unhappy", "wet", "cold", "overloaded"]
 
 static func initialize(s: Dictionary) -> void:
 	if not s.has("player") or not s.has("player_health") or s.has("player_needs"): return
@@ -74,6 +75,7 @@ static func levels(s: Dictionary) -> Dictionary:
 	if outdoors and weather == "snow": cold += 2
 	if is_night(s): cold += 1
 	result.cold = mini(4, cold) if outdoors else 0
+	result.overloaded = maxi(0, Encumbrance.band(s) - 1) * 2   # heavy is fine; overloaded 2, crushing 4
 	return result
 
 static func label(key: String, level: int) -> String:
@@ -85,14 +87,15 @@ static func label(key: String, level: int) -> String:
 		"stressed": ["", "Uneasy", "Anxious", "Stressed", "Panicked"],
 		"unhappy": ["", "Gloomy", "Unhappy", "Miserable", "Despairing"],
 		"wet": ["", "Damp", "Soaked", "", ""],
-		"cold": ["", "Chilly", "Cold", "Freezing", "Freezing"]}
+		"cold": ["", "Chilly", "Cold", "Freezing", "Freezing"],
+		"overloaded": ["", "", "Overloaded", "", "Crushing load"]}
 	return names[key][clampi(level, 0, 4)]
 
 static func hint(key: String) -> String:
 	return {"bleeding": "Press H and bandage the wound.", "pain": "Treat injuries (H) or rest.",
 		"hungry": "Press E to eat food from your inventory.", "thirsty": "Press Q to drink near a well barrel at a storehouse or lodge.",
 		"tired": "Stand still to rest, ideally at home.", "stressed": "Get away from danger.",
-		"unhappy": "Eat, drink, rest and heal to feel better.", "wet": "Step indoors.", "cold": "Step indoors."}.get(key, "")
+		"unhappy": "Eat, drink, rest and heal to feel better.", "wet": "Step indoors.", "cold": "Step indoors.", "overloaded": "Drop or sell something (I): you can't run and you tire faster."}.get(key, "")
 
 ## True when a drinking spot (storehouse or lodge barrel) is within three cells.
 static func near_water(s: Dictionary) -> bool:
@@ -136,6 +139,7 @@ static func update(s: Dictionary) -> void:
 	if s.tick % 150 == 0 and not in_custody: needs.thirst = mini(100, needs.thirst + 1)
 	if s.tick % 200 == 0 and control.get("sleeping", {}).is_empty():   # asleep: sleep.gd rests them
 		var tired_step: int = 2 if control.get("running", false) else 1
+		if Encumbrance.band(s) >= 2 and (s.tick / 200) % 2 == 0: tired_step += 1   # an overload tires you about half as fast again
 		if needs.idle_ticks > 60: needs.fatigue = maxi(0, needs.fatigue - 3)
 		else: needs.fatigue = mini(100, needs.fatigue + tired_step)
 	# Stress rises near armed hostiles or fresh injuries and fades afterwards.

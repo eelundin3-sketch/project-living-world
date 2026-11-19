@@ -11,12 +11,13 @@ static func bonus(s: Dictionary, cell: Array) -> int:
 
 ## Ticks until the next step for a walk that takes `base` ticks per cell off the roads, stepping
 ## onto `cell`. The fraction left over is carried in record[key].
-static func delay(s: Dictionary, cell: Array, base: int, record: Dictionary, key: String = "stride_carry") -> int:
+## `slower` (percent) lengthens each step, for a heavy load (encumbrance.gd).
+static func delay(s: Dictionary, cell: Array, base: int, record: Dictionary, key: String = "stride_carry", slower: int = 0) -> int:
 	var extra: int = bonus(s, cell)
-	if extra == 0:
+	if extra == 0 and slower == 0:
 		record[key] = 0
 		return base
-	var total: int = base * 10000 / (100 + extra) + int(record.get(key, 0))   # hundredths of a tick
+	var total: int = base * 100 * (100 + slower) / (100 + extra) + int(record.get(key, 0))   # hundredths of a tick
 	var ticks: int = maxi(1, total / 100)
 	record[key] = total - ticks * 100
 	return ticks
