@@ -17,8 +17,8 @@ const BodyHealth = preload("res://sim/combat/body_health.gd")
 const Nav = preload("res://sim/movement/navigation.gd")
 const World = preload("res://sim/world/world_db.gd")
 const HOUR := 600                     # ticks in an in-game hour
-const SENTENCE := {"assault": 2, "assault_sheriff": 4, "kick": 3, "theft": 3, "murder": 24, "discharge": 2, "shooting": 6}
-const CRIME_NAMES := {"assault": "assault", "assault_sheriff": "assaulting the sheriff", "kick": "kicking a man when he's down", "theft": "theft", "murder": "murder", "discharge": "firing a gun in town", "shooting": "shooting someone"}
+const SENTENCE := {"trespass": 1, "assault": 2, "assault_sheriff": 4, "kick": 3, "theft": 3, "murder": 24, "discharge": 2, "shooting": 6}
+const CRIME_NAMES := {"trespass": "trespassing", "assault": "assault", "assault_sheriff": "assaulting the sheriff", "kick": "kicking a man when he's down", "theft": "theft", "murder": "murder", "discharge": "firing a gun in town", "shooting": "shooting someone"}
 const MAX_HOURS := 48
 const WITNESS_RANGE := 24.0           # a sheriff this close sees a crime happen
 const SEE_RANGE := 14.0               # a sheriff this close recognises a wanted player
@@ -88,7 +88,7 @@ static func standoff_sheriff(s: Dictionary) -> int:
 ## What a crime leaves behind besides the law: an entry in the chronicle (with who saw it) and
 ## memories, in the victim, their family and the witnesses. Also used where a killing is not
 ## handed to the law as a separate crime (a shotgun kill in a gunfight).
-const MEMORY_OF := {"theft": "robbed", "assault": "assaulted", "assault_sheriff": "assaulted", "kick": "assaulted",
+const MEMORY_OF := {"trespass": "insulted", "theft": "robbed", "assault": "assaulted", "assault_sheriff": "assaulted", "kick": "assaulted",
 	"shooting": "shot_at", "murder": "killed_kin"}
 static func remember_crime(s: Dictionary, town: int, kind: String, victim: int) -> Dictionary:
 	if not s.has("player") or not s.entities.has(str(s.player)): return {}
