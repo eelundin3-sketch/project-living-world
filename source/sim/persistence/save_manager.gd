@@ -6,7 +6,11 @@ const Invariants = preload("res://sim/diagnostics/invariants.gd")
 const FORMAT_VERSION: int = 2
 
 static func save_state(sim: RefCounted, path: String) -> Dictionary:
-	var data: Dictionary = sim.snapshot()
+	return save_snapshot(sim.snapshot(), path)
+
+## Writes an already-taken snapshot. Pure work on a private copy of the world (checksum, write,
+## verify, keep a backup, swap in): safe to run on a background thread while the game plays on.
+static func save_snapshot(data: Dictionary, path: String) -> Dictionary:
 	var envelope := {"format": FORMAT_VERSION, "engine": Engine.get_version_info().string,
 		"hash": Canonical.hash_state(data), "state": data}
 	var temporary := path + ".tmp"

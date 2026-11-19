@@ -4,6 +4,8 @@ extends CanvasLayer
 ## camera down to the player. Options is a placeholder layout (nothing in it is wired up yet).
 signal start_requested
 signal quit_requested
+signal continue_requested
+var continue_text: String = ""   # set before showing: where the newest save left off
 
 const INK := Color("f3e7cc")
 const MUTED := Color("b9a98a")
@@ -66,11 +68,19 @@ func _ready() -> void:
 	var gap := Control.new()
 	gap.custom_minimum_size = Vector2(0, 36)
 	menu_column.add_child(gap)
-	for entry in [["Start Game", "start"], ["Options", "options"], ["Quit Game", "quit"]]:
+	var entries: Array = [["Start Game", "start"], ["Options", "options"], ["Quit Game", "quit"]]
+	if not continue_text.is_empty(): entries.push_front(["Continue", "continue"])
+	for entry in entries:
 		var button := _menu_button(entry[0])
 		button.pressed.connect(_on_pressed.bind(entry[1]))
 		menu_column.add_child(button)
 		buttons.append(button)
+		if entry[1] == "continue":
+			var where := Label.new()   # "Day 3 · 07:40 · Reedbank", under the button
+			where.text = continue_text
+			where.add_theme_font_size_override("font_size", 13)
+			where.add_theme_color_override("font_color", MUTED)
+			menu_column.add_child(where)
 	var footer := Label.new()
 	footer.text = "Project Solo · early build"
 	footer.add_theme_font_size_override("font_size", 12)
@@ -118,6 +128,12 @@ func _menu_button(text: String) -> Button:
 func _on_pressed(id: String) -> void:
 	if fading: return
 	match id:
+		"continue":
+			fading = true
+			options_panel.visible = false
+			var fade := create_tween()
+			fade.tween_property(root_control, "modulate:a", 0.0, 0.7).set_trans(Tween.TRANS_SINE)
+			continue_requested.emit()
 		"start":
 			fading = true
 			options_panel.visible = false
