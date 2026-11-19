@@ -1,4 +1,4 @@
-# Project Living World — Technical Architecture and Layers v0.1
+# Project Solo — Technical Architecture and Layers v0.1
 
 This document is a proposed implementation for a **Godot 4 single-player desktop** game. It does not assert that *Another Dead World* uses any of the algorithms below.
 

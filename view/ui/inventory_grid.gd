@@ -159,11 +159,11 @@ func _get_drag_data(at_position: Vector2) -> Variant:
 	var data: Dictionary = {}
 	var who: int = _owner(simulation.state)
 	if key.begins_with("item:"):
-		data = {"type": "lw_item", "item": key.substr(5), "from": "grid", "slot": "", "owner": who}
+		data = {"type": "solo_item", "item": key.substr(5), "from": "grid", "slot": "", "owner": who}
 	elif key.begins_with("slot:"):
 		var worn: String = str(Outfits.worn(simulation.state, who).get(key.substr(5), ""))
 		if worn.is_empty(): return null
-		data = {"type": "lw_item", "item": worn, "from": "slot", "slot": key.substr(5), "owner": who}
+		data = {"type": "solo_item", "item": worn, "from": "slot", "slot": key.substr(5), "owner": who}
 	else:
 		return null
 	var holder := Control.new()
@@ -175,7 +175,7 @@ func _get_drag_data(at_position: Vector2) -> Variant:
 
 ## Where a dragged item would land on this grid: {"target": "grid"|"slot:<slot>", "action": ...}.
 func _drop_info(at_position: Vector2, data: Variant) -> Dictionary:
-	if not (data is Dictionary) or data.get("type", "") != "lw_item" or simulation == null: return {}
+	if not (data is Dictionary) or data.get("type", "") != "solo_item" or simulation == null: return {}
 	var s: Dictionary = simulation.state
 	var source: int = int(data.get("owner", s.player))
 	var from_here: bool = source == _owner(s)

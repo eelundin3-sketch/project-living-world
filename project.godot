@@ -1,8 +1,8 @@
-; Project Living World — M0 bootstrap.
+; Project Solo — M0 bootstrap.
 config_version=5
 
 [application]
-config/name="Project Living World"
+config/name="Project Solo"
 run/main_scene="res://app/main.tscn"
 config/features=PackedStringArray("4.6", "GL Compatibility")
 

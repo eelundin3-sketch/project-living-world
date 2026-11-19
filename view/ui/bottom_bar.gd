@@ -21,7 +21,7 @@ class SlotDrop extends Control:
 	var bar: Control
 	var index: int = 0
 	func _can_drop_data(_at: Vector2, data: Variant) -> bool:
-		return data is Dictionary and data.get("type", "") == "lw_item" and data.get("from", "") == "grid" and not str(data.item).contains(":")
+		return data is Dictionary and data.get("type", "") == "solo_item" and data.get("from", "") == "grid" and not str(data.item).contains(":")
 	func _drop_data(_at: Vector2, data: Variant) -> void:
 		bar.simulation.submit("hotbar_assign", {"slot": index, "item": data.item})
 

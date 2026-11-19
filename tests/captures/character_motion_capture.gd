@@ -8,9 +8,9 @@ func _initialize() -> void:
 	call_deferred("run")
 
 func run() -> void:
-	var folder := OS.get_environment("LW_MOTION_FRAMES")
+	var folder := OS.get_environment("SOLO_MOTION_FRAMES")
 	if folder.is_empty():
-		printerr("Set LW_MOTION_FRAMES to an output folder.")
+		printerr("Set SOLO_MOTION_FRAMES to an output folder.")
 		quit(1)
 		return
 	DirAccess.make_dir_recursive_absolute(folder)

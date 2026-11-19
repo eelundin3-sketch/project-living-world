@@ -59,13 +59,13 @@ identities and population. The compact HUD reports Alder Hollow's local count.
 | Data | Location | Backup and recovery |
 |---|---|---|
 | Source, art, game data, tests, and written documentation | This project folder. Use the maps below to find the authoritative files. | Back up the project folder or use version control. Files in your working folder may include changes that have yet to be committed. |
-| Runtime game and previous save | Godot `user://living_world.save` and `user://living_world.save.bak` | Press **F5** in the running game to save. A subsequent successful save retains the prior file as `.bak`. **F9** checks the main file and falls back to a valid backup. |
+| Runtime game and previous save | Godot `user://project_solo.save` and `user://project_solo.save.bak` | Press **F5** in the running game to save. A subsequent successful save retains the prior file as `.bak`. **F9** checks the main file and falls back to a valid backup. |
 | Remapped movement keys | `user://controls.cfg` | Back up alongside the game save if you want to restore your movement key bindings. |
 | Optional recipe override | `user://recipe.json` | Keep your original JSON if you use one. Active recipe definitions are embedded in saves. |
 | Local builds and generated imports | `builds/` and `.godot/` | Rebuild from source with the pinned engine and export templates. Both folders are ignored by Git. |
 
 On macOS the `user://` folder is
-`~/Library/Application Support/Godot/app_userdata/Project Living World/`.
+`~/Library/Application Support/Godot/app_userdata/Project Solo/`.
 Open it with **Finder → Go → Go to Folder**. Back up the files to another folder
 after saving. To restore a manual copy, close the game, set aside the present
 save files, copy the backup into this folder, then launch and press **F9**.

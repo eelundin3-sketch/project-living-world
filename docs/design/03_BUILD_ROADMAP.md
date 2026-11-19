@@ -1,4 +1,4 @@
-# Project Living World — Layer-by-Layer Development Roadmap v0.1
+# Project Solo — Layer-by-Layer Development Roadmap v0.1
 
 **Rule:** every milestone leaves a runnable, testable Godot game. Do not implement the entire simulation in parallel. Each milestone has a visible demonstration and a correctness gate. No date estimates are assumed.
 
