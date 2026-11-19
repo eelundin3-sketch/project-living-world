@@ -432,7 +432,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_R: simulation.submit("shotgun_reload")
 			KEY_Q: simulation.submit("drink")
 			KEY_F: handle_action("interact")
-			KEY_ESCAPE: player_panels.show_mode("")
+			KEY_ESCAPE:
+				if map_mode: toggle_map()   # Esc closes the map first, then any open panel
+				else: player_panels.show_mode("")
 			KEY_SPACE:
 				if not player_panels.visible and not clock.paused: _submit_strike("shove")
 			KEY_P: handle_action("pause")

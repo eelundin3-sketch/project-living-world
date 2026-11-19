@@ -39,7 +39,6 @@ func run() -> void:
 	root.add_child(main)
 	main.set_process(false)
 	main.world_audio.enabled = false
-	main.world_audio.wind.stop()
 	main.get_node("DebugHUD").hide()
 	for tick in range(4600): main.simulation.step()
 	main.refresh_view()

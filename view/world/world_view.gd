@@ -464,7 +464,10 @@ func _rebuild_building_items(s: Dictionary) -> void:
 		var out := Vector2(Orient.outward(int(entity.get("door_side", 2))))
 		doors.append({"suffix": "out", "cells": [entity.door], "axis": "h" if absf(out.y) > 0.5 else "v", "inward": -out, "style": "heavy" if entity.kind in ["office", "warehouse", "market", "sawmill", "bakery", "forge"] else "plank", "double": false})
 		var gap_index := 0
-		for gap in World.interior_doorways(entity):
+		# The office's inner gap is the jail cell: its iron door is drawn with the building
+		# (open or shut with cell_open), so it gets no wooden door that swings for passers-by.
+		var inner_gaps: Array = [] if entity.kind == "office" else World.interior_doorways(entity)
+		for gap in inner_gaps:
 			var inward_dir: Vector2 = Vector2(1, 0) if gap.axis == "v" else Vector2(0, -1)
 			doors.append({"suffix": "in%d" % gap_index, "cells": gap.cells, "axis": gap.axis, "inward": inward_dir, "style": "plank", "double": gap.cells.size() >= 3})
 			gap_index += 1

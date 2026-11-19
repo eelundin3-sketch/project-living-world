@@ -55,4 +55,23 @@ func run() -> void:
 	for entity in s.entities.values():
 		if entity.has("footprint") and entity.has("door"): sides[int(entity.get("door_side", 2))] = true
 	check(sides.size() >= 1, "Buildings face at least one way")
+	# The jail cell: its iron door is part of the office art; no wooden door swings there, even with
+	# the prisoner standing right at the bars.
+	var Law = load("res://sim/law/law.gd")
+	var office: Dictionary = {}
+	for entity in s.entities.values():
+		if entity.kind == "office" and entity.has("footprint"): office = entity; break
+	var spot: Array = Law.cell_spot(office)
+	camera.position = Vector2(spot[0], spot[1]) * 24.0
+	s.entities[str(s.player)].cell = [int(office.footprint[0]) + 4, int(office.footprint[1]) + 8]
+	main.refresh_view()
+	world.snap_visuals()
+	for i in range(6):
+		world.animate(0.1, false, 1)
+		await process_frame
+	var cell_doors := 0
+	for key in world.depth_objects.keys():
+		if str(key).begins_with("door:%d:in" % office.id): cell_doors += 1
+	check(cell_doors == 0, "No swinging door in the jail cell's doorway (%d)" % cell_doors)
+	check(world.depth_objects.has("door:%d:out" % office.id), "The office keeps its front door")
 	print("Doors: %s" % ("PASS" if failures == 0 else "FAIL")); quit(failures)

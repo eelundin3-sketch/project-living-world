@@ -8,7 +8,6 @@ func run() -> void:
 	root.add_child(main)
 	main.set_process(false)
 	main.world_audio.enabled = false
-	main.world_audio.wind.stop()
 	var observed: Dictionary = {}
 	var sounds: Dictionary = {}
 	# Five villagers fit the starting housing, so create a shortage to make the town build.
