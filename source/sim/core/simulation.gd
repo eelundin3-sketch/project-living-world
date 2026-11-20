@@ -44,9 +44,16 @@ const Unarmed = preload("res://sim/combat/unarmed.gd")
 const Probe = preload("res://sim/diagnostics/perf_probe.gd")
 const Sleep = preload("res://sim/player/sleep.gd")
 const Pace = preload("res://sim/movement/pace.gd")
+const Encumbrance = preload("res://sim/player/encumbrance.gd")
+const Carrying = preload("res://sim/player/carrying.gd")
+const Trespass = preload("res://sim/law/trespass.gd")
+const Look = preload("res://sim/player/look.gd")
+const Bleeding = preload("res://sim/combat/bleeding.gd")
+const FamilyEconomy = preload("res://sim/entities/family_economy.gd")
+const StallService = preload("res://sim/economy/stall_service.gd")
 ## Commands that are the player doing something: refused while down or restrained, and they wake
 ## a sleeping player.
-const PLAYER_ACTS := ["move_player", "player_strike", "interact", "shotgun_fire", "hotbar_use", "eat", "drink", "treat_body", "context_action", "walk_to", "travel", "loot_take", "loot_all", "loot_coins", "loot_strip", "loot_give", "wear_item", "take_off", "hold_item", "hotbar_assign", "crouch_toggle", "travel_run", "shotgun_toggle", "shotgun_reload", "person_trade", "take_item", "surrender"]
+const PLAYER_ACTS := ["move_player", "player_strike", "interact", "shotgun_fire", "hotbar_use", "eat", "drink", "treat_body", "context_action", "walk_to", "travel", "loot_take", "loot_all", "loot_coins", "loot_strip", "loot_give", "wear_item", "take_off", "hold_item", "hotbar_assign", "crouch_toggle", "travel_run", "shotgun_toggle", "shotgun_reload", "person_trade", "take_item", "surrender", "haggle"]
 var state: Dictionary
 
 func _init(seed_value: int = 417) -> void:
@@ -93,11 +100,13 @@ func start_game(population: int = 5) -> void:
 	TownLayout.generate(self)
 	Housing.settle(self)
 	Households.upgrade(self)
+	FamilyEconomy.ensure(state)
 	Chests.ensure_all(self)
 	World.lay_out_woodlands(self)
 	for town in state.settlements.values(): Professions.assign(state, town.id)
 	Sheriff.ensure(self)
 	Market.ensure_tents(self)
+	load("res://sim/world/road_planner.gd").ensure_ways(state)   # last: the roads, woods and towns are all in place
 
 func new_id() -> int:
 	var result: int = state.next_id
@@ -139,6 +148,10 @@ func step() -> void:
 		Probe.mark("gunfire")
 		Fear.update(self)
 		Probe.mark("fear")
+		Bleeding.update(self)
+		StallService.update(self)
+		FamilyEconomy.update(self)
+		Probe.mark("bleeding+stalls+families")
 		Speech.update(self)
 		Probe.mark("speech")
 		ContextActions.update(self)
@@ -162,7 +175,7 @@ func step() -> void:
 				state.player_control.last_dir = [signi(next[0] - from_cell[0]), signi(next[1] - from_cell[1])]
 				state.entities[str(state.player)].cell = next
 				if not run_route and state.has("player_control"):
-					state.player_control.route_next = state.tick + Pace.delay(state, next, 3 if sneaking_route else 2, state.player_control)
+					state.player_control.route_next = state.tick + Pace.delay(state, next, 3 if sneaking_route else 2, state.player_control, "stride_carry", Encumbrance.slower_percent(state))
 				if run_route:
 					state.player_control.running = true
 					state.player_control.running_tick = state.tick
@@ -210,12 +223,16 @@ func step() -> void:
 		Cover.update(state)
 		Probe.mark("body+cover")
 		PlayerActions.update(self)
+		Carrying.update(self)
+		Trespass.update(self)
 		Needs.update(state)
+		Look.update(state)
 		Sleep.update(state)
 		Hotbar.update(state)
 		Shotgun.update(self)
 		Probe.mark("player+needs+shotgun")
 		if state.has("households") and state.tick % 14400 == 7200: Households.daily(self)
+		if state.has("households") and state.tick % 14400 == 11400: FamilyEconomy.payday(self)   # 19:00
 		Crops.update(state)
 		Probe.mark("daily+crops")
 		if state.tick % 14400 == 0:
@@ -234,7 +251,7 @@ func _stamina_allows_run() -> bool:
 	return state.player_health.stamina > 0 and not state.player_health.get("exhausted", false)
 
 func _can_run_route() -> bool:
-	return state.has("player_control") and state.has("player_health") and state.player_control.get("travel_run", false) and _stamina_allows_run() and BodyHealth.move_delay(state) == 1 and Limbs.mode(state, state.player) == "walk" and not Brawl.player_down(state)
+	return state.has("player_control") and state.has("player_health") and state.player_control.get("travel_run", false) and _stamina_allows_run() and BodyHealth.move_delay(state) == 1 and Limbs.mode(state, state.player) == "walk" and not Brawl.player_down(state) and Encumbrance.can_run(state)
 
 func _drain(queue_name: String, is_command: bool) -> void:
 	if state[queue_name].size() > 1:   # an empty or single-entry queue is already in order
@@ -259,6 +276,9 @@ func apply_command(entry: Dictionary) -> void:
 	# Taking over: any action of the player's own ends a travel to a town.
 	if entry.kind in PLAYER_ACTS and entry.kind not in ["travel", "travel_run"] and int(state.get("player_control", {}).get("travelling", 0)) != 0:
 		state.player_control.travelling = 0
+	if entry.kind in ["shotgun_fire", "player_strike", "shotgun_toggle", "shotgun_reload"] and Carrying.carried(state) != 0 and state.has("player_control"):
+		state.player_control.notice = "Put the body down first (F)."
+		return
 	var limb_problem: String = Limbs.action_problem(state, entry.kind)
 	if not limb_problem.is_empty() and state.has("player_control"):
 		state.player_control.notice = limb_problem
@@ -348,6 +368,9 @@ func apply_command(entry: Dictionary) -> void:
 		state.player_path=[]; state.player_travel_goal=[]
 		if state.has("player_control"): state.player_control.travelling = 0
 		return
+	if entry.kind == "haggle" and state.has("player_control"):
+		StallService.haggle(self, int(entry.payload.get("target", 0)))
+		return
 	if entry.kind in ["interact","hold_item","take_item","person_trade","treat_body","debug_injury"] and state.has("player_control"):
 		match entry.kind:
 			"interact":
@@ -379,7 +402,11 @@ func apply_command(entry: Dictionary) -> void:
 			var diagonal: bool = direction[0] != 0 and direction[1] != 0
 			if Law.inside_cell(state, next) and World.walkable(state, next) and (not diagonal or (World.walkable(state, [cell[0] + direction[0], cell[1]]) and World.walkable(state, [cell[0], cell[1] + direction[1]]))):
 				if state.has("player_control"):
-					var requested_run: bool=bool(entry.payload.get("run",false)) and _stamina_allows_run() and BodyHealth.move_delay(state)==1 and Limbs.mode(state, state.player)=="walk"
+					var load_band: int = Encumbrance.band(state)
+					if bool(entry.payload.get("run",false)) and load_band >= 2 and state.tick >= int(state.player_control.get("load_notice_tick", -1000)) + 300:
+						state.player_control.notice = "You can hardly move under this load." if load_band == 3 else "Too much to carry to run. Drop something (I)."
+						state.player_control.load_notice_tick = state.tick
+					var requested_run: bool=bool(entry.payload.get("run",false)) and _stamina_allows_run() and BodyHealth.move_delay(state)==1 and Limbs.mode(state, state.player)=="walk" and load_band < 2
 					# Sprinting from a crouch stands you up; otherwise a crouch is a slow, quiet walk.
 					if requested_run: state.player_control.crouching=false
 					var sneaking: bool=bool(state.player_control.get("crouching",false))
@@ -389,7 +416,7 @@ func apply_command(entry: Dictionary) -> void:
 					state.player_control.running_tick=state.tick if requested_run else -1
 					state.player_control.last_dir=[direction[0],direction[1]]
 					var walk_ticks: int = maxi(maxi(3 if sneaking else 2, BodyHealth.move_delay(state)+(1 if sneaking else 0)), Limbs.step_ticks(state, state.player))+(1 if diagonal else 0)
-					state.player_control.next_move=state.tick+(2 if tired_run else (1 if requested_run else Pace.delay(state, next, walk_ticks, state.player_control)))
+					state.player_control.next_move=state.tick+(2 if tired_run else (1 if requested_run else Pace.delay(state, next, walk_ticks, state.player_control, "stride_carry", Encumbrance.SLOWER[load_band])))
 					if requested_run: state.player_health.stamina=maxi(0,state.player_health.stamina-1)
 				state.entities[str(state.player)].cell = next
 	elif entry.kind == "cancel_job" and state.has("jobs"):
@@ -467,14 +494,7 @@ func _travel_to(town_id: int) -> void:
 	if Law.jailed(state) or Law.in_custody(state):
 		if not pc.is_empty(): pc.notice = "You are locked in a cell."
 		return
-	var store: Array = state.entities[str(town.warehouse)].cell
-	var goal: Array = [store[0], store[1] + 2]
-	if not World.walkable(state, goal):
-		var best := 9999
-		for dy in range(-3, 4):
-			for dx in range(-3, 4):
-				var candidate: Array = [store[0] + dx, store[1] + 2 + dy]
-				if World.walkable(state, candidate) and absi(dx) + absi(dy) < best: best = absi(dx) + absi(dy); goal = candidate
+	var goal: Array = load("res://sim/world/road_planner.gd").town_gate(state, town)
 	var from: Array = state.entities[str(state.player)].cell
 	if absi(from[0] - goal[0]) + absi(from[1] - goal[1]) <= 3:
 		if not pc.is_empty(): pc.notice = "You are already in %s." % town.name
@@ -526,8 +546,11 @@ func restore(snapshot_data: Dictionary) -> void:
 	World.upgrade_building_scale(state)
 	World.upgrade_forests(self)
 	World.Fixtures.upgrade(state)
+	if state.has("households") and state.has("accounts") and not state.accounts.keys().any(func(k): return String(k).begins_with("household:")):
+		FamilyEconomy.ensure(state)   # purses for saves made before families kept their own money
 	# After the layout upgrades, which may rebuild furniture: re-links the existing chests.
 	if state.has("households"): Chests.ensure_all(self)
+	load("res://sim/world/road_planner.gd").ensure_ways(state)   # signposts in older saves learn their distances
 	if state.has("routes"):
 		BodyHealth.initialize(state)
 		PlayerActions.initialize(state)

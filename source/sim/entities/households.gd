@@ -161,6 +161,10 @@ static func daily(sim: RefCounted) -> void:
 		load("res://sim/law/sheriff.gd").ensure(sim)
 		_pair_up(sim, town)
 		_births(sim, town)
+	load("res://sim/entities/family_economy.gd").ensure(s)   # new families get their purse and name now
+	load("res://sim/entities/gossip.gd").daily(s)
+	load("res://sim/player/requests.gd").daily(sim)           # people ask for what they lack             # families share news; towns come to know it
+	load("res://sim/factions/reputation.gd").update(s)        # the player's standing in each town, from what each knows
 
 static func _pair_up(sim: RefCounted, town: Dictionary) -> void:
 	var s: Dictionary = sim.state
@@ -224,6 +228,7 @@ static func _births(sim: RefCounted, town: Dictionary) -> void:
 		household.children += 1
 		s.residents[str(child)].household = key
 		town.population = int(town.get("population", 0)) + 1
+		load("res://sim/world/chronicle.gd").record(s, "birth", int(town.id), int(household.members[0]), child, door)
 		sim.record("%s was born to the %s household." % [s.entities[str(child)].name, s.entities[str(household.members[0])].name.split(" ")[-1]])
 
 ## A newly built house takes in the most crowded household and gets a garden.

@@ -56,6 +56,8 @@ static func shoot(sim: RefCounted, target: int, cell: Array, direction: Array, s
 			Brawl.knockdown(s, npc, cell, "fall", direction)
 		if int(npc.health) <= 0:
 			Brawl.kill(sim, npc, "shot")
+		else:
+			load("res://sim/combat/bleeding.gd").open_wound(s, npc)   # it bleeds until it is bandaged
 	return hit
 
 static func _hit_player(s: Dictionary, hit: Dictionary, limb_amount: int, strength: float) -> void:

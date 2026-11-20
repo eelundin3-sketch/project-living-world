@@ -77,16 +77,14 @@ static func interact(sim: RefCounted, preferred: int = 0) -> void:
 	var s: Dictionary=sim.state
 	var pc: Dictionary=s.player_control
 	if not pc.work.is_empty(): stop(s); pc.notice="Stopped working."; return
+	if int(pc.get("carrying", {}).get("id", 0)) != 0: load("res://sim/player/carrying.gd").put_down(s); return   # F puts a carried body down
 	if not s.player_health.treatment.is_empty(): pc.notice="Finish treatment first, or move to cancel it."; return
 	if Health.incapacitated(s): pc.notice="Too injured to work. Press H to treat your injuries."; return
 	reconcile(s)
 	var id: int=target(s,preferred)
 	var e: Dictionary=s.entities.get(str(id),{})
 	if e.get("kind", "") == "market_stall":
-		pc.ui_target = id
-		pc.ui_nonce += 1
-		pc.ui_kind = "trade"
-		pc.notice = "Trading at the " + e.name.to_lower()
+		load("res://sim/economy/stall_service.gd").request(sim, id)   # trade once the keeper is behind the counter
 		return
 	if pc.held_quantity>0:
 		var destination: int=0
@@ -104,21 +102,31 @@ static func interact(sim: RefCounted, preferred: int = 0) -> void:
 		return
 	if e.is_empty(): pc.notice="Move next to an object or person, then press F."; return
 	if e.kind in ["resident","warehouse","market"]:
-		pc.ui_target=id; pc.ui_nonce+=1; pc.ui_kind="trade"; pc.notice="Interacting with "+e.name
+		pc.ui_target=id; pc.ui_nonce+=1; pc.ui_kind="trade"; pc.ui_tab="trade"; pc.notice="Interacting with "+e.name
 	elif e.kind=="stash": take(s,id,first_item(s,id))
 	elif e.kind=="office":
-		# The weapon rack: take a shotgun and shells, or return them.
-		if Inventory.amount(s,s.player,"shotgun")>0:
-			var shells: int=Inventory.amount(s,s.player,"shell")
-			Inventory.transfer(s,s.player,id,"shotgun",1)
-			if shells>0: Inventory.transfer(s,s.player,id,"shell",shells)
+		# The weapon rack: return the gun you carry (and its ammunition), or take one (a rifle first).
+		var Guns = load("res://sim/combat/shotgun.gd")
+		var mine: String = ""
+		for gun in Guns.GUNS:
+			if mine.is_empty() and Inventory.amount(s,s.player,gun)>0: mine = gun
+		if not mine.is_empty():
+			var ammo: String = str(Guns.WEAPONS[mine].ammo)
+			var rounds: int=Inventory.amount(s,s.player,ammo)
+			Inventory.transfer(s,s.player,id,mine,1)
+			if rounds>0: Inventory.transfer(s,s.player,id,ammo,rounds)
 			if s.has("shotgun"): s.shotgun.equipped=false; s.shotgun.reloading=false; s.shotgun.loaded=0
-			pc.notice="You return the shotgun and shells to the rack."
-		elif Inventory.amount(s,id,"shotgun")>0:
-			Inventory.transfer(s,id,s.player,"shotgun",1)
-			Inventory.transfer(s,id,s.player,"shell",mini(10,Inventory.amount(s,id,"shell")))
-			pc.notice="You take a shotgun and shells. X readies it, R reloads."
-		else: pc.notice="The rack is empty."
+			pc.notice="You return the %s and its %ss to the rack." % [mine, ammo]
+		else:
+			var taken: String = ""
+			for gun in Guns.GUNS:
+				if taken.is_empty() and Inventory.amount(s,id,gun)>0: taken = gun
+			if taken.is_empty(): pc.notice="The rack is empty."
+			else:
+				var ammo: String = str(Guns.WEAPONS[taken].ammo)
+				Inventory.transfer(s,id,s.player,taken,1)
+				Inventory.transfer(s,id,s.player,ammo,mini(10,Inventory.amount(s,id,ammo)))
+				pc.notice="You take a %s and %ss. X readies it, R reloads." % [taken, ammo]
 	elif e.kind=="chest":
 		Looting.open(s,id)
 	elif e.kind=="ore":
@@ -187,10 +195,27 @@ static func trade(sim: RefCounted,payload: Dictionary) -> void:
 	if e.kind == "market_stall" and item not in e.sale_items:
 		pc.notice = "This stall does not trade that item."
 		return
+	var Stalls = load("res://sim/economy/stall_service.gd")
+	if e.kind == "market_stall" and not Stalls.staffed(s, e):
+		pc.notice = "Wait for someone to come to the counter."
+		return
 	var buy: bool=payload.get("buy",true)
-	var price: int=Market.quote(s,e.settlement,item,buy)
-	var result := Market.transact(s,id if buy else s.player,s.player if buy else id,item,1,price,e.settlement)
-	pc.notice="Trade complete." if result.ok else "Trade failed: "+result.error_code
+	var price: int=Stalls.price(s,int(e.settlement),item,buy,id)
+	# How many: the number asked for (or everything, -1), as far as stock, coins and room allow.
+	var seller: int = id if buy else s.player
+	var buyer: int = s.player if buy else id
+	var wanted: int = int(payload.get("quantity", 1))
+	var quantity: int = Inventory.amount(s, seller, item) if wanted < 0 else mini(wanted, Inventory.amount(s, seller, item))
+	quantity = mini(quantity, mini(int(s.accounts.get(str(buyer), 0)) / maxi(1, price), Inventory.available(s, buyer)))
+	if quantity <= 0:
+		pc.notice = "Nothing to trade: " + ("they have none, or you cannot pay or carry it." if buy else "you have none, or they cannot pay for it.")
+		return
+	var result := Market.transact(s,seller,buyer,item,quantity,price,e.settlement)
+	pc.notice=("You %s %d %s for %d coins." % ["buy" if buy else "sell", quantity, item, quantity * price]) if result.ok else "Trade failed: "+result.error_code
+	# Honest business is remembered kindly (a small, quickly fading memory: society.gd).
+	var keeper: Dictionary = Stalls.counterpart(s, id)
+	if result.ok and not keeper.is_empty() and s.has("factions"):
+		load("res://sim/factions/society.gd").remember(s, int(keeper.id), "paid_well", int(s.player), "The stranger traded fairly with me.")
 	reconcile(s)
 static func update(sim: RefCounted) -> void:
 	var s: Dictionary=sim.state

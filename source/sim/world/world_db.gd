@@ -92,7 +92,7 @@ static func seed_world(sim: RefCounted) -> void:
 	s.inventories = {}
 	s.accounting = {"initial": {}, "created": {}, "consumed": {}}
 	s.player = add_entity(sim, "player", Names.generate(sim), [62, 49])
-	Inventory.create(s, s.player, 40, {"food": 4, "shotgun": 1, "shell": 10})   # you begin with a shotgun, lowered, and ten shells
+	Inventory.create(s, s.player, 40, {"food": 4, "rifle": 1, "cartridge": 10})   # you begin with a rifle, slung, and ten cartridges
 	s.warehouse = add_entity(sim, "warehouse", "Alder Hollow storehouse", [64, 46], 1)
 	Inventory.create(s, s.warehouse, 3000, {"food": 160})
 	s.home = add_entity(sim, "home", "Common lodge", [46, 42], 1)

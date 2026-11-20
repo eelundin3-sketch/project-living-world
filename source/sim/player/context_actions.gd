@@ -21,7 +21,7 @@ const PART_NAMES := {"bed": "Bed", "table": "Table", "chair": "Chair", "lamp": "
 const PART_LINES := {"table": "A plain wooden table.", "chair": "A wooden chair.", "lamp": "An oil lamp.", "shelf": "Shelves of odds and ends.",
 	"booking_desk": "Where prisoners are booked in and the sheriff does his paperwork.", "locker": "Prisoners' belongings are kept in here.",
 	"toilet": "A bucket toilet.", "bed": "A bed.", "stockpile": "The town's goods, stacked.", "workshop_storage": "Materials waiting to be worked."}
-const ITEM_NAMES := {"log": "logs", "plank": "planks", "food": "food", "rye": "rye", "bandage": "bandages", "antiseptic": "antiseptic", "shell": "shells", "shotgun": "shotgun", "tool": "iron tools", "ore": "iron ore"}
+const ITEM_NAMES := {"log": "logs", "plank": "planks", "food": "food", "rye": "rye", "bandage": "bandages", "antiseptic": "antiseptic", "shell": "shells", "shotgun": "shotgun", "rifle": "rifle", "cartridge": "cartridges", "tool": "iron tools", "ore": "iron ore"}
 
 static func _opt(id: String, label: String, icon: String, enabled: bool = true, reason: String = "") -> Dictionary:
 	return {"id": id, "label": label, "icon": icon, "enabled": enabled, "reason": reason}
@@ -55,8 +55,8 @@ static func _part_options(s: Dictionary, building: Dictionary, part: String) -> 
 	if item.is_empty(): return result
 	match item.kind:
 		"weapon_rack":
-			var has_gun: bool = Inventory.amount(s, s.player, "shotgun") > 0
-			result.append(_opt("rack", "Return the shotgun" if has_gun else "Take a shotgun", "gun", has_gun or Inventory.amount(s, building.id, "shotgun") > 0, "The rack is empty"))
+			var has_gun: bool = load("res://sim/combat/shotgun.gd").owns(s)
+			result.append(_opt("rack", "Return your gun" if has_gun else "Take a rifle", "gun", has_gun or Inventory.amount(s, building.id, "rifle") > 0 or Inventory.amount(s, building.id, "shotgun") > 0, "The rack is empty"))
 		"stockpile":
 			if building.kind in ["warehouse", "market"]: result.append(_opt("trade", "Trade / take supplies", "talk"))
 		"saw", "oven", "forge", "workshop_storage":
@@ -77,6 +77,8 @@ static func options(s: Dictionary, id: int, part: String = "") -> Array:
 	if id == s.player:
 		result.append(_opt("eat", "Eat", "food", Inventory.amount(s, s.player, "food") > 0, "No food"))
 		result.append(_opt("drink", "Drink", "drop", Needs.near_water(s), "Stand by a well"))
+		result.append(_opt("wash", "Wash up", "drop", Needs.near_water(s), "Stand by a well"))
+		result.append(_opt("shave", "Shave & haircut (3 coins)", "hand"))
 		result.append(_opt("wardrobe", "Clothing", "shirt"))
 		result.append(_opt("inventory", "Inventory", "bag"))
 		result.append(_opt("health", "Check wounds", "heart"))
@@ -89,6 +91,9 @@ static func options(s: Dictionary, id: int, part: String = "") -> Array:
 			var asleep: bool = not npc.get("sleeping", {}).is_empty()
 			if down or asleep:
 				result.append(_opt("loot", "Search & loot", "hand"))
+				var Carrying = load("res://sim/player/carrying.gd")
+				if Carrying.carried(s) == int(npc.id): result.append(_opt("put_down", "Put them down", "hand"))
+				elif Carrying.can_carry(s, npc): result.append(_opt("carry", "Carry over your shoulder", "hand"))
 				if dead: pass
 				elif asleep: result.append(_opt("wake", "Wake up", "sun"))
 				else:
@@ -96,9 +101,19 @@ static func options(s: Dictionary, id: int, part: String = "") -> Array:
 					else: result.append(_opt("help_up", "Help up", "hand", false, "Unconscious"))
 					result.append(_opt("kick", "Kick (1.5× a punch)", "fist"))
 			else:
-				result.append(_opt("trade", "Talk / trade", "talk"))
+				result.append(_opt("talk", "Talk", "talk"))
+				if npc.occupation not in ["Sheriff", "Child"]: result.append(_opt("trade", "Trade", "bag"))
+				result.append(_opt("ask_family", "Ask about their family", "talk"))
+				result.append(_opt("ask_news", "Ask for news", "talk"))
 				result.append(_opt("punch", "Punch", "fist"))
 				result.append(_opt("shove", "Shove", "fist"))
+				if bool(s.player_control.get("crouching", false)):
+					# Sneaking: a silent takedown from behind (takedown.gd); greyed out with the reason
+					# when they would see you coming (being next to them is handled by walking up).
+					var Takedown = load("res://sim/combat/takedown.gd")
+					var aware: String = Takedown.aware_of_player(s, npc)
+					result.append(_opt("takedown_ko", "Knock out from behind", "fist", aware.is_empty(), aware))
+					result.append(_opt("takedown_kill", "Kill silently", "fist", aware.is_empty(), aware))
 			if not npc.is_empty() and int(npc.get("bleeding_until", 0)) > s.tick:
 				result.append(_opt("bandage", "Bandage wound", "heart", Inventory.amount(s, s.player, "bandage") > 0, "No bandages"))
 			result.append(_opt("examine", "Look at", "eye"))
@@ -134,8 +149,8 @@ static func options(s: Dictionary, id: int, part: String = "") -> Array:
 		"market_stall":
 			result.append(_opt("trade", "Trade", "talk"))
 		"office":
-			var has_gun: bool = Inventory.amount(s, s.player, "shotgun") > 0
-			result.append(_opt("rack", "Return the shotgun" if has_gun else "Take a shotgun", "gun", has_gun or Inventory.amount(s, id, "shotgun") > 0, "The rack is empty"))
+			var has_gun: bool = load("res://sim/combat/shotgun.gd").owns(s)
+			result.append(_opt("rack", "Return your gun" if has_gun else "Take a rifle", "gun", has_gun or Inventory.amount(s, id, "rifle") > 0 or Inventory.amount(s, id, "shotgun") > 0, "The rack is empty"))
 			result.append(_opt("examine", "Look at", "eye"))
 		"sawmill", "bakery", "forge":
 			result.append(_opt("operate", "Use / collect", "hand"))
@@ -170,13 +185,13 @@ static func describe(s: Dictionary, id: int, part: String = "") -> String:
 	if not item.is_empty():
 		if item.kind == "bed" and str(item.get("for", "")) == "prisoner": return "A hard cot in the jail cell."
 		if item.kind == "bed" and str(item.get("for", "")) == "sheriff": return "A sheriff's bed."
-		if item.kind == "weapon_rack": return "The %s's gun rack: %d shotgun%s." % [e.name, Inventory.amount(s, id, "shotgun"), "" if Inventory.amount(s, id, "shotgun") == 1 else "s"]
+		if item.kind == "weapon_rack": return "The %s's gun rack: %d rifle%s, %d shotgun%s." % [e.name, Inventory.amount(s, id, "rifle"), "" if Inventory.amount(s, id, "rifle") == 1 else "s", Inventory.amount(s, id, "shotgun"), "" if Inventory.amount(s, id, "shotgun") == 1 else "s"]
 		return String(PART_LINES.get(item.kind, "%s in %s." % [title(s, id, part), e.name]))
 	match e.get("kind", ""):
 		"resident":
 			var npc: Dictionary = s.residents.get(str(id), {})
 			var mood: String = "calm" if int(npc.get("anger", 0)) < 30 else "angry"
-			return "%s, a %s. %s. They look %s. Wearing %s." % [e.name, String(npc.get("occupation", "villager")).to_lower(), npc.get("status", "Resting"), mood, Outfits.describe(s, id)]
+			return "%s, a %s. %s. They look %s. Wearing %s. %s" % [e.name, String(npc.get("occupation", "villager")).to_lower(), npc.get("status", "Resting"), mood, Outfits.describe(s, id), load("res://sim/entities/family_economy.gd").describe(s, npc)]
 		"tree":
 			var logs: int = int(_items(s, id).get("log", 0))
 			return "%s: %s." % [e.name, "only a stump" if logs == 0 else ("fallen, %d logs to gather" % logs if e.get("felled", false) else "standing, about %d logs of timber" % logs)]
@@ -227,7 +242,8 @@ static func request(sim: RefCounted, id: int, action: String, part: String = "")
 	if not s.entities.has(str(id)): return
 	var e: Dictionary = s.entities[str(id)]
 	pc.pending = {}
-	if id == s.player or action in ["examine", "inventory", "health", "wardrobe"] or _within_reach(s, e, part):
+	var talking_distance: bool = (action in ["ask_family", "ask_news", "ask_work", "talk", "persuade", "ask_help", "accept_request", "hand_over"] or action.begins_with("say_") or action.begins_with("bribe_")) and Actions.distance(s.entities[str(s.player)].cell, e.cell) <= 4
+	if id == s.player or action in ["examine", "inventory", "health", "wardrobe"] or talking_distance or _within_reach(s, e, part):
 		perform(sim, id, action, part)
 		return
 	var from: Array = s.entities[str(s.player)].cell
@@ -296,6 +312,8 @@ static func perform(sim: RefCounted, id: int, action: String, part: String = "")
 		"sleep": Sleep.lie_down(s, id, part_index(part))
 		"eat": pc.notice = Needs.eat(s)
 		"drink": pc.notice = Needs.drink(s)
+		"wash": pc.notice = load("res://sim/player/look.gd").wash(s) if Needs.near_water(s) else "Stand by a well to wash."
+		"shave": pc.notice = load("res://sim/player/look.gd").shave(s)
 		"inventory", "health": pass   # opened by the interface
 		"wardrobe": Looting.open(s, s.player, "wardrobe")
 		"pickup_all": _take_everything(sim, id)
@@ -303,10 +321,58 @@ static func perform(sim: RefCounted, id: int, action: String, part: String = "")
 			if action == "trade" and s.residents.has(str(id)): load("res://sim/entities/speech.gd").say(sim, id, "greet_player")
 			Actions.interact(sim, id)
 		"loot": Looting.open(s, id)
+		"carry": load("res://sim/player/carrying.gd").pick_up(s, id)
+		"say_friendly", "say_firm", "say_threaten", "persuade", "bribe_10", "bribe_25", "bribe_50", "ask_help", "accept_request", "hand_over":
+			var npc: Dictionary = s.residents.get(str(id), {})
+			if npc.is_empty(): return
+			_met(s, id)
+			var Talk = load("res://sim/player/talk.gd")
+			if action.begins_with("say_"): pc.notice = Talk.say(sim, npc, action.substr(4))
+			elif action == "persuade": pc.notice = Talk.persuade(sim, npc)
+			elif action.begins_with("bribe_"): pc.notice = Talk.bribe(sim, npc, int(action.substr(6)))
+			else:
+				var answer: String = load("res://sim/player/requests.gd").perform(sim, npc, action)
+				if not answer.is_empty(): pc.notice = answer
+		"takedown_ko", "takedown_kill":
+			var npc: Dictionary = s.residents.get(str(id), {})
+			pc.notice = load("res://sim/combat/takedown.gd").perform(sim, npc, action == "takedown_kill")
+		"put_down": load("res://sim/player/carrying.gd").put_down(s)
 		"help_up":
 			var npc: Dictionary = s.residents.get(str(id), {})
 			if not npc.is_empty(): Brawl.help_up(s, npc)
 			pc.notice = "You help %s to their feet." % e.name
+		"talk":
+			# Opens the conversation window on its Talk tab (dialogue.gd lists what can be said).
+			var npc: Dictionary = s.residents.get(str(id), {})
+			if npc.is_empty(): return
+			load("res://sim/entities/speech.gd").say(sim, id, "greet_player")
+			pc.ui_target = id; pc.ui_nonce = int(pc.get("ui_nonce", 0)) + 1; pc.ui_kind = "trade"; pc.ui_tab = "talk"
+			_met(s, id)
+		"ask_family", "ask_news", "ask_work":
+			var npc: Dictionary = s.residents.get(str(id), {})
+			if npc.is_empty(): return
+			var first: String = String(e.name).split(" ")[0]
+			if action == "ask_work":
+				var Professions = load("res://sim/settlement/professions.gd")
+				var line: String = str(Professions.DESCRIPTIONS.get(npc.occupation, "I do what needs doing."))
+				pc.notice = "%s: I'm a %s. %s" % [first, String(npc.occupation).to_lower(), line]
+			elif action == "ask_family":
+				var Family = load("res://sim/entities/family_economy.gd")
+				var household: Dictionary = s.get("households", {}).get(str(npc.get("household", "")), {})
+				var line: String = "I'm a %s." % String(npc.occupation).to_lower()
+				if not household.is_empty() and household.members.size() > 1:
+					line += " There are %d of us in the %s household, and we get by on what we earn." % [household.members.size(), Family.family_name(s, household)]
+				else: line += " I keep house on my own."
+				pc.notice = "%s: %s" % [first, line]
+			else:
+				var told: String = load("res://sim/economy/stall_service.gd").news(s, npc)
+				pc.notice = "%s: %s" % [first, told]
+				# Written in the journal (newest 30).
+				var heard: Array = load("res://sim/player/player_status.gd").part(s, "heard", [])
+				if heard.is_empty() or str(heard[-1].text) != told: heard.append({"text": told, "tick": int(s.tick), "from": String(e.name)})
+				while heard.size() > 30: heard.pop_front()
+			_met(s, id)
+			load("res://sim/law/law.gd")._say(sim, id, pc.notice.substr(first.length() + 2).left(60))
 		"wake":
 			var sleeper: Dictionary = s.residents.get(str(id), {})
 			if not sleeper.is_empty():
@@ -316,8 +382,11 @@ static func perform(sim: RefCounted, id: int, action: String, part: String = "")
 		"bandage":
 			var patient: Dictionary = s.residents.get(str(id), {})
 			if not patient.is_empty() and int(patient.get("bleeding_until", 0)) > s.tick and Inventory.consume(s, s.player, "bandage", 1):
-				patient.bleeding_until = 0
+				load("res://sim/combat/bleeding.gd").stop(patient)
 				pc.notice = "You bind %s's wound. The bleeding stops." % e.name
+				# They (and their family) won't forget it, and word gets round (society.gd, chronicle).
+				var entry: Dictionary = load("res://sim/world/chronicle.gd").record(s, "saved_life", int(patient.settlement), int(s.player), id, e.cell)
+				load("res://sim/factions/society.gd").witnessed(s, id, "saved_life", int(s.player), "The stranger bound my wound and saved my life.", entry.witnesses, "helped")
 			else: pc.notice = "There is nothing to bandage."
 		"punch", "shove", "kick":
 			var from: Array = s.entities[str(s.player)].cell
@@ -341,3 +410,8 @@ static func _take_everything(sim: RefCounted, id: int) -> void:
 		taken.append("%d coins" % coins)
 	if e.get("kind", "") == "resident" and s.has("factions") and not taken.is_empty(): Society.remember(s, id, "robbed", s.player, "The traveller went through my pockets.", -20)
 	pc.notice = ("You take " + ", ".join(taken) + ".") if not taken.is_empty() else "There is nothing to take."
+
+## Remembers that the player has met this person (for the journal).
+static func _met(s: Dictionary, id: int) -> void:
+	var met: Dictionary = load("res://sim/player/player_status.gd").part(s, "met", {})
+	if not met.has(str(id)): met[str(id)] = int(s.tick)

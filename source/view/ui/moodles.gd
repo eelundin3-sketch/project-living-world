@@ -132,6 +132,11 @@ func _icon(key: String, c: Vector2, k: float, ink: Color) -> void:
 			draw_circle(c + Vector2(2, -3) * k, 4.8 * k, ink)
 			draw_circle(c + Vector2(5, -0.5) * k, 3.2 * k, ink)
 			for x in [-4, 0, 4]: draw_line(c + Vector2(x, 3) * k, c + Vector2(x - 1.5, 8) * k, ink, 1.4 * k, true)
+		"overloaded":  # a heavy sack
+			draw_colored_polygon(PackedVector2Array([c + Vector2(-6, -2) * k, c + Vector2(6, -2) * k, c + Vector2(8, 8) * k, c + Vector2(-8, 8) * k]), ink)
+			draw_line(c + Vector2(-3, -2) * k, c + Vector2(-1, -7) * k, ink, 1.6 * k, true)
+			draw_line(c + Vector2(3, -2) * k, c + Vector2(1, -7) * k, ink, 1.6 * k, true)
+			draw_line(c + Vector2(-2, -7) * k, c + Vector2(2, -7) * k, ink, 1.6 * k, true)
 		"cold":  # snowflake
 			for i in range(3):
 				var direction: Vector2 = Vector2.from_angle(float(i) * PI / 3.0) * 8.5 * k

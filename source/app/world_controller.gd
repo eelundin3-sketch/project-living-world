@@ -12,12 +12,14 @@ const Cover = preload("res://sim/combat/cover.gd")
 const MapOverlay = preload("res://view/ui/map_overlay.gd")
 const MedievalMap = preload("res://view/ui/medieval_map.gd")
 const SaveMigration = preload("res://app/save_migration.gd")
+const SaveSlots = preload("res://app/save_slots.gd")
 const Moodles = preload("res://view/ui/moodles.gd")
 const BottomBar = preload("res://view/ui/bottom_bar.gd")
 const PerfOverlay = preload("res://view/ui/perf_overlay.gd")
 const ContextMenu = preload("res://view/ui/context_menu.gd")
 const ContextActions = preload("res://sim/player/context_actions.gd")
 const MainMenu = preload("res://view/ui/main_menu.gd")
+const JournalWindow = preload("res://view/ui/journal_window.gd")
 const KnockoutScreen = preload("res://view/ui/knockout_screen.gd")
 const Law = preload("res://sim/law/law.gd")
 const Probe = preload("res://sim/diagnostics/perf_probe.gd")
@@ -45,6 +47,10 @@ var pending_binding: String = ""
 var last_left_press: int = -10000
 var last_left_position: Vector2 = Vector2.ZERO
 var save_path: String = "user://project_solo.save"
+var save_dir: String = "user://"
+var last_autosave_day: int = -1   # the in-game day already autosaved (each morning at 06:00)
+var save_thread: Thread            # a save being written in the background (one at a time)
+var save_label: String = ""
 var aiming: bool = false
 var pointer_held: bool = false
 var action_pointer: Control
@@ -58,6 +64,7 @@ var knockout: CanvasLayer
 var skipping: bool = false
 const SLEEP_SPEED := 8
 var medieval_map: Control
+var journal: Control
 var context_part: String = ""   # the furniture or fixture the open menu is about
 var skip_previous_speed: int = 1
 var menu_active: bool = false
@@ -72,6 +79,7 @@ func _ready() -> void:
 	SaveMigration.migrate()   # saves from before the game was renamed come across once
 	Settings.setup()
 	simulation.start_game()
+	_mark_autosaved_today()
 	player_panels=PlayerPanels.new()
 	player_panels.simulation=simulation
 	add_child(player_panels)
@@ -112,6 +120,10 @@ func _ready() -> void:
 	context_menu = ContextMenu.new()
 	context_menu.chosen.connect(_on_context_chosen)
 	menu_layer.add_child(context_menu)
+	journal = JournalWindow.new()   # J: people met, news heard, favours, your standing
+	journal.simulation = simulation
+	journal.visible = false
+	menu_layer.add_child(journal)
 	var perf_layer := CanvasLayer.new()
 	perf_layer.layer = 8
 	add_child(perf_layer)
@@ -146,9 +158,14 @@ func _maybe_open_menu() -> void:
 		return
 	menu_active = true
 	menu = MainMenu.new()
+	var newest: Dictionary = SaveSlots.newest(save_dir, [save_path])
+	if not newest.is_empty(): menu.continue_text = SaveSlots.describe(newest.info)
 	add_child(menu)
 	menu.start_requested.connect(_start_from_menu)
 	menu.quit_requested.connect(func() -> void: get_tree().quit())
+	menu.continue_requested.connect(func() -> void:
+		handle_action("load")
+		_start_from_menu())
 	_set_hud_visible(false)
 	follow_player = false
 	$ObserverCamera.zoom = Vector2.ONE * 0.6
@@ -229,6 +246,8 @@ func _process(delta: float) -> void:
 	Probe.count("ticks", advanced)
 	if advanced > 0:
 		tick_ms = float(clock.worst_step_usec) / 1000.0   # the slowest tick this frame: spikes show
+		_maybe_autosave()
+	_finish_save()
 	var shotgun_equipped: bool = simulation.state.get("shotgun", {}).get("equipped", false)
 	$WorldView.motion.player_aiming = (aiming or (pointer_held and not shotgun_equipped)) and not player_panels.visible and not map_mode
 	$WorldView.motion.player_ready = pointer_held and not player_panels.visible
@@ -284,6 +303,7 @@ func refresh_view() -> void:
 	$DebugHUD.refresh(simulation, clock, selected_id, tick_ms)
 	t = _lap("u:debug_hud", t)
 	player_panels.refresh()
+	if journal != null: journal.refresh()
 	t = _lap("u:panels", t)
 	if moodles != null: moodles.refresh()
 	t = _lap("u:moodles", t)
@@ -348,11 +368,15 @@ func handle_action(kind: String) -> void:
 			if simulation.state.workshops.has(str(selected_id)):
 				simulation.submit("cancel_production", {"id": selected_id})
 		"save":
-			var result := Save.save_state(simulation, save_path)
-			$DebugHUD.notice.text = "Saved world." if result.ok else result.error
+			if not _save_in_background(save_path, "quick", "Saved world."):
+				$DebugHUD.notice.text = "Still saving..."
 		"load":
-			var result := Save.load_into(simulation, save_path)
+			_finish_save(true)   # a save still being written completes before anything loads
+			# The newest save, whether the quick save (F5) or a morning autosave.
+			var newest: Dictionary = SaveSlots.newest(save_dir, [save_path])
+			var result := Save.load_into(simulation, str(newest.get("path", save_path)))
 			if result.ok:
+				_mark_autosaved_today()
 				clock.accumulator = 0
 				$WorldView.snap_visuals()
 				world_audio.stop_effects()
@@ -469,8 +493,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_R: simulation.submit("shotgun_reload")
 			KEY_Q: simulation.submit("drink")
 			KEY_F: handle_action("interact")
+			KEY_J: journal.toggle()
 			KEY_ESCAPE:
-				if map_mode: toggle_map()   # Esc closes the map first, then stops a travel, then closes panels
+				if journal.visible: journal.visible = false
+				elif map_mode: toggle_map()   # Esc closes the map first, then stops a travel, then closes panels
 				elif int(simulation.state.get("player_control", {}).get("travelling", 0)) != 0: simulation.submit("stop_travel")
 				else: player_panels.show_mode("")
 			KEY_SPACE:
@@ -646,3 +672,41 @@ func _update_pointer() -> void:
 		action_pointer.mode = "fist"
 		action_pointer.blocked = false
 	action_pointer.queue_redraw()
+
+## Each in-game morning at 06:00 the world is written to the older of two autosave files, so a
+## crash or a bad decision never costs more than a day. Never in the middle of a gunfight, while
+## the title screen is up, or when the player is dead.
+func _maybe_autosave() -> void:
+	var s: Dictionary = simulation.state
+	if menu_active or not SaveSlots.autosave_due(s, last_autosave_day): return
+	if not s.get("law", {}).get("alert", {}).is_empty() or bool(s.get("player_control", {}).get("dead", false)): return
+	if save_thread != null: return   # try again next frame
+	last_autosave_day = int(s.tick) / SaveSlots.DAY_TICKS
+	_save_in_background(SaveSlots.next_autosave(save_dir), "autosave", "Autosaved: " + SaveSlots.describe(SaveSlots.info_for(s, "autosave")))
+
+## Copies the world now (a few ms) and writes it on a background thread, so saving never stalls
+## play. False when another save is still being written.
+func _save_in_background(path: String, kind: String, done_text: String) -> bool:
+	if save_thread != null and save_thread.is_alive(): return false
+	_finish_save(true)
+	var data: Dictionary = simulation.snapshot()
+	var save_info: Dictionary = SaveSlots.info_for(simulation.state, kind)
+	save_label = done_text
+	save_thread = Thread.new()
+	save_thread.start(SaveSlots.write.bind(data, save_info, path))
+	return true
+
+## Collects a finished background save and reports it. With `wait`, blocks until it is done.
+func _finish_save(wait: bool = false) -> void:
+	if save_thread == null or (not wait and save_thread.is_alive()): return
+	var result: Dictionary = save_thread.wait_to_finish()
+	save_thread = null
+	$DebugHUD.notice.text = save_label if result.get("ok", false) else "Save failed: " + str(result.get("error", ""))
+
+func _exit_tree() -> void:
+	_finish_save(true)   # never quit halfway through writing a save
+
+## A new or freshly loaded game that is already past 06:00 counts as saved for today.
+func _mark_autosaved_today() -> void:
+	var tick: int = int(simulation.state.get("tick", 0))
+	last_autosave_day = tick / SaveSlots.DAY_TICKS if (tick / 10) % 1440 >= SaveSlots.AUTOSAVE_MINUTE else tick / SaveSlots.DAY_TICKS - 1

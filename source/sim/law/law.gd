@@ -17,8 +17,8 @@ const BodyHealth = preload("res://sim/combat/body_health.gd")
 const Nav = preload("res://sim/movement/navigation.gd")
 const World = preload("res://sim/world/world_db.gd")
 const HOUR := 600                     # ticks in an in-game hour
-const SENTENCE := {"assault": 2, "assault_sheriff": 4, "kick": 3, "theft": 3, "murder": 24, "discharge": 2, "shooting": 6}
-const CRIME_NAMES := {"assault": "assault", "assault_sheriff": "assaulting the sheriff", "kick": "kicking a man when he's down", "theft": "theft", "murder": "murder", "discharge": "firing a gun in town", "shooting": "shooting someone"}
+const SENTENCE := {"bribery": 2, "trespass": 1, "assault": 2, "assault_sheriff": 4, "kick": 3, "theft": 3, "murder": 24, "discharge": 2, "shooting": 6}
+const CRIME_NAMES := {"bribery": "trying to bribe the law", "trespass": "trespassing", "assault": "assault", "assault_sheriff": "assaulting the sheriff", "kick": "kicking a man when he's down", "theft": "theft", "murder": "murder", "discharge": "firing a gun in town", "shooting": "shooting someone"}
 const MAX_HOURS := 48
 const WITNESS_RANGE := 24.0           # a sheriff this close sees a crime happen
 const SEE_RANGE := 14.0               # a sheriff this close recognises a wanted player
@@ -85,26 +85,46 @@ static func standoff_sheriff(s: Dictionary) -> int:
 
 ## A crime in `town`. If a sheriff saw it (or suffered it) he comes for the player at once;
 ## either way the town remembers.
-static func crime(s: Dictionary, town: int, kind: String, victim: int) -> void:
+## What a crime leaves behind besides the law: an entry in the chronicle (with who saw it) and
+## memories, in the victim, their family and the witnesses. Also used where a killing is not
+## handed to the law as a separate crime (a shotgun kill in a gunfight).
+const MEMORY_OF := {"trespass": "insulted", "theft": "robbed", "assault": "assaulted", "assault_sheriff": "assaulted", "kick": "assaulted",
+	"shooting": "shot_at", "murder": "killed_kin"}
+static func remember_crime(s: Dictionary, town: int, kind: String, victim: int) -> Dictionary:
+	if not s.has("player") or not s.entities.has(str(s.player)): return {}
+	var cell: Array = s.entities[str(victim)].cell if s.entities.has(str(victim)) else s.entities[str(s.player)].cell
+	var entry: Dictionary = load("res://sim/world/chronicle.gd").record(s, kind, town, int(s.player), victim, cell)
+	if s.has("factions"):
+		var victim_name: String = str(s.entities.get(str(victim), {}).get("name", "someone"))
+		var text: String = "The stranger %s %s." % [{"theft": "robbed", "murder": "killed", "shooting": "shot at"}.get(kind, "attacked"), victim_name] if victim != 0 else "The stranger fired a gun in town."
+		load("res://sim/factions/society.gd").witnessed(s, victim, str(MEMORY_OF.get(kind, "assaulted")), int(s.player), text, entry.witnesses, "saw_murder" if kind == "murder" else "saw_crime")
+	return entry
+
+## `silent`: nothing to hear (a takedown from behind), so a sheriff must actually see it.
+static func crime(s: Dictionary, town: int, kind: String, victim: int, silent: bool = false) -> void:
 	if not s.has("player_control") or not SENTENCE.has(kind): return
+	var entry: Dictionary = remember_crime(s, town, kind, victim)
 	var player: Array = s.entities[str(s.player)].cell
+	var Cover = load("res://sim/combat/cover.gd")
 	var witness: Dictionary = {}
 	var witnesses: Array = []
 	var nearest := 1.0e9
 	for sheriff in sheriffs(s, town):
 		var cell: Array = s.entities[str(sheriff.id)].cell
 		var d: float = Vector2(cell[0] - player[0], cell[1] - player[1]).length()
-		if sheriff.id == victim or d <= WITNESS_RANGE:
+		if sheriff.id == victim or (d <= WITNESS_RANGE and (not silent or (sheriff.get("sleeping", {}).is_empty() and Cover.line_clear(s, cell, player)))):
 			witnesses.append(sheriff)   # everyone who saw it (or was hit) comes
 			if d < nearest:
 				witness = sheriff       # the nearest takes the case
 				nearest = d
-	# Murder and theft get reported; other crimes count only if the sheriff saw them or was the victim.
-	if witness.is_empty() and kind not in ["murder", "theft"]: return
-	var record: Dictionary = _law(s).wanted.get(str(town), {"hours": 0, "crimes": [], "since": s.tick})
-	record.hours = mini(MAX_HOURS, int(record.hours) + int(SENTENCE[kind]))
-	record.crimes.append(kind)
-	_law(s).wanted[str(town)] = record
+	# No sheriff saw it: whoever did see it (or the victim) runs to tell one, and only then is it on
+	# the books (witness_reports.gd). Nobody saw it at all: nobody knows who did it.
+	if witness.is_empty():
+		if kind in ["discharge", "shooting"]: return   # answered by the gunfight (gunfire.gd)
+		var Reports = load("res://sim/law/witness_reports.gd")
+		if not Reports.send(s, town, kind, victim, entry) and kind in ["murder", "theft"]: Reports.hide(s, town, kind, victim)
+		return
+	file(s, town, kind, {}, true)
 	# Gunfire is answered by the gunfight (gunfire.gd), not by a chase.
 	if kind in ["discharge", "shooting"] or in_custody(s): return
 	for sheriff in witnesses:
@@ -115,6 +135,31 @@ static func crime(s: Dictionary, town: int, kind: String, victim: int) -> void:
 		sheriff.path = []
 		sheriff.status = "Arresting the traveller"
 		load("res://sim/law/sheriff.gd").stand_up(s, sheriff)
+
+## Puts a crime on the town's books: more hours wanted, and how the culprit is known: by face (a
+## sheriff saw it) or by the clothes a witness described.
+static func file(s: Dictionary, town: int, kind: String, outfit: Dictionary, face: bool) -> void:
+	var record: Dictionary = _law(s).wanted.get(str(town), {"hours": 0, "crimes": [], "since": s.tick})
+	record.hours = mini(MAX_HOURS, int(record.hours) + int(SENTENCE.get(kind, 1)))
+	record.crimes.append(kind)
+	if face: record.face = true
+	elif not outfit.is_empty(): record.outfit = outfit.duplicate()
+	_law(s).wanted[str(town)] = record
+
+## Whether the sheriffs of `town` know the player on sight: by face, or because enough of what
+## the player is wearing matches what witnesses described (change clothes and they may not).
+static func recognised(s: Dictionary, town: int) -> bool:
+	var record: Dictionary = _law(s).wanted.get(str(town), {})
+	if bool(record.get("face", false)) or not record.has("outfit"): return true
+	var described: Dictionary = record.outfit
+	var now: Dictionary = Outfits.worn(s, int(s.player))
+	var pieces := 0
+	var matches := 0
+	for slot in described:
+		if str(described[slot]).is_empty(): continue
+		pieces += 1
+		if str(now.get(slot, "")) == str(described[slot]): matches += 1
+	return matches >= mini(3, pieces)
 
 static func surrender(s: Dictionary) -> void:
 	var pc: Dictionary = s.player_control
@@ -164,6 +209,7 @@ static func update(sim: RefCounted) -> void:
 	var s: Dictionary = sim.state
 	if not s.has("player_control") or not s.has("residents"): return
 	var pc: Dictionary = s.player_control
+	load("res://sim/law/witness_reports.gd").update(sim)   # witnesses hurrying to tell a sheriff
 	var jail: Dictionary = pc.get("jail", {})
 	if not jail.is_empty() and s.tick >= int(jail.until): _start_release(sim, jail)
 	# In the cells the keeper keeps an eye on the wounds, so nobody bleeds out in custody.
@@ -184,7 +230,7 @@ static func update(sim: RefCounted) -> void:
 		var gap := Vector2(player[0] - cell[0], player[1] - cell[1]).length()
 		if arrest.is_empty():
 			# A wanted player who comes into view is held at gunpoint by the nearest sheriff; the rest cover him.
-			if wanted_hours(s, npc.settlement) > 0 and gap <= SEE_RANGE and not in_custody(s) and not restrained(s) and not Brawl.player_down(s) and npc.get("sleeping", {}).is_empty():
+			if wanted_hours(s, npc.settlement) > 0 and gap <= SEE_RANGE and recognised(s, int(npc.settlement)) and not in_custody(s) and not restrained(s) and not Brawl.player_down(s) and npc.get("sleeping", {}).is_empty():
 				if _nearer_sheriff(s, npc, player) != 0:
 					npc.arrest = {"phase": "backup", "since": s.tick}
 					npc.goal = ""
@@ -506,7 +552,7 @@ static func _return_property(s: Dictionary) -> void:
 		s.accounts[keeper] = int(s.accounts.get(keeper, 0)) - coins
 		s.accounts[str(s.player)] = int(s.accounts.get(str(s.player), 0)) + coins
 	Outfits.dress(s, s.player, property.outfit)
-	if s.has("shotgun") and int(property.get("gun_loaded", 0)) > 0 and Inventory.amount(s, s.player, "shotgun") > 0:
+	if s.has("shotgun") and int(property.get("gun_loaded", 0)) > 0 and load("res://sim/combat/shotgun.gd").owns(s):
 		s.shotgun.loaded = int(property.gun_loaded)
 	pc.erase("property")
 	pc.erase("booking")

@@ -1,4 +1,5 @@
 extends RefCounted
+const KIT_BANDAGES := 2   # bandages each sheriff carries
 ## Sheriff's offices, their weapon racks and the sheriff's patrol rounds.
 const World = preload("res://sim/world/world_db.gd")
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
@@ -6,6 +7,7 @@ const Nav = preload("res://sim/movement/navigation.gd")
 const OFFICE_CELLS: Dictionary = {1: [29, 42], 2: [325, 42], 3: [116, 246]}
 const RACK_SHOTGUNS := 2
 const RACK_SHELLS := 30
+const OFFICE_BANDAGES := 8
 
 ## One office per settlement; its rack is the office inventory (shotguns and shells).
 static func install(sim: RefCounted) -> void:
@@ -15,8 +17,9 @@ static func install(sim: RefCounted) -> void:
 		if town.has("office") or not OFFICE_CELLS.has(town.id): continue
 		var id := World.add_entity(sim, "office", "%s sheriff's office" % town.name, OFFICE_CELLS[town.id], town.id)
 		Inventory.create(s, id, 200)
-		Inventory.produce(s, id, "shotgun", RACK_SHOTGUNS)
-		Inventory.produce(s, id, "shell", RACK_SHELLS)
+		Inventory.produce(s, id, "rifle", RACK_SHOTGUNS)      # the office rack holds rifles
+		Inventory.produce(s, id, "cartridge", RACK_SHELLS)
+		Inventory.produce(s, id, "bandage", OFFICE_BANDAGES)   # the sheriffs' first-aid box
 		town.office = id
 
 ## Every sheriff wears the badge and goes by "Sheriff <surname>", so the law is easy to spot.
@@ -107,6 +110,12 @@ static func ensure(sim: RefCounted) -> void:
 			s.residents[str(id)].garrison = true   # lives at the office; does not change the trades the town needs
 			have += 1
 		if have > 0: dress(s)
+		# Every sheriff carries bandages for the wounds a gunfight leaves, refilled from the storehouse.
+		for sheriff_id in roster(s, town.id):
+			for source in [int(town.office), int(town.warehouse)]:   # the office's first-aid box, then the storehouse
+				var short: int = KIT_BANDAGES - Inventory.amount(s, int(sheriff_id), "bandage")
+				var spare: int = mini(short, mini(Inventory.amount(s, source, "bandage"), Inventory.available(s, int(sheriff_id))))
+				if spare > 0: Inventory.transfer(s, source, int(sheriff_id), "bandage", spare)
 
 ## "desk" or "patrol": sheriffs take turns, so at least one is in the office at any time.
 static func duty(s: Dictionary, npc: Dictionary) -> String:

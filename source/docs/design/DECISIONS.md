@@ -426,3 +426,55 @@ the heel first travels 8 pixels farther behind toe-off, then folds up and recove
 forward. Two cubic curves preserve the planted-foot horizontal velocity at
 lift-off and landing. The previous extra 10% reach at landing was removed so the
 cycle wraps continuously. Walking speed, stamina and simulation movement are unchanged.
+
+## 2026-11-19 — Carrying weight, background saves, signpost distances
+
+**Item weights live in code for now.** `sim/player/encumbrance.gd` holds a table of
+weights in tenths (integer maths; anything unlisted, including clothing, weighs
+0.5). `content/items/core.json` lists only eight items and not the shotgun,
+shells or clothing, so a data-file version waits for the move of all tuning
+tables into `content/`. The load is computed from the inventory when needed,
+never stored. Heavy, overloaded and crushing loads lengthen steps by 10, 30 and
+60% through `Pace.delay(..., slower)`. With `slower = 0` that function gives
+exactly the old result, so no existing route or test changes.
+
+**Saves are written on a background thread.** A save of the real world costs about
+340 ms: a checksum, the write, then a full verify (re-read, checksum again,
+invariants, schema). Only the deep copy of the state (`sim.snapshot()`, about
+12 ms) has to run on the main thread. `SaveManager.save_snapshot(data, path)`
+does the rest on that private copy, so `app/world_controller.gd` runs it on a
+`Thread` (one at a time). A load first waits for any save still running.
+Autosaves go to the older of `autosave_a.save` and `autosave_b.save` at 06:00
+each in-game day. Each save gets a small `.info` JSON file (day, time, town,
+when written) so the title screen can offer Continue without verifying a whole
+world. Named manual slots wait for a pause menu.
+
+**Signposts measure their roads once.** `RoadPlanner.ensure_ways` routes from each
+signpost to every town's gate (`town_gate`, which auto-travel now shares) on the
+travel grid. It stores the distance in paces and the heading in thousandths on
+the signpost entity. It runs at the end of `start_game`, and in `restore` for
+older saves (about 28 ms once). Signposts that already have `ways` are skipped,
+so it is stable across save and load.
+
+## 2026-11-19: The rifle is the main gun; shots are heard; silent takedowns
+
+**Rifle as the main gun.** At the owner's request, the player starts with a rifle
+and ten cartridges, and the office racks hold rifles. The rifle fires one
+accurate bullet to 26 cells at 2.6 times a pellet's force. It is slower and
+louder than the shotgun. The gun code became a weapon table
+(`Shotgun.WEAPONS`, `kind()`, `spec()`), so the shotgun keeps working for anyone
+who has one. The state key stays `s.shotgun`, now with a `kind` field, so old
+saves load unchanged. Each projectile carries its own strength and speed.
+
+**Shots are heard, not seen.** A rifle carries 60 cells and a shotgun 45.
+`Gunfire.town_in_earshot` decides whether a town reacts: the shot must be near
+enough to the town, or one of its sheriffs must be within earshot. Out in the
+wilds, beyond anyone's hearing, nothing happens. This replaces "anything
+within 70 cells of a storehouse". People who hear a shot but can't see it say
+so. Only those who see it are witnesses (chronicle and witness reports).
+
+**Silent takedowns.** `sim/combat/takedown.gd`: crouched, adjacent and not seen
+coming (the target isn't walking toward you and isn't already alert), you can
+kill or knock out without a sound. Such crimes call
+`Law.crime(..., silent = true)`, and then a sheriff counts as a witness only
+with a clear line of sight. Normally any sheriff within 24 cells counts.

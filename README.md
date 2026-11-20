@@ -72,7 +72,7 @@ Prefer a standalone app that needs no Godot? Download **`Project-Solo-macOS.zip`
    /path/to/Godot --path .                       # any platform, without the script
    ```
 
-Then **start a new game** from the title screen. You arrive in Alder Hollow with a backpack, a shotgun (lowered) and not much else.
+Then **start a new game** from the title screen. You arrive in Alder Hollow with a backpack, a rifle (slung) and not much else.
 The controls are below.
 
 | Control | Action |
@@ -81,10 +81,10 @@ The controls are below.
 | **Left-click** | Open the action menu on a person or object (punch, shove, talk, loot, chop, mine, bandage…). Double-click open ground to walk there. |
 | **Right-click twice** | Walk to that square. Hold **Shift** while walking a route or to a target to run. |
 | **Wheel** or **pinch**, **Tab**, **M** | Zoom, toggle camera follow, or open the map view. |
-| **I**, **H**, **C** | Inventory (6×6 grid, clothing squares), health window, or your clothes. |
+| **I**, **H**, **C**, **J** | Inventory (6×6 grid, clothing squares), health window, your clothes, or the journal (people met, news, favours, your standing). |
 | **F**, **E**, **Q** | Interact, eat, or drink at a well. |
 | **Right mouse** + **Left mouse**, **Space** | Ready your fists and punch, or shove. |
-| **1 / 2 / 3 / 4** | Hotbar slots; weapons you pick up go there automatically. With the shotgun ready, hold right mouse to aim and left mouse to fire; **R** reloads. |
+| **1 / 2 / 3 / 4** | Hotbar slots; weapons you pick up go there automatically. With a gun ready (your rifle, or a shotgun if you find one), hold right mouse to aim and left mouse to fire; **R** reloads. |
 | **P**, **,** / **.** | Pause, slower or faster time (also the bottom-right clock). |
 | **T**, **G** | Rotate the nearest furniture item, or move it to its best spot against a wall. |
 | **F4**, **F5 / F9**, **Esc** | Performance tab, save / load, close the open window. |
@@ -116,6 +116,7 @@ Inside `source/`:
 | [Decisions](source/docs/design/DECISIONS.md) | Technical and design decisions, including later changes that supersede earlier ones |
 | [Changelog](source/docs/status/CHANGELOG.md) | What changed and when |
 | [Validation](source/docs/validation/VALIDATION.md) | Checks, screenshots, benchmarks and their dates |
+| [Developer handover](source/docs/HANDOVER.md) · [Architecture](source/docs/ARCHITECTURE.md) · [Game design](source/docs/GAME_DESIGN.md) · [Status](source/docs/DEVELOPMENT_STATUS.md) · [Roadmap](source/docs/ROADMAP.md) | Where the work stands, how the systems fit, and the plan for what comes next |
 | [Blueprint](source/docs/design/01_GAME_FOUNDATION.md) · [Technical layers](source/docs/design/02_TECHNICAL_LAYERS.md) · [Roadmap](source/docs/design/03_BUILD_ROADMAP.md) · [Contributor brief](source/docs/design/04_CODEX_START_HERE.md) | Original project intent and implementation plan |
 
 ## Save and back up

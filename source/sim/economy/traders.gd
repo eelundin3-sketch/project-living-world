@@ -94,6 +94,7 @@ static func _set_out(sim: RefCounted, trip: Dictionary, to: int, item: String, q
 	var route := Nav.request_travel_path(s, start, finish)   # along the roads
 	if not route.ok: return false
 	trip.path = [start] + route.path
+	if s.residents.has(str(trip.id)): load("res://sim/entities/gossip.gd").pack(s, s.residents[str(trip.id)], int(trip.town))   # news goes along
 	# When the trader reaches each cell: a little quicker on the roads (pace.gd).
 	trip.eta = Pace.schedule(s, trip.path, TICKS_PER_CELL)
 	trip.route = load("res://sim/economy/regional_trade.gd").route_between(s, int(trip.town), to)   # (loaded here: regional_trade preloads this file)
@@ -214,4 +215,6 @@ static func arrive(sim: RefCounted, trip: Dictionary) -> void:
 	var store: Array = s.entities[str(s.settlements[str(trip.town)].warehouse)].cell
 	s.entities[key].cell = [store[0], store[1] + 2]
 	_sell_here(sim, trip)
-	if s.residents.has(key): s.residents[key].status = trip.status
+	if s.residents.has(key):
+		s.residents[key].status = trip.status
+		load("res://sim/entities/gossip.gd").unpack(s, s.residents[key], int(trip.town))   # and is told at the market

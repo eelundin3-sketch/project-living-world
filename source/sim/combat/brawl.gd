@@ -416,10 +416,9 @@ static func kill(sim: RefCounted, npc: Dictionary, cause: String) -> void:
 	var name_value: String = s.entities[str(npc.id)].name
 	sim.record("%s has died (%s)." % [name_value, cause])
 	event(s, "fall", s.entities[str(npc.id)].cell, [0, 0])
-	if s.has("factions"):
-		for other in s.residents.values():
-			if other.id != npc.id and other.health > 0 and other.settlement == npc.settlement:
-				Society.remember(s, other.id, "death", s.player, "%s was killed." % name_value, -35)
+	# Who killed them is remembered where it happens (law.remember_crime): a death the player had
+	# no hand in no longer turns the whole town against them.
+	if s.has("residents"): load("res://sim/world/chronicle.gd").record(s, "death", int(npc.settlement), 0, int(npc.id), s.entities[str(npc.id)].cell, {"cause": cause})
 
 ## The player's health reached zero. Every command is refused from now on (see simulation.gd).
 static func kill_player(sim: RefCounted) -> void:

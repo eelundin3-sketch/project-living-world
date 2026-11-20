@@ -59,7 +59,7 @@ static func find_cover(s: Dictionary, from: Array, origin: Array) -> Array:
 			var score: float = float(absi(dx) + absi(dy))
 			if score >= best_score or not Cover.is_cover(s, cell): continue
 			if Vector2(cell[0] - origin[0], cell[1] - origin[1]).length() < 2.5: continue
-			if Cover.line_clear(s, origin, cell): continue   # still in the shooter's sight
+			if Cover.line_clear(s, origin, cell, false, true): continue   # still in the shooter's sight (they crouch to hide)
 			best_score = score
 			best = cell
 	if not best.is_empty(): return best

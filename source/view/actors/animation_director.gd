@@ -98,6 +98,15 @@ static func action_for(s: Dictionary, entity: Dictionary, aim_held: bool = false
 			"pursue": result.action = "combat_idle"
 			_: result.action = "idle"
 		return result
+	# A villager binding a wound (bleeding.gd): the same motions as the player's bandaging.
+	if not npc.is_empty() and not npc.get("bandaging", {}).is_empty():
+		var binding: Dictionary = npc.bandaging
+		result.action = "treat"
+		result.phase = clampf(float(s.tick - int(binding.since)) / maxf(1.0, float(int(binding.until) - int(binding.since))), 0.0, 1.0)
+		result.duration = maxf(0.1, float(int(binding.until) - int(binding.since)) / 10.0)
+		result.treat_part = "left_forearm"
+		result.treat_kind = "bandage"
+		return result
 	# The player asleep in a bed.
 	if entity.kind == "player" and not s.get("player_control", {}).get("sleeping", {}).is_empty():
 		result.action = "rest"
@@ -329,6 +338,10 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 			jumped=true
 		var motion: Vector2 = pose.position - before
 		pose.moving = motion.length() > 0.01 and not jumped
+		# Carried over someone's shoulder: drawn up at shoulder height (carrying.gd).
+		var shoulder: float = -20.0 if s.get("residents", {}).get(key, {}).has("carried_by") else 0.0
+		pose.shoulder = shoulder
+		if entity.kind == "player": pose.look = s.get("player_status", {}).get("look", {})   # beard, dirt, blood (look.gd)
 		# Sprint ramp: eases in over about 0.3 s and out over about 0.5 s after shift is released.
 		var old_blend: float = float(pose.get("run_blend", 0.0))
 		var wanted_blend: float = 1.0 if (sprinting and pose.moving) else 0.0
@@ -416,8 +429,11 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 		pose.back = sin(float(pose.heading)) < -0.35
 		pose.aiming = entity.kind == "player" and player_aiming
 		pose.bloom = int(s.get("shotgun", {}).get("bloom", 0)) if entity.kind == "player" else 0
-		pose.limp = Limbs.mode(s, int(entity.id)) == "limp"
-		pose.limp_side = -1 if Limbs.disabled(s, int(entity.id), "left_leg") else 1
+		# A useless leg drags; a hurt one (not yet useless) still makes you favour it.
+		var hurt_left: bool = Limbs.state(s, int(entity.id), "left_leg") != "ok"
+		var hurt_right: bool = Limbs.state(s, int(entity.id), "right_leg") != "ok"
+		pose.limp = Limbs.mode(s, int(entity.id)) == "limp" or (hurt_left != hurt_right)
+		pose.limp_side = -1 if (Limbs.disabled(s, int(entity.id), "left_leg") or (hurt_left and not hurt_right)) else 1
 		var dead_arms: Array = []
 		# "right_*" is the figure's side -1 (see the health screen), so the right arm is arms[-1].
 		if Limbs.disabled(s, int(entity.id), "right_arm"): dead_arms.append(-1)
@@ -426,7 +442,7 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 		pose.ready = entity.kind == "player" and player_ready
 		# An unreadied shotgun, and every sheriff's, hangs from a sling across the back.
 		var carried_items: Dictionary = s.inventories.get(key, {}).get("items", {})
-		pose.slung = (int(carried_items.get("shotgun", 0)) > 0 and not (entity.kind == "player" and s.get("shotgun", {}).get("equipped", false))) or s.get("residents", {}).get(key, {}).get("occupation", "") == "Sheriff"
+		pose.slung = ((int(carried_items.get("shotgun", 0)) + int(carried_items.get("rifle", 0))) > 0 and not (entity.kind == "player" and s.get("shotgun", {}).get("equipped", false))) or s.get("residents", {}).get(key, {}).get("occupation", "") == "Sheriff"
 		var status: String = s.get("residents", {}).get(key, {}).get("status", "")
 		if status != pose.get("last_status", "") and status == "Ate from communal stores" and not first:
 			pose.eat_until = time + 0.8
@@ -440,6 +456,8 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 				item = candidate
 				quantity = items[candidate]
 				break
+		if entity.kind == "player" and int(s.get("player_control", {}).get("carrying", {}).get("id", 0)) != 0:
+			quantity = 1   # a body over the shoulder: the carrying walk
 		pose.handling_age += dt
 		if not first and not paused and pose.items != items:
 			var old_total: int = 0
@@ -511,6 +529,8 @@ func update(s: Dictionary, delta: float, paused: bool, speed: int) -> void:
 		# Crouching eases down in about a third of a second with a small dip past the final
 		# height, and rises again a little more slowly, so neither is a snap.
 		var wants_sneak: bool = is_player and bool(s.get("player_control", {}).get("crouching", false)) and action not in ["fall", "down", "getup", "treat", "rest"]
+		# A sheriff moving up between covers goes low (gunfire.gd "advance").
+		if not is_player and str(s.get("residents", {}).get(key, {}).get("cover_cycle", {}).get("phase", "")) == "advance": wants_sneak = true
 		# In cover the body is low against the wall; leaning out lifts it a little and shifts it towards the corner.
 		var in_cover: bool = false
 		var lean_to := Vector2.ZERO

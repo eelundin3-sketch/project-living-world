@@ -131,9 +131,9 @@ func _draw() -> void:
 		if item != "":
 			var have: int = int(s.get("inventories", {}).get(str(s.player), {}).get("items", {}).get(item, 0))
 			_icon(item, rect.get_center() + Vector2(0, -2), 1.0 if have > 0 else 0.35)
-			if have > 1 or item in ["shell", "food", "rye", "log", "plank", "bandage", "antiseptic", "ore", "tool"]:
+			if have > 1 or item in ["cartridge", "shell", "food", "rye", "log", "plank", "bandage", "antiseptic", "ore", "tool"]:
 				draw_string(font, rect.position + Vector2(rect.size.x - 20, rect.size.y - 5), str(have), HORIZONTAL_ALIGNMENT_RIGHT, 16, 12, Color("f0e4c8"))
-		if item == "shotgun" and s.get("shotgun", {}).get("equipped", false):
+		if item in ["rifle", "shotgun"] and s.get("shotgun", {}).get("equipped", false) and str(s.shotgun.get("kind", item)) == item:
 			draw_string(font, rect.position + Vector2(5, 14), "%d" % s.shotgun.loaded, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("ffd98a"))
 	for entry in [["inventory", "I"], ["health", "H"], ["map", "M"]]:
 		var rect: Rect2 = rects[entry[0]]

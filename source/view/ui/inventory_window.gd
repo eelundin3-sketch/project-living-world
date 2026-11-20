@@ -4,6 +4,7 @@ extends Control
 ## around by its title bar. Inside is only the item grid and the clothing squares.
 const InventoryGrid = preload("res://view/ui/inventory_grid.gd")
 const Inventory = preload("res://sim/inventory/inventory_store.gd")
+const Encumbrance = preload("res://sim/player/encumbrance.gd")
 
 signal close_requested
 signal minimize_requested
@@ -131,4 +132,6 @@ func _draw() -> void:
 		var s: Dictionary = simulation.state
 		var inv: Dictionary = s.inventories.get(str(s.player if owner_id == 0 else owner_id), {"items": {}, "capacity": 0})
 		var load_text := "%d / %d" % [Inventory.used(inv), inv.capacity]
+		if owner_id == 0:   # your own pack: show the weight you carry (encumbrance.gd)
+			load_text = Encumbrance.describe(s, s.player)
 		draw_string(font, Vector2(size.x - 14.0 - font.get_string_size(load_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x, BAR * 0.5 + 4.0), load_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("8f8670"))

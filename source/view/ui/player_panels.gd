@@ -6,6 +6,8 @@ const BodyDiagram = preload("res://view/ui/body_diagram.gd")
 const Outfits = preload("res://sim/entities/outfits.gd")
 const HealthWindow = preload("res://view/ui/health_window.gd")
 const InventoryWindow = preload("res://view/ui/inventory_window.gd")
+const TradeWindow = preload("res://view/ui/trade_window.gd")
+var trade_window: Control
 var inventory_window: Control
 var inventory_moved := false
 var loot_window: Control
@@ -141,6 +143,12 @@ func _ready() -> void:
 	add_child(loot_window)
 	loot_window.close_requested.connect(func() -> void: show_mode(""))
 	loot_window.minimize_requested.connect(minimize_window)
+	trade_window = TradeWindow.new()
+	trade_window.simulation = simulation
+	trade_window.visible = false
+	add_child(trade_window)
+	trade_window.close_requested.connect(func() -> void: show_mode(""))
+	trade_window.minimize_requested.connect(minimize_window)
 	show_mode("")
 func _build_meter() -> void:
 	meter_column = VBoxContainer.new()
@@ -206,12 +214,16 @@ func restore_window() -> void:
 	_apply_visibility()
 func _apply_visibility() -> void:
 	var shown := not minimized and not mode.is_empty()
-	panel.visible = shown and mode not in ["health", "inventory", "loot", "wardrobe"]
+	panel.visible = shown and mode not in ["health", "inventory", "loot", "wardrobe", "trade"]
 	shade.visible = shown and mode not in ["inventory", "loot", "wardrobe"]
 	shade.color = Color(0.02, 0.03, 0.035, 0.55) if mode == "health" else Color(0.02, 0.03, 0.025, 0.62)
 	if health_window != null: health_window.visible = shown and mode == "health"
 	if inventory_window != null: inventory_window.visible = shown and mode in ["inventory", "loot", "wardrobe"]
 	if loot_window != null: loot_window.visible = shown and mode == "loot"
+	if trade_window != null:
+		var opening_trade: bool = shown and mode == "trade" and not trade_window.visible
+		trade_window.visible = shown and mode == "trade"
+		if opening_trade: trade_window.position = trade_window.home_position()
 
 func show_mode(value: String) -> void:
 	treatment_menu.hide()
@@ -268,7 +280,11 @@ func rebuild() -> void:
 	elif mode == "inventory":
 		pass   # the grid draws itself
 	else:
-		for item in ["log","plank","food","rye","bandage","antiseptic","shell","shotgun","tool","ore"]:
+		if mode != "inventory":
+			# Haggle once a visit; the terms show in the summary line.
+			var talk_row := HBoxContainer.new(); list.add_child(talk_row)
+			add_button(talk_row, "Haggle", func() -> void: simulation.submit("haggle", {"target": target}))
+		for item in ["log","plank","food","rye","bandage","antiseptic","cartridge","rifle","shell","shotgun","tool","ore"]:
 			var row:=HBoxContainer.new(); list.add_child(row)
 			var label:=Label.new(); label.custom_minimum_size=Vector2(270,45); row.add_child(label); rows[item]=label
 			if mode=="inventory":
@@ -278,8 +294,10 @@ func rebuild() -> void:
 					hotbar_button.tooltip_text = "Put %s on hotbar slot %d" % [item,slot + 1]
 					hotbar_button.custom_minimum_size = Vector2(28,24)
 			else:
-				add_button(row,"Buy 1",func() -> void: simulation.submit("person_trade",{"target":target,"item":item,"buy":true}))
-				add_button(row,"Sell 1",func() -> void: simulation.submit("person_trade",{"target":target,"item":item,"buy":false}))
+				add_button(row,"Buy 1",func() -> void: simulation.submit("person_trade",{"target":target,"item":item,"buy":true,"quantity":1}))
+				add_button(row,"Buy 5",func() -> void: simulation.submit("person_trade",{"target":target,"item":item,"buy":true,"quantity":5}))
+				add_button(row,"Sell 1",func() -> void: simulation.submit("person_trade",{"target":target,"item":item,"buy":false,"quantity":1}))
+				add_button(row,"Sell all",func() -> void: simulation.submit("person_trade",{"target":target,"item":item,"buy":false,"quantity":-1}))
 				collect_buttons.append(add_button(row,"Collect",func() -> void: simulation.submit("take_item",{"target":target,"item":item})))
 		if mode=="inventory": add_button(list,"Stow held item · hands empty",func() -> void: simulation.submit("hold_item",{"item":""}))
 func refresh() -> void:
@@ -291,6 +309,7 @@ func refresh() -> void:
 		if (wanted in ["inventory", "loot", "wardrobe"]) != (mode in ["inventory", "loot", "wardrobe"]):
 			simulation.submit("rummage", {"open": wanted in ["inventory", "loot", "wardrobe"]})
 		mode=wanted; minimized=false; dock_button.visible=false; visible=true
+		if mode == "trade": trade_window.tab = str(pc.get("ui_tab", "trade"))   # Talk opens on the Talk tab
 		if mode == "loot" and not loot_moved: loot_window.position = inventory_window.position + Vector2(inventory_window.size.x + 18.0, 0.0)
 	if mode.is_empty(): return
 	if cached_mode!=mode: rebuild()
@@ -321,16 +340,28 @@ func refresh() -> void:
 		loot_window.refresh(s)
 		if inventory_window.position != inventory_window.home_position(): inventory_moved = true
 		if loot_window.position != inventory_window.position + Vector2(inventory_window.size.x + 18.0, 0.0): loot_moved = true
+	elif mode == "trade":
+		if not s.entities.has(str(target)): show_mode(""); return
+		trade_window.simulation = simulation
+		trade_window.show_for(target)
+		trade_window.refresh(s)
 	else:
 		var e: Dictionary=s.entities.get(str(target),{})
 		if e.is_empty(): show_mode(""); return
 		title.text="INTERACT · "+e.name
 		for button in collect_buttons: button.visible=e.kind in ["stash","sawmill"]
 		var npc: Dictionary=s.get("residents",{}).get(str(target),{})
-		summary.text=("“I’m %s.”\n" % npc.get("status","available").to_lower() if not npc.is_empty() else "Village supplies · buy or sell goods.\n")+"You: %d coins · Other party: %d coins" % [s.accounts.get(str(s.player),0),s.accounts.get(str(target),0)]
+		var Stalls = load("res://sim/economy/stall_service.gd")
+		var terms: Dictionary = pc.get("trade_terms", {})
+		var pct: int = int(terms.get("pct", 0)) if int(terms.get("target", 0)) == target else 0
+		var terms_text: String = "" if pct == 0 else ("  ·  Haggled: %d%% off" % -pct if pct < 0 else "  ·  Annoyed: %d%% dearer" % pct)
+		var keeper: Dictionary = Stalls.counterpart(s, target)
+		var who: String = String(s.entities.get(str(keeper.get("id", 0)), {}).get("name", "")) if not keeper.is_empty() else ""
+		var first_line: String = ("“I’m %s.”\n" % npc.get("status","available").to_lower()) if not npc.is_empty() else (("%s is minding the stall.\n" % who) if not who.is_empty() else "Village supplies · buy or sell goods.\n")
+		summary.text=first_line+"You: %d coins · Other party: %d coins%s" % [s.accounts.get(str(s.player),0),s.accounts.get(str(target),0),terms_text]
 		for item in rows:
 			rows[item].get_parent().visible = e.kind != "market_stall" or item in e.sale_items
-			rows[item].text="%s · You %d / Here %d\nBuy %d · Sell %d coins" % [item.capitalize(),Inventory.amount(s,s.player,item),Inventory.amount(s,target,item),Market.quote(s,e.settlement,item,true),Market.quote(s,e.settlement,item,false)]
+			rows[item].text="%s · You %d / Here %d\nBuy %d · Sell %d coins" % [item.capitalize(),Inventory.amount(s,s.player,item),Inventory.amount(s,target,item),Stalls.price(s,int(e.settlement),item,true,target),Stalls.price(s,int(e.settlement),item,false,target)]
 		detail.text = "Goods come from this stall’s stock. Stay at the counter to trade." if e.kind == "market_stall" else "Stay nearby to trade. People trade personal goods; work cargo is unavailable."
 		notice.text=pc.notice
 func _part_name(part: String) -> String:

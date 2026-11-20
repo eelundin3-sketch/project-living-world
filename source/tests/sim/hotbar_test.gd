@@ -19,16 +19,12 @@ func _initialize() -> void:
 	check(s.hotbar.active == 0 or s.hotbar.active == 2, "One slot is always selected")
 	sim.submit("hotbar_use", {"slot": 2}); sim.step()
 	check(s.hotbar.active == 2 and s.player_control.held_item == "food", "Pressing the selected slot again keeps it selected and in hand")
-	# Shotgun in a slot raises and lowers the weapon.
-	var office: int = 0
-	for e in s.entities.values():
-		if e.kind == "office" and e.settlement == 1: office = e.id
-	Inventory.transfer(s, office, s.player, "shotgun", 1)
-	sim.submit("hotbar_assign", {"slot": 0, "item": "shotgun"}); sim.step()
+	# The rifle (your main gun) in a slot raises and lowers it.
+	sim.submit("hotbar_assign", {"slot": 0, "item": "rifle"}); sim.step()
 	sim.submit("hotbar_use", {"slot": 0}); sim.step()
-	check(s.shotgun.equipped and s.hotbar.active == 0, "Shotgun slot raises the weapon")
+	check(s.shotgun.equipped and s.hotbar.active == 0 and s.shotgun.kind == "rifle", "The rifle slot raises the rifle")
 	sim.submit("hotbar_use", {"slot": 2}); sim.step()
-	check(not s.shotgun.equipped and s.hotbar.active == 2, "Selecting another slot lowers the shotgun and moves the selection")
+	check(not s.shotgun.equipped and s.hotbar.active == 2, "Selecting another slot lowers the rifle and moves the selection")
 	sim.submit("hotbar_assign", {"slot": 3, "item": "banana"}); sim.step()
 	check(s.hotbar.slots[3] == "", "Unknown items are refused")
 	if failures == 0: print("Hotbar: PASS")

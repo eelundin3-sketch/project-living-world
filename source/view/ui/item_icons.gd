@@ -10,6 +10,17 @@ static func draw(canvas: CanvasItem, item: String, c: Vector2, alpha: float) -> 
 			canvas.draw_line(c + Vector2(4, -1), c + Vector2(23, -1), Color("c9ccc4", alpha), 3.0)
 			canvas.draw_line(c + Vector2(2, 3), c + Vector2(16, 3), Color("8a9094", alpha), 2.0)
 			canvas.draw_rect(Rect2(c + Vector2(6, 2), Vector2(8, 4)), Color("a8743c", alpha))
+		"rifle":   # a long, slim rifle: wooden stock, long barrel, a sight
+			canvas.draw_colored_polygon(PackedVector2Array([c + Vector2(-24, 3), c + Vector2(-8, -2), c + Vector2(-5, 3), c + Vector2(-20, 8)]), Color("8e5b2f", alpha))
+			canvas.draw_rect(Rect2(c + Vector2(-8, -3), Vector2(10, 5)), Color("5f666a", alpha))
+			canvas.draw_line(c + Vector2(1, -1), c + Vector2(26, -1), Color("c9ccc4", alpha), 2.2)
+			canvas.draw_rect(Rect2(c + Vector2(2, 0), Vector2(14, 3)), Color("8e5b2f", alpha))
+			canvas.draw_line(c + Vector2(-2, -4), c + Vector2(2, -4), Color("3b3f42", alpha), 1.6)
+		"cartridge":   # brass cases with lead tips
+			for x in [-5.0, 0.0, 5.0]:
+				canvas.draw_rect(Rect2(c + Vector2(x - 2, -6), Vector2(4, 13)), Color("d9b45a", alpha))
+				canvas.draw_colored_polygon(PackedVector2Array([c + Vector2(x - 2, -6), c + Vector2(x + 2, -6), c + Vector2(x, -10)]), Color("8a8f93", alpha))
+				canvas.draw_rect(Rect2(c + Vector2(x - 2, -6), Vector2(4, 13)), dark, false, 0.8)
 		"shell":
 			canvas.draw_rect(Rect2(c + Vector2(-5, -9), Vector2(10, 18)), Color("b2392e", alpha))
 			canvas.draw_rect(Rect2(c + Vector2(-5, 5), Vector2(10, 4)), Color("d9b45a", alpha))

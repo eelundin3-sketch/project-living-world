@@ -13,15 +13,15 @@ func _initialize() -> void:
 
 func run() -> void:
 	var sim := Sim.new(); sim.start_game(); var s: Dictionary = sim.state
-	check(Shotgun.owns(s) and not s.shotgun.equipped, "The player starts with a shotgun, lowered")
-	check(Inventory.amount(s, s.player, "shell") == 10, "...and ten shells")
-	Inventory.consume(s, s.player, "shotgun", 1); Inventory.consume(s, s.player, "shell", 10)   # the rest of this test takes them from the rack
-	# The sheriff's office rack holds shotguns and shells.
+	check(Shotgun.owns(s) and Shotgun.kind(s) == "rifle" and not s.shotgun.equipped, "The player starts with a rifle, slung")
+	check(Inventory.amount(s, s.player, "cartridge") == 10, "...and ten cartridges")
 	var office: int = 0
 	for entity in s.entities.values():
 		if entity.kind == "office" and entity.settlement == 1: office = entity.id
-	check(office != 0 and Inventory.amount(s, office, "shotgun") >= 1 and Inventory.amount(s, office, "shell") >= 10, "Sheriff office rack stores shotguns and shells")
-	check(Inventory.transfer(s, office, s.player, "shotgun", 1).ok and Inventory.transfer(s, office, s.player, "shell", 10).ok, "Player can take a shotgun and shells from the rack")
+	check(office != 0 and Inventory.amount(s, office, "rifle") >= 1 and Inventory.amount(s, office, "cartridge") >= 10, "Sheriff office racks hold rifles and cartridges")
+	# The rest of this test is about the shotgun, which still works for whoever has one.
+	Inventory.consume(s, s.player, "rifle", 1); Inventory.consume(s, s.player, "cartridge", 10)
+	check(Inventory.produce(s, s.player, "shotgun", 1) and Inventory.produce(s, s.player, "shell", 10), "Given a shotgun and shells")
 	for npc in s.residents.values():
 		if npc.occupation == "Sheriff": npc.occupation = "Gatherer"   # no law in this test: it is only about pellets
 	sim.submit("shotgun_toggle"); sim.step()

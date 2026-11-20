@@ -42,7 +42,7 @@ static func paint(c: Node2D, entity: Dictionary, stock: Dictionary, phase: float
 				var t: float = fmod(phase*0.15+i*0.23,1.0)
 				c.draw_line(p+Vector2(58+t*18,20+t*15),p+Vector2(61+t*18,22+t*15),Color("dcb77a"),1.5)
 	elif fixture.kind == "weapon_rack":
-		Furniture.weapon_rack(c, p, int(stock.get("shotgun", 0)), int(stock.get("shell", 0)))
+		Furniture.weapon_rack(c, p, int(stock.get("rifle", 0)) + int(stock.get("shotgun", 0)), int(stock.get("cartridge", 0)) + int(stock.get("shell", 0)))
 	elif fixture.kind == "oven":
 		Furniture.oven(c, p, phase, active, int(stock.get("rye", 0)), int(stock.get("food", 0)))
 	elif fixture.kind == "forge":

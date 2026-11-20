@@ -60,7 +60,12 @@ func _initialize() -> void:
 	market_state.entities[str(market_state.player)].cell = World.Fixtures.interaction_cell(market_state, stall).duplicate()
 	market_sim.submit("interact", {"target": stall})
 	market_sim.step()
-	check(market_state.player_control.ui_target == stall, "F opens trade at the stall counter")
+	# Someone comes to the counter first (stall_service.gd), then trade opens.
+	var Stalls = load("res://sim/economy/stall_service.gd")
+	for wait in range(300):
+		if Stalls.staffed(market_state, market_state.entities[str(stall)]) and market_state.player_control.ui_target == stall: break
+		market_sim.step()
+	check(market_state.player_control.ui_target == stall, "F opens trade at the stall counter once someone is behind it")
 	var balance: int = market_state.accounts[str(market_state.player)]
 	market_sim.submit("person_trade", {"target": stall, "item": "plank", "buy": true})
 	market_sim.step()

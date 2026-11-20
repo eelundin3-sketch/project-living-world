@@ -328,10 +328,14 @@ func _sync_characters(delta: float = -1.0) -> void:
 		# On the map a figure is a few pixels tall: it still moves every frame, but its pose is
 		# repainted on one frame in four (staggered), which is not visible at that size.
 		var zoom: float = get_viewport().get_camera_2d().zoom.x if get_viewport().get_camera_2d() != null else 1.0
-		if zoom < 0.6 and (depth_frame + entity.id) % 4 != 0 and character_models[key].position.distance_to(pose.position) < 96.0:
-			character_models[key].position = pose.position
+		var drawn: Dictionary = pose
+		if float(pose.get("shoulder", 0.0)) != 0.0:   # carried over someone's shoulder (carrying.gd)
+			drawn = pose.duplicate()
+			drawn.position = pose.position + Vector2(0, float(pose.shoulder))
+		if zoom < 0.6 and (depth_frame + entity.id) % 4 != 0 and character_models[key].position.distance_to(drawn.position) < 96.0:
+			character_models[key].position = drawn.position
 		else:
-			character_models[key].set_pose(pose, delta)
+			character_models[key].set_pose(drawn, delta)
 	for key in character_models.keys():
 		if not keep.has(key):
 			character_models[key].queue_free()
@@ -927,7 +931,7 @@ func _draw_entity(s: Dictionary, entity: Dictionary, p: Vector2, canvas: Node2D 
 			var rect := Rect2(Vector2(footprint.position) * CELL - Vector2.ONE * CELL / 2, Vector2(footprint.size) * CELL)
 			MapArt.construction(canvas, entity, site, rect)
 		"caravan": MapArt.cart(canvas, p)
-		"signpost": MapArt.signpost(canvas, p)
+		"signpost": MapArt.signpost(canvas, p, entity.get("ways", []))
 		"ore":
 			if entity.get("big", false):
 				var rr: Array = entity.rock_rect

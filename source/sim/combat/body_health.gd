@@ -51,6 +51,13 @@ static func injure(s: Dictionary, part: String, amount: int, kind: String = "cut
 	body.bleeding=kind=="cut"
 	if body.bandage!="none": body.bandage="dirty"
 	s.player_health.notice="%s: %s. Press H to examine and treat." % [part.replace("_"," ").capitalize(),kind]
+	load("res://sim/player/look.gd").bloodied(s, 20 if kind == "cut" else 5)   # it shows on your clothes
+	# Hit while carrying something in your hands: you lose your grip (it stays in your pack).
+	var control: Dictionary = s.get("player_control", {})
+	if not str(control.get("held_item", "")).is_empty():
+		control.held_item = ""
+		control.held_quantity = 0
+		control.notice = "The blow knocks what you were carrying out of your hands."
 	return true
 static func treatment_problem(s: Dictionary, part: String, action: String) -> String:
 	if not PARTS.has(part) or action not in ["bandage", "disinfect", "remove"]: return "Unknown treatment."

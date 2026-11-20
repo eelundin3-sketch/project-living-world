@@ -6,14 +6,14 @@ const Inventory = preload("res://sim/inventory/inventory_store.gd")
 const Shotgun = preload("res://sim/combat/shotgun.gd")
 const PlayerActions = preload("res://sim/player/player_actions.gd")
 const SLOTS := 4
-const ITEMS: Array[String] = ["shotgun", "shell", "tool", "bandage", "antiseptic", "food", "rye", "log", "plank", "ore"]
+const ITEMS: Array[String] = ["rifle", "cartridge", "shotgun", "shell", "tool", "bandage", "antiseptic", "food", "rye", "log", "plank", "ore"]
 
 static func initialize(s: Dictionary) -> void:
 	if not s.has("player") or not s.has("player_control") or s.has("hotbar"): return
 	s.hotbar = {"slots": ["", "", "", ""], "active": 0}
 
 ## Weapons that go straight onto the hotbar when picked up, and leave it when they are put away.
-const WEAPONS: Array[String] = ["shotgun"]
+const WEAPONS: Array[String] = ["rifle", "shotgun"]
 
 ## Called every tick: a newly acquired weapon takes the first free slot, however it was obtained
 ## (rack, chest, loot, the ground); a weapon you no longer carry frees its slot.
@@ -57,13 +57,15 @@ static func use(s: Dictionary, slot: int) -> String:
 	var pc: Dictionary = s.player_control
 	var gun: Dictionary = s.get("shotgun", {})
 	hotbar.active = slot
-	if item != "shotgun" and not gun.is_empty() and gun.equipped: Shotgun.toggle(s)   # lower it
+	if not item in WEAPONS and not gun.is_empty() and gun.equipped: Shotgun.toggle(s)   # lower it
 	if item.is_empty():
 		if pc.held_quantity > 0: PlayerActions.hold(s, "")
 		return "Slot %d is empty. Assign an item in your inventory (I)." % (slot + 1)
 	if Inventory.amount(s, s.player, item) < 1: return "You do not have any %s." % item
-	if item == "shotgun":
+	if item in WEAPONS:
 		if pc.held_quantity > 0: PlayerActions.hold(s, "")
-		return Shotgun.toggle(s) if gun.is_empty() or not gun.equipped else "Shotgun ready."
+		if not gun.is_empty() and gun.equipped and str(gun.get("kind", "")) != item: Shotgun.toggle(s)   # put the other gun away first
+		if not gun.is_empty(): gun.kind = item
+		return Shotgun.toggle(s) if gun.is_empty() or not gun.equipped else "%s ready." % item.capitalize()
 	if pc.held_item != item: PlayerActions.hold(s, item)
 	return "%s in hand." % item.capitalize()
