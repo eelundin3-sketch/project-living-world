@@ -2,7 +2,7 @@
 
 A single-player 2D frontier life sandbox in **Godot 4.6, GDScript**. Three towns (Alder Hollow, Reedbank, Dustvale) on one big map; families, trade, a sheriff, guns and cover, and a consequence layer (witnesses, memory, gossip, reputation). A deterministic simulation (`sim/`) is separate from everything drawn (`view/`, `app/`).
 
-**State on 2026-11-20:** branch `feature/quick-wins`, everything committed locally, **nothing pushed**. 77 tests pass, about 79 FPS at normal zoom. The owner has not yet hand-played the latest work. A master plan with briefs exists in `docs/ROADMAP.md` (milestones 5-14). **The owner asked to pause building: do not start a milestone until they say so.**
+**State on 2026-11-20:** branch `feature/quick-wins`, pushed to GitHub as **PR #14** (stacked on PR #13, `chore/app-first-layout`); **neither PR is merged**. 77 tests pass, about 79 FPS at normal zoom. The owner has not yet hand-played the latest work. A master plan with briefs exists in `docs/ROADMAP.md` (milestones 5-14). **The owner asked to pause building: do not start a milestone until they say so.**
 
 ## Read order (load only what you need)
 
@@ -33,7 +33,7 @@ Benchmarks and screenshot scripts: `docs/HANDOVER.md` section 4.
 
 ## The owner's standing instructions
 
-- **Commit locally. Do not push, open PRs or merge until the owner asks for "the big push".** To see what is unpushed, compare with git (`git fetch`, `git rev-list <branch> --not --remotes`). The big-push order is in `docs/HANDOVER.md` section 6.
+- **Do not push, open PRs or merge unless the owner asks.** (They asked for PR #14 on 2026-11-20; merging #13 and #14 is still their call.) To see what is unpushed, compare with git (`git fetch`, `git rev-list <branch> --not --remotes`). The big-push order is in `docs/HANDOVER.md` section 6.
 - **`Project Solo.app` must stay the first item in the repo root**; do not add root files that sort before it (hence this file is in `source/`).
 - **Show a plan before building; build milestone by milestone and stop between them.** Ask before starting the next one.
 - Keep the game fast (above). Keep reports plain: what is done, what is not, what was not verified. (Observed style of the owner's questions, not a stated rule.)

@@ -5,7 +5,7 @@ Written 2026-11-20 at the end of a very long session. Read `source/CLAUDE.md` fi
 ## 1. Where things stand, in plain words
 
 - The game is a deterministic frontier sandbox in Godot 4.6 with three towns, families, trade, a sheriff and a gun/cover/bleeding system. It has a real chain of consequences now: crimes have witnesses who run to the sheriff, people remember and gossip, towns hold a reputation of you, you can bribe or talk your way out of an arrest, carry bodies, be thrown out of homes, and your looks matter.
-- **Branch `feature/quick-wins` (local only, 23 commits not on GitHub: 22 of work plus the handover docs commit)** holds everything: steps 1-4, the rifle as the main gun, gunshots heard by distance, and silent takedowns. 77 tests pass; about 79 FPS at normal zoom.
+- **Branch `feature/quick-wins` (pushed 2026-11-20 as PR #14, stacked on PR #13; not merged)** holds everything: steps 1-4, the rifle as the main gun, gunshots heard by distance, and silent takedowns. 77 tests pass; about 79 FPS at normal zoom.
 - **The owner has not yet hand-played steps 1-4.** The game was launched once at the end ("run the game"); no feedback came before this handover.
 - The owner chose to **stop building for now** ("Not now" to starting milestone 5) and asked for this handover. The next step is the owner's call.
 - A written master plan exists (`docs/ROADMAP.md`, also on the owner's Desktop as `Project_Solo_Plan.txt`): ten milestones (5-14), about 24-28 working sessions.
@@ -62,9 +62,9 @@ A passing test prints `Name: PASS` and exits 0; a failing one prints `FAIL: ...`
 7. `python3 tools/check_layout.py`; commit **by file name** (never `git add -A`); include the `.uid` files for new scripts and the benchmark JSONs you want kept. Commit locally only.
 8. Report in plain words: what is done, what is not, what was not verified.
 
-## 6. The big push (only when the owner asks)
+## 6. The big push
 
-Nothing below is to be done unprompted.
+**Status:** on 2026-11-20 the owner asked for the PR; it is **PR #14** (`feature/quick-wins` into `chore/app-first-layout`), opened after PR #13's checks passed. Not merged. What remains is the owner's call: merge #13, then merge #14 (retargeted to `main`), then the items in step 4-5 below. Nothing below is to be done unprompted.
 
 1. Compare local with GitHub: `git fetch origin`, then for each local branch `git rev-list --count <branch> --not --remotes` and `git log --oneline <branch> --not --remotes`.
 2. **PR #13 first** (`chore/app-first-layout`): check its CI (`gh pr checks 13`; the suite needs the 45-minute limit); merge only on the owner's word.

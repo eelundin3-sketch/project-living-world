@@ -8,7 +8,7 @@ How to read the tags: **[owner]** the owner decided or asked for it; **[code]** 
 
 | Decision | Why | Source |
 |---|---|---|
-| **Commit locally; do not push, open PRs or merge until the owner asks for "the big push".** To see what is unpushed, compare with git (`git fetch`, `git rev-list <branch> --not --remotes`). No tracking file or hook. | The owner wants to collect many changes and publish them together much later, and keep GitHub tidy meanwhile. | [owner], saved as a memory file |
+| **Commit locally; do not push, open PRs or merge until the owner asks for "the big push".** (On 2026-11-20 the owner asked for the PR: #14, stacked on #13. Merging is still theirs to ask for.) To see what is unpushed, compare with git (`git fetch`, `git rev-list <branch> --not --remotes`). No tracking file or hook. | The owner wants to collect many changes and publish them together much later, and keep GitHub tidy meanwhile. | [owner], saved as a memory file |
 | **`Project Solo.app` must be the very first item in the downloaded folder; names on GitHub must be right.** Hence PR #13: all game files moved into `source/`, the launcher at the root, workflows run in `source/`. | Players download the repo and must find the app at once. | [owner], PR #13 |
 | **Never add a root-level file whose name sorts before "Project Solo.app".** (`CLAUDE.md` at the root would sort first, so the main one lives in `source/CLAUDE.md` and the root only has `.claude/CLAUDE.md`.) | Same reason as above. | [inferred] from the owner's rule |
 | **Show the plan, then build; build in milestones and stop between them.** The owner asked "show me the plan without doing them" and answered "Not now" to starting milestone 5. | The owner wants control over order and scope. | [owner] |

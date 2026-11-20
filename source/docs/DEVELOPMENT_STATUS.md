@@ -9,7 +9,7 @@ Verified 2026-11-20 on branch `feature/quick-wins` (commit `74320c3` plus the ha
 | Tests | 77 in `scripts/test.sh`, all passed (last full run 2026-11-19 evening, 12 min 48 s) |
 | Frame rate (M4, 1280x720) | about 79 FPS zoom 2, 57 zoom 1, 46 zoom 0.5, about 1,000 on the map; headless worst tick about 12 ms. Records: `docs/validation/view_benchmark_*.json` |
 | Code size (GDScript, excluding Finder copies) | `sim/` about 11,800 lines, `view/` 9,400, `app/` 900, `tests/` 7,700 |
-| GitHub | nothing from this stretch is pushed (owner's rule). PR #13 (`chore/app-first-layout`) is open |
+| GitHub | **PR #14** (`feature/quick-wins` into `chore/app-first-layout`) opened 2026-11-20 at the owner's request; PR #13 (`chore/app-first-layout`) is open and its checks passed; neither is merged |
 
 ### Git state (verified with `git fetch` and `git rev-list`)
 
@@ -17,8 +17,8 @@ Verified 2026-11-20 on branch `feature/quick-wins` (commit `74320c3` plus the ha
 |---|---|
 | `main` | `be26892`, includes PRs #10 (performance), #11 (test fixes), #12 (roads, map, sleep, travel) |
 | `chore/app-first-layout` | PR #13, open: moves the game into `source/` so `Project Solo.app` is first; CI timeout raised to 45 min (commit `fd8adbd`) |
-| `feature/people-trade-families-sheriffs` | 5 local commits on top of the layout commit `8d3ec4d`: stall keepers, family economy, sheriff tactics, bleeding, trade window, cover heights |
-| `feature/quick-wins` (current) | the 5 above plus 17 more: steps 1-4 (below). 22 commits of work plus the handover docs commit = 23 not on GitHub (check with `git rev-list feature/quick-wins --not --remotes | wc -l`). Does **not** contain `fd8adbd`, so its CI file still says 20 minutes |
+| `feature/people-trade-families-sheriffs` | 5 commits on top of the layout commit `8d3ec4d` (they reach GitHub inside PR #14; this branch name itself was never pushed): stall keepers, family economy, sheriff tactics, bleeding, trade window, cover heights |
+| `feature/quick-wins` (current) | the 5 above plus 17 more: steps 1-4 (below). Pushed as PR #14 (23 commits ahead of PR #13's branch, 24 ahead of `main` counting the layout commit). Does **not** contain `fd8adbd`, so its CI file still says 20 minutes |
 | Other local branches | old, merged work (`chore/*`, `claude/*`, `codex/*`, `feature/*` from earlier sessions) with some linked worktrees under `~/Documents/ChatGPT/` |
 
 Big-push order when the owner asks: **PR #13 first**, then the feature branches on top (they were built on the layout commit). See `docs/HANDOVER.md` section 6.
@@ -96,7 +96,7 @@ Everything in `docs/ROADMAP.md` milestones 5-14 (night lighting, per-town weathe
 ## 6. Open decisions waiting for the owner
 
 - Start milestone 5 (the owner answered "Not now" on 2026-11-20).
-- When to do "the big push" (see `HANDOVER.md` section 6).
+- Merging: PR #13 first (layout), then PR #14 (retarget it to `main` if GitHub does not do so itself). The owner has not said to merge.
 - Publish a first GitHub Release (the README says Releases exist; none do).
 - Delete about 10 old merged branches on GitHub (offered earlier, no answer).
 - Move Godot out of `/private/tmp`, rename the old local folders (open since earlier).
