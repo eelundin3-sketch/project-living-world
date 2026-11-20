@@ -1,5 +1,7 @@
 # Current game guide
 
+> **Partly out of date (2026-11-20).** Written before the latest work: a new game now has 6 residents per town (three towns, not one), the player starts with a rifle, the map is 582 by 420 cells, and witnesses, gossip, reputation, the journal and more exist. See [Development status](../DEVELOPMENT_STATUS.md) and [Game design](../GAME_DESIGN.md) for the current picture. The save-file locations below are still right.
+
 Updated 2026-11-16. This guide describes the working game. For older versions of
 a feature, see [Decisions](../design/DECISIONS.md) and the [Changelog](CHANGELOG.md).
 For launch instructions and the keyboard map, see the [README](../../../README.md).

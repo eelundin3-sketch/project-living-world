@@ -1,5 +1,7 @@
 # Blueprint implementation status
 
+> **Partly out of date (2026-11-20).** It describes the original two-town prototype (384 by 256 cells). There are now three towns on a 582 by 420 cell map, and many systems beyond M0-M14. See [Development status](../DEVELOPMENT_STATUS.md). The "Remaining validation limits" below are not re-verified.
+
 This describes the actual prototype, separately from the supplied design proposal.
 All M0–M14 areas have an integrated implementation. The scope is a small original
 single-player sandbox; long-term scale and commercial polish are not implied by
